@@ -1,5 +1,6 @@
 pub struct Board {
     bitboards: [u64; 12],
+    occupancy: [u64; 3],
 }
 
 impl Board {
@@ -22,11 +23,34 @@ impl Board {
         bitboards[Piece::WQ as usize] = 0x0000000000000008;
         bitboards[Piece::WK as usize] = 0x0000000000000010;
 
-        Self { bitboards }
+        let occupancy: [u64; 3] = [0; 3];
+
+        let mut board = Self {
+            bitboards,
+            occupancy,
+        };
+
+        board.build_occupancy();
+        board
     }
 
     pub fn print_board(&self) {
+        // Shoutout to Chatgpt!!
+        println!();
+
+        // Top border
+        print!("   ");
+        for file in 0..8 {
+            if file == 0 {
+                print!("┌───");
+            } else {
+                print!("┬───");
+            }
+        }
+        println!("┐");
+
         for rank in (0..8).rev() {
+            // Pieces row
             print!("{}  ", rank + 1);
 
             for file in 0..8 {
@@ -36,21 +60,63 @@ impl Board {
                 for i in 0..12 {
                     if (self.bitboards[i] >> sq) & 1 == 1 {
                         let piece = Piece::from_val(i);
-                        print!("{} ", Piece::piece_to_char(piece));
+                        print!("│ {} ", Piece::piece_to_char(piece));
                         found = true;
                         break;
                     }
                 }
 
                 if !found {
-                    print!(". ");
+                    print!("│   ");
                 }
             }
 
-            println!();
+            println!("│");
+
+            // Middle separators (skip after last rank)
+            if rank > 0 {
+                print!("   ");
+                for file in 0..8 {
+                    if file == 0 {
+                        print!("├───");
+                    } else {
+                        print!("┼───");
+                    }
+                }
+                println!("┤");
+            }
         }
 
-        println!("\n   a b c d e f g h\n");
+        // Bottom border
+        print!("   ");
+        for file in 0..8 {
+            if file == 0 {
+                print!("└───");
+            } else {
+                print!("┴───");
+            }
+        }
+        println!("┘");
+
+        println!("     a   b   c   d   e   f   g   h\n");
+    }
+
+    fn build_occupancy(&mut self) {
+        self.occupancy[0] = self.bitboards[Piece::WP as usize]
+            | self.bitboards[Piece::WN as usize]
+            | self.bitboards[Piece::WB as usize]
+            | self.bitboards[Piece::WR as usize]
+            | self.bitboards[Piece::WQ as usize]
+            | self.bitboards[Piece::WK as usize];
+
+        self.occupancy[1] = self.bitboards[Piece::BP as usize]
+            | self.bitboards[Piece::BN as usize]
+            | self.bitboards[Piece::BB as usize]
+            | self.bitboards[Piece::BR as usize]
+            | self.bitboards[Piece::BQ as usize]
+            | self.bitboards[Piece::BK as usize];
+
+        self.occupancy[2] = self.bitboards[0] | self.bitboards[1];
     }
 }
 
