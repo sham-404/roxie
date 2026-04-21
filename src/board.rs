@@ -34,24 +34,23 @@ impl Board {
         board
     }
 
-    pub fn print_board(&self) {
-        // Shoutout to Chatgpt!!
-        println!();
+    pub fn render_board(&self) -> Vec<String> {
+        let mut lines = Vec::new();
 
         // Top border
-        print!("   ");
+        let mut top = String::from("   ");
         for file in 0..8 {
             if file == 0 {
-                print!("┌───");
+                top.push_str("┌───");
             } else {
-                print!("┬───");
+                top.push_str("┬───");
             }
         }
-        println!("┐");
+        top.push('┐');
+        lines.push(top);
 
         for rank in (0..8).rev() {
-            // Pieces row
-            print!("{}  ", rank + 1);
+            let mut row = format!("{}  ", rank + 1);
 
             for file in 0..8 {
                 let sq = rank * 8 + file;
@@ -60,45 +59,127 @@ impl Board {
                 for i in 0..12 {
                     if (self.bitboards[i] >> sq) & 1 == 1 {
                         let piece = Piece::from_val(i);
-                        print!("│ {} ", Piece::piece_to_char(piece));
+                        row.push_str(&format!("│ {} ", Piece::piece_to_char(piece)));
                         found = true;
                         break;
                     }
                 }
 
                 if !found {
-                    print!("│   ");
+                    row.push_str("│   ");
                 }
             }
 
-            println!("│");
+            row.push('│');
+            lines.push(row);
 
-            // Middle separators (skip after last rank)
             if rank > 0 {
-                print!("   ");
+                let mut sep = String::from("   ");
                 for file in 0..8 {
                     if file == 0 {
-                        print!("├───");
+                        sep.push_str("├───");
                     } else {
-                        print!("┼───");
+                        sep.push_str("┼───");
                     }
                 }
-                println!("┤");
+                sep.push('┤');
+                lines.push(sep);
             }
         }
 
         // Bottom border
-        print!("   ");
+        let mut bottom = String::from("   ");
         for file in 0..8 {
             if file == 0 {
-                print!("└───");
+                bottom.push_str("└───");
             } else {
-                print!("┴───");
+                bottom.push_str("┴───");
             }
         }
-        println!("┘");
+        bottom.push('┘');
+        lines.push(bottom);
 
-        println!("     a   b   c   d   e   f   g   h\n");
+        lines.push("     a   b   c   d   e   f   g   h".to_string());
+
+        lines
+    }
+
+    pub fn print_many(&self, boards: Vec<Vec<String>>) {
+        let height = boards[0].len();
+
+        for i in 0..height {
+            for board in &boards {
+                print!("{:<40} ", board[i]);
+            }
+            println!();
+        }
+    }
+
+    pub fn render_bitboard(&self, bb: u64) -> Vec<String> {
+        let mut lines = Vec::new();
+
+        // Top border
+        let mut top = String::from("   ");
+        for file in 0..8 {
+            if file == 0 {
+                top.push_str("┌───");
+            } else {
+                top.push_str("┬───");
+            }
+        }
+        top.push('┐');
+        lines.push(top);
+
+        for rank in (0..8).rev() {
+            let mut row = format!("{}  ", rank + 1);
+
+            for file in 0..8 {
+                let sq = rank * 8 + file;
+                if (bb >> sq) & 1 == 1 {
+                    row.push_str("│ X ");
+                } else {
+                    row.push_str("│ . ");
+                }
+            }
+
+            row.push('│');
+            lines.push(row);
+
+            if rank > 0 {
+                let mut sep = String::from("   ");
+                for file in 0..8 {
+                    if file == 0 {
+                        sep.push_str("├───");
+                    } else {
+                        sep.push_str("┼───");
+                    }
+                }
+                sep.push('┤');
+                lines.push(sep);
+            }
+        }
+
+        // Bottom border
+        let mut bottom = String::from("   ");
+        for file in 0..8 {
+            if file == 0 {
+                bottom.push_str("└───");
+            } else {
+                bottom.push_str("┴───");
+            }
+        }
+        bottom.push('┘');
+        lines.push(bottom);
+
+        lines.push("     a   b   c   d   e   f   g   h".to_string());
+
+        lines
+    }
+
+    pub fn debug_print(&self) {
+        let a = self.render_board();
+        let all_occ = self.render_bitboard(self.bitboards[Piece::WR as usize]);
+        self.print_many(vec![a, all_occ]);
     }
 
     fn build_occupancy(&mut self) {
@@ -116,7 +197,7 @@ impl Board {
             | self.bitboards[Piece::BQ as usize]
             | self.bitboards[Piece::BK as usize];
 
-        self.occupancy[2] = self.bitboards[0] | self.bitboards[1];
+        self.occupancy[2] = self.occupancy[0] | self.occupancy[1];
     }
 }
 
