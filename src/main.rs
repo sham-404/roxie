@@ -1,4 +1,5 @@
 mod board;
+mod square;
 
 use crate::board::Board;
 

@@ -183,21 +183,25 @@ impl Board {
     }
 
     fn build_occupancy(&mut self) {
-        self.occupancy[0] = self.bitboards[Piece::WP as usize]
-            | self.bitboards[Piece::WN as usize]
-            | self.bitboards[Piece::WB as usize]
-            | self.bitboards[Piece::WR as usize]
-            | self.bitboards[Piece::WQ as usize]
-            | self.bitboards[Piece::WK as usize];
+        self.occupancy[0] = self.bb(Piece::WP)
+            | self.bb(Piece::WN)
+            | self.bb(Piece::WB)
+            | self.bb(Piece::WR)
+            | self.bb(Piece::WQ)
+            | self.bb(Piece::WK);
 
-        self.occupancy[1] = self.bitboards[Piece::BP as usize]
-            | self.bitboards[Piece::BN as usize]
-            | self.bitboards[Piece::BB as usize]
-            | self.bitboards[Piece::BR as usize]
-            | self.bitboards[Piece::BQ as usize]
-            | self.bitboards[Piece::BK as usize];
+        self.occupancy[1] = self.bb(Piece::BP)
+            | self.bb(Piece::BN)
+            | self.bb(Piece::BB)
+            | self.bb(Piece::BR)
+            | self.bb(Piece::BQ)
+            | self.bb(Piece::BK);
 
         self.occupancy[2] = self.occupancy[0] | self.occupancy[1];
+    }
+
+    fn bb(&self, piece: Piece) -> u64 {
+        self.bitboards[piece as usize]
     }
 }
 
