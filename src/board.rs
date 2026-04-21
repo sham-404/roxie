@@ -1,7 +1,13 @@
+use crate::square::Square;
+
 pub struct Board {
     bitboards: [u64; 12],
     occupancy: [u64; 3],
 }
+
+const WHITE: usize = 0;
+const BLACK: usize = 1;
+const BOTH: usize = 2;
 
 impl Board {
     pub fn new() -> Self {
@@ -32,6 +38,39 @@ impl Board {
 
         board.build_occupancy();
         board
+    }
+
+    pub fn move_piece(&mut self, from: usize, to: usize) {
+        let (from, to) = (Square::new(from), Square::new(to));
+
+        let from_mask = 1 << from.index();
+        let to_mask = 1 << to.index();
+
+        // No piece in from
+        if self.occupancy[BOTH] & from_mask == 0 {
+            return;
+        }
+
+        // Handling captures 
+        for p in 0..12 {
+            if to_mask & self.bitboards[p] != 0 {
+                self.bitboards[p] ^= to_mask;
+                break;
+            }
+        }
+
+        for n in 0..12 {
+            let piece = &mut self.bitboards[n];
+            if from_mask & *piece != 0 {
+                *piece ^= from_mask;
+                *piece ^= to_mask;
+
+                break;
+            }
+        }
+        self.build_occupancy();
+
+
     }
 
     pub fn render_board(&self) -> Vec<String> {
@@ -178,26 +217,26 @@ impl Board {
 
     pub fn debug_print(&self) {
         let a = self.render_board();
-        let all_occ = self.render_bitboard(self.bitboards[Piece::WR as usize]);
+        let all_occ = self.render_bitboard(self.occupancy[BOTH]);
         self.print_many(vec![a, all_occ]);
     }
 
     fn build_occupancy(&mut self) {
-        self.occupancy[0] = self.bb(Piece::WP)
+        self.occupancy[WHITE] = self.bb(Piece::WP)
             | self.bb(Piece::WN)
             | self.bb(Piece::WB)
             | self.bb(Piece::WR)
             | self.bb(Piece::WQ)
             | self.bb(Piece::WK);
 
-        self.occupancy[1] = self.bb(Piece::BP)
+        self.occupancy[BLACK] = self.bb(Piece::BP)
             | self.bb(Piece::BN)
             | self.bb(Piece::BB)
             | self.bb(Piece::BR)
             | self.bb(Piece::BQ)
             | self.bb(Piece::BK);
 
-        self.occupancy[2] = self.occupancy[0] | self.occupancy[1];
+        self.occupancy[BOTH] = self.occupancy[WHITE] | self.occupancy[BLACK];
     }
 
     fn bb(&self, piece: Piece) -> u64 {
@@ -208,19 +247,19 @@ impl Board {
 #[repr(u8)]
 #[derive(Copy, Clone, Debug)]
 enum Piece {
-    WP = 0,
-    WN = 1,
-    WB = 2,
-    WR = 3,
-    WQ = 4,
-    WK = 5,
+    WP,
+    WN,
+    WB,
+    WR,
+    WQ,
+    WK,
 
-    BP = 6,
-    BN = 7,
-    BB = 8,
-    BR = 9,
-    BQ = 10,
-    BK = 11,
+    BP,
+    BN,
+    BB,
+    BR,
+    BQ,
+    BK,
 }
 
 impl Piece {
@@ -264,6 +303,7 @@ impl Piece {
     }
 }
 
+#[allow(dead_code)]
 #[repr(u8)]
 enum MoveFlag {
     Quiet = 0b0000,
@@ -285,6 +325,7 @@ enum MoveFlag {
     PromoCapQueen = 0b1111,
 }
 
+#[allow(dead_code)]
 struct Move {
     from: usize,
     to: usize,
