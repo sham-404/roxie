@@ -1,9 +1,13 @@
 mod board;
 mod square;
+mod movegen;
 
 use crate::board::Board;
 use crate::square::Square;
-use std::io::{self, Write};
+use std::{
+    io::{self, Write},
+    str,
+};
 
 fn input(prompt: &str) -> String {
     let mut buffer = String::new();
@@ -27,25 +31,47 @@ fn parse_move(mv: &str) -> Option<(Square, Square)> {
 
 fn main() {
     let mut board = Board::new();
-    let mut buf;
 
-    board.debug_print();
+    println!("Loop started");
     loop {
         println!();
-        buf = input("move: ");
+        let buf = input("");
 
-        if buf == "quit" {
-            break;
-        }
+        let mut parts = buf.split_whitespace();
 
-        let (from, to) = if let Some((from, to)) = parse_move(&buf) {
-            (from, to)
+        let command = if let Some(cmd) = parts.next() {
+            cmd
         } else {
-            println!("Invalid move");
             continue;
         };
 
-        board.move_piece(from.index(), to.index());
-        board.debug_print();
+        match command {
+            "quit" => break,
+
+            "print" => {
+                board.print_many(vec![board.render_board()]);
+            }
+
+            "move" | "mv" => {
+                let args = parts.collect::<Vec<_>>().join("");
+
+                let (from, to) = if let Some((from, to)) = parse_move(&args) {
+                    (from, to)
+                } else {
+                    println!("Invalid move");
+                    continue;
+                };
+
+                board.move_piece(from.index(), to.index());
+
+                let moves = board.gen_king_attack();
+                let bb = moves.iter().fold(0u64, |acc, mv| acc | (1 << mv.to));
+                board.print_many(vec![board.render_board(), board.render_bitboard(bb)]);
+            }
+
+            _ => {
+                println!("Invalid command");
+            }
+        }
     }
 }

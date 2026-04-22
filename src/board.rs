@@ -3,6 +3,7 @@ use crate::square::Square;
 pub struct Board {
     bitboards: [u64; 12],
     occupancy: [u64; 3],
+    pub side_to_move: Color,
 }
 
 const WHITE: usize = 0;
@@ -22,18 +23,19 @@ impl Board {
         bitboards[Piece::BK as usize] = 0x1000000000000000;
 
         // Black pieces
-        bitboards[Piece::WP as usize] = 0x000000000000FF00;
-        bitboards[Piece::WN as usize] = 0x0000000000000042;
-        bitboards[Piece::WB as usize] = 0x0000000000000024;
-        bitboards[Piece::WR as usize] = 0x0000000000000081;
-        bitboards[Piece::WQ as usize] = 0x0000000000000008;
-        bitboards[Piece::WK as usize] = 0x0000000000000010;
+        bitboards[Piece::WP as usize] = 0xFF00;
+        bitboards[Piece::WN as usize] = 0x0042;
+        bitboards[Piece::WB as usize] = 0x0024;
+        bitboards[Piece::WR as usize] = 0x0081;
+        bitboards[Piece::WQ as usize] = 0x0008;
+        bitboards[Piece::WK as usize] = 0x0010;
 
         let occupancy: [u64; 3] = [0; 3];
 
         let mut board = Self {
             bitboards,
             occupancy,
+            side_to_move: Color::White,
         };
 
         board.build_occupancy();
@@ -51,7 +53,7 @@ impl Board {
             return;
         }
 
-        // Handling captures 
+        // Handling captures
         for p in 0..12 {
             if to_mask & self.bitboards[p] != 0 {
                 self.bitboards[p] ^= to_mask;
@@ -69,8 +71,6 @@ impl Board {
             }
         }
         self.build_occupancy();
-
-
     }
 
     pub fn render_board(&self) -> Vec<String> {
@@ -215,10 +215,12 @@ impl Board {
         lines
     }
 
-    pub fn debug_print(&self) {
-        let a = self.render_board();
-        let all_occ = self.render_bitboard(self.occupancy[BOTH]);
-        self.print_many(vec![a, all_occ]);
+
+    pub fn occ(&self, color: &Color) -> u64 {
+        match color {
+            Color::White => self.occupancy[WHITE],
+            Color::Black => self.occupancy[BLACK],
+        }
     }
 
     fn build_occupancy(&mut self) {
@@ -239,14 +241,14 @@ impl Board {
         self.occupancy[BOTH] = self.occupancy[WHITE] | self.occupancy[BLACK];
     }
 
-    fn bb(&self, piece: Piece) -> u64 {
+    pub fn bb(&self, piece: Piece) -> u64 {
         self.bitboards[piece as usize]
     }
 }
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug)]
-enum Piece {
+pub enum Piece {
     WP,
     WN,
     WB,
@@ -305,7 +307,7 @@ impl Piece {
 
 #[allow(dead_code)]
 #[repr(u8)]
-enum MoveFlag {
+pub enum MoveFlag {
     Quiet = 0b0000,
     DoublePush = 0b0001,
     KingCastle = 0b0010,
@@ -326,8 +328,29 @@ enum MoveFlag {
 }
 
 #[allow(dead_code)]
-struct Move {
-    from: usize,
-    to: usize,
-    flag: MoveFlag,
+pub struct Move {
+    pub from: usize,
+    pub to: usize,
+    pub flag: MoveFlag,
+}
+
+impl Move {
+    pub fn new(from: usize, to: usize, flag: MoveFlag) -> Self {
+        Self { from, to, flag }
+    }
+}
+
+#[repr(u8)]
+pub enum Color {
+    White,
+    Black,
+}
+
+impl Color {
+    pub fn opponent(&self) -> Self {
+        match self {
+            Color::White => Color::Black,
+            Color::Black => Color::White,
+        }
+    }
 }
