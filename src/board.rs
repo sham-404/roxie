@@ -41,6 +41,18 @@ pub const KNIGHT_ATTACKS: [u64; 64] = [
     0x44280000000000,   0x0088500000000000, 0x0010a00000000000, 0x20400000000000,
 ];
 
+#[inline]
+pub fn pop_lsb(bb: &mut u64) -> Option<usize> {
+    if *bb == 0 {
+        return None;
+    }
+
+    let sq = bb.trailing_zeros() as usize;
+    *bb &= *bb - 1;
+
+    Some(sq)
+}
+
 pub struct Board {
     bitboards: [u64; 12],
     occupancy: [u64; 3],
@@ -142,25 +154,41 @@ impl Board {
     pub fn bb(&self, piece: Piece) -> u64 {
         self.bitboards[piece as usize]
     }
-
-    #[inline]
-    pub fn pop_lsb(&self, bb: &mut u64) -> Option<usize> {
-        if *bb == 0 {
-            return None;
-        }
-
-        let sq = bb.trailing_zeros() as usize;
-        *bb &= *bb - 1;
-
-        Some(sq)
-    }
 }
 
 ////////// Move generations
 impl Board {
-    pub fn gen_king_attack(&mut self) -> Vec<Move> {
+    pub fn gen_moves(&self) -> Vec<Move> {
         let mut moves: Vec<Move> = Vec::new();
 
+        self.gen_king_attack(&mut moves);
+        self.gen_knight_attack(&mut moves);
+
+        let (bishop_bb, rook_bb, queen_bb) = match self.side_to_move {
+            Color::White => (self.bb(Piece::WB), self.bb(Piece::WR), self.bb(Piece::WQ)),
+            Color::Black => (self.bb(Piece::BB), self.bb(Piece::BR), self.bb(Piece::BQ)),
+        };
+        const ROOK_DIRS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+        const BISHOP_DIRS: [(i32, i32); 4] = [(1, 1), (1, -1), (-1, 1), (-1, -1)];
+        const QUEEN_DIRS: [(i32, i32); 8] = [
+            (1, 0),
+            (-1, 0),
+            (0, 1),
+            (0, -1),
+            (1, 1),
+            (1, -1),
+            (-1, 1),
+            (-1, -1),
+        ];
+
+        self.gen_sliding_moves(&mut moves, bishop_bb, &BISHOP_DIRS);
+        self.gen_sliding_moves(&mut moves, rook_bb, &ROOK_DIRS);
+        self.gen_sliding_moves(&mut moves, queen_bb, &QUEEN_DIRS);
+
+        moves
+    }
+
+    pub fn gen_king_attack(&self, moves: &mut Vec<Move>) {
         let piece = match self.side_to_move {
             Color::White => Piece::WK,
             Color::Black => Piece::BK,
@@ -168,13 +196,13 @@ impl Board {
 
         let mut bb = self.bb(piece);
 
-        while let Some(from) = self.pop_lsb(&mut bb) {
+        while let Some(from) = pop_lsb(&mut bb) {
             let to_move = &self.side_to_move;
             let occ = self.occ(to_move);
 
             let mut atk = KING_ATTACKS[from] & !occ;
 
-            while let Some(to) = self.pop_lsb(&mut atk) {
+            while let Some(to) = pop_lsb(&mut atk) {
                 let flag = if (1 << to) & self.occ(&self.side_to_move.opponent()) != 0 {
                     MoveFlag::Capture
                 } else {
@@ -184,13 +212,9 @@ impl Board {
                 moves.push(Move::new(from, to, flag));
             }
         }
-
-        moves
     }
 
-    pub fn gen_knight_attack(&mut self) -> Vec<Move> {
-        let mut moves: Vec<Move> = Vec::new();
-
+    pub fn gen_knight_attack(&self, moves: &mut Vec<Move>) {
         let piece = match self.side_to_move {
             Color::White => Piece::WN,
             Color::Black => Piece::BN,
@@ -198,13 +222,13 @@ impl Board {
 
         let mut bb = self.bb(piece);
 
-        while let Some(from) = self.pop_lsb(&mut bb) {
+        while let Some(from) = pop_lsb(&mut bb) {
             let to_move = &self.side_to_move;
             let occ = self.occ(to_move);
 
             let mut atk = KNIGHT_ATTACKS[from] & !occ;
 
-            while let Some(to) = self.pop_lsb(&mut atk) {
+            while let Some(to) = pop_lsb(&mut atk) {
                 let flag = if (1 << to) & self.occ(&self.side_to_move.opponent()) != 0 {
                     MoveFlag::Capture
                 } else {
@@ -214,12 +238,53 @@ impl Board {
                 moves.push(Move::new(from, to, flag));
             }
         }
+    }
 
-        moves
+    pub fn gen_sliding_moves(
+        &self,
+        moves: &mut Vec<Move>,
+        mut bb: u64,
+        directions: &[(i32, i32)],
+    ) {
+        let own_occ = self.occ(&self.side_to_move);
+        let enemy_occ = self.occ(&self.side_to_move.opponent());
+
+        while let Some(from_idx) = pop_lsb(&mut bb) {
+            let from = Square::new(from_idx);
+
+            for &(dr, df) in directions {
+                let mut sq = from;
+
+                while let Some(next) = sq.offset(dr, df) {
+                    let to_bb = 1u64 << next.index();
+
+                    // blocked by own piece
+                    if to_bb & own_occ != 0 {
+                        break;
+                    }
+
+                    let flag = if to_bb & enemy_occ != 0 {
+                        MoveFlag::Capture
+                    } else {
+                        MoveFlag::Quiet
+                    };
+
+                    moves.push(Move::new(from_idx, next.index(), flag));
+
+                    // stop after capture
+                    if to_bb & enemy_occ != 0 {
+                        break;
+                    }
+
+                    sq = next;
+                }
+            }
+        }
     }
 }
 
 ////////// Debugging board
+#[allow(dead_code)]
 impl Board {
     pub fn render_board(&self) -> Vec<String> {
         let mut lines = Vec::new();

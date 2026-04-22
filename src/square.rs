@@ -34,7 +34,7 @@ impl Square {
     }
 
     // Parse from coordinate string
-    
+
     pub fn from_str(s: &str) -> Option<Self> {
         if s.len() != 2 {
             return None;
@@ -46,6 +46,17 @@ impl Square {
 
         if file < 8 && rank < 8 {
             Some(Square::from_rf(rank, file))
+        } else {
+            None
+        }
+    }
+
+    pub fn offset(self, dr: i32, df: i32) -> Option<Square> {
+        let r = self.rank() as i32 + dr;
+        let f = self.file() as i32 + df;
+
+        if (0..8).contains(&r) && (0..8).contains(&f) {
+            Some(Square::from_rf(r as usize, f as usize))
         } else {
             None
         }

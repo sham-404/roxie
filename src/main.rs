@@ -1,6 +1,6 @@
 mod board;
-mod square;
 mod items;
+mod square;
 
 use crate::board::Board;
 use crate::square::Square;
@@ -58,15 +58,22 @@ fn main() {
                 let (from, to) = if let Some((from, to)) = parse_move(&args) {
                     (from, to)
                 } else {
-                    println!("Invalid move");
+                    println!("Invalid notation");
                     continue;
                 };
 
-                board.move_piece(from.index(), to.index());
+                let moves = board.gen_moves();
 
-                let moves = board.gen_king_attack();
-                let bb = moves.iter().fold(0u64, |acc, mv| acc | (1 << mv.to));
-                board.print_many(vec![board.render_board(), board.render_bitboard(bb)]);
+                if moves
+                    .iter()
+                    .any(|mv| mv.from == from.index() && mv.to == to.index())
+                {
+                    board.move_piece(from.index(), to.index());
+                    board.print_many(vec![board.render_board()]);
+                } else {
+                    println!("Invalid move")
+                }
+
             }
 
             _ => {
