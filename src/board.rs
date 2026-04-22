@@ -158,11 +158,11 @@ impl Board {
         self.occupancy[BOTH] = self.occupancy[WHITE] | self.occupancy[BLACK];
     }
 
-    pub fn move_piece(&mut self, from: usize, to: usize) {
-        let (from, to) = (Square::new(from), Square::new(to));
+    pub fn move_piece(&mut self, mov: &Move) {
+        let (from, to) = (Square::new(mov.from), Square::new(mov.to));
 
-        let from_mask = 1 << from.index();
-        let to_mask = 1 << to.index();
+        let from_mask = 1u64 << from.index();
+        let to_mask = 1u64 << to.index();
 
         // No piece in from
         if self.occupancy[BOTH] & from_mask == 0 {
@@ -186,6 +186,48 @@ impl Board {
                 break;
             }
         }
+
+        // Handling Special Moves
+        match mov.flag {
+            MoveFlag::PromoKnight | MoveFlag::PromoCapKnight => {
+                let (pawn_bb, promo_bb) = match self.side_to_move {
+                    Color::White => self.bb_mut_pair(Piece::WP, Piece::WN),
+                    Color::Black => self.bb_mut_pair(Piece::BP, Piece::BN),
+                };
+
+                *pawn_bb ^= to_mask;
+                *promo_bb ^= to_mask;
+            }
+
+            MoveFlag::PromoBishop | MoveFlag::PromoCapBishop => {
+                let (pawn_bb, promo_bb) = match self.side_to_move {
+                    Color::White => self.bb_mut_pair(Piece::WP, Piece::WB),
+                    Color::Black => self.bb_mut_pair(Piece::BP, Piece::BB),
+                };
+
+                *pawn_bb ^= to_mask;
+                *promo_bb ^= to_mask;
+            }
+            MoveFlag::PromoRook | MoveFlag::PromoCapRook => {
+                let (pawn_bb, promo_bb) = match self.side_to_move {
+                    Color::White => self.bb_mut_pair(Piece::WP, Piece::WR),
+                    Color::Black => self.bb_mut_pair(Piece::BP, Piece::BR),
+                };
+
+                *pawn_bb ^= to_mask;
+                *promo_bb ^= to_mask;
+            }
+            MoveFlag::PromoQueen | MoveFlag::PromoCapQueen => {
+                let (pawn_bb, promo_bb) = match self.side_to_move {
+                    Color::White => self.bb_mut_pair(Piece::WP, Piece::WQ),
+                    Color::Black => self.bb_mut_pair(Piece::BP, Piece::BQ),
+                };
+
+                *pawn_bb ^= to_mask;
+                *promo_bb ^= to_mask;
+            }
+            _ => {}
+        }
         self.build_occupancy();
     }
 
@@ -202,6 +244,21 @@ impl Board {
 
     pub fn bb(&self, piece: Piece) -> u64 {
         self.bitboards[piece as usize]
+    }
+
+    fn bb_mut_pair(&mut self, a: Piece, b: Piece) -> (&mut u64, &mut u64) {
+        let ai = a as usize;
+        let bi = b as usize;
+
+        assert!(ai != bi);
+
+        if ai < bi {
+            let (left, right) = self.bitboards.split_at_mut(bi);
+            (&mut left[ai], &mut right[0])
+        } else {
+            let (left, right) = self.bitboards.split_at_mut(ai);
+            (&mut right[0], &mut left[bi])
+        }
     }
 }
 
@@ -321,10 +378,10 @@ impl Board {
 
             // Handling Quiet Promotions
             if (1u64 << to) & end_pos != 0 {
-                moves.push(Move::new(from, to, MoveFlag::PromoRook));
                 moves.push(Move::new(from, to, MoveFlag::PromoKnight));
-                moves.push(Move::new(from, to, MoveFlag::PromoBishop));
+                moves.push(Move::new(from, to, MoveFlag::PromoRook));
                 moves.push(Move::new(from, to, MoveFlag::PromoQueen));
+                moves.push(Move::new(from, to, MoveFlag::PromoBishop));
             } else {
                 moves.push(Move::new(from, to, MoveFlag::Quiet));
             }
@@ -341,16 +398,15 @@ impl Board {
         let enemy = self.occ(&self.side_to_move.opponent());
 
         while let Some(from) = pop_lsb(&mut bb) {
-
             let mut atk = attacks[from] & enemy;
 
             while let Some(to) = pop_lsb(&mut atk) {
                 // Handling Capture Promotions
                 if (1u64 << to) & end_pos != 0 {
-                    moves.push(Move::new(from, to, MoveFlag::PromoCapRook));
                     moves.push(Move::new(from, to, MoveFlag::PromoCapKnight));
-                    moves.push(Move::new(from, to, MoveFlag::PromoCapBishop));
+                    moves.push(Move::new(from, to, MoveFlag::PromoCapRook));
                     moves.push(Move::new(from, to, MoveFlag::PromoCapQueen));
+                    moves.push(Move::new(from, to, MoveFlag::PromoCapBishop));
                 } else {
                     moves.push(Move::new(from, to, MoveFlag::Capture));
                 }

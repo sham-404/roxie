@@ -68,7 +68,11 @@ fn main() {
                     .iter()
                     .any(|mv| mv.from == from.index() && mv.to == to.index())
                 {
-                    board.move_piece(from.index(), to.index());
+                    let mov = moves
+                        .iter()
+                        .find(|&mv| mv.from == from.index() && mv.to == to.index())
+                        .unwrap();
+                    board.move_piece(mov);
 
                     let bb = board
                         .gen_moves()
