@@ -1,6 +1,6 @@
 mod board;
 mod square;
-mod movegen;
+mod items;
 
 use crate::board::Board;
 use crate::square::Square;
