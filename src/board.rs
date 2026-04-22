@@ -41,6 +41,49 @@ pub const KNIGHT_ATTACKS: [u64; 64] = [
     0x44280000000000,   0x0088500000000000, 0x0010a00000000000, 0x20400000000000,
 ];
 
+#[rustfmt::skip]
+pub const WHITE_PAWN_ATTACKS: [u64; 64] = [
+    0x200,              0x500,              0xa00,              0x1400,
+    0x2800,             0x5000,             0xa000,             0x4000,
+    0x20000,            0x50000,            0xa0000,            0x140000,
+    0x280000,           0x500000,           0xa00000,           0x400000,
+    0x2000000,          0x5000000,          0xa000000,          0x14000000,
+    0x28000000,         0x50000000,         0xa0000000,         0x40000000,
+    0x200000000,        0x500000000,        0xa00000000,        0x1400000000,
+    0x2800000000,       0x5000000000,       0xa000000000,       0x4000000000,
+    0x20000000000,      0x50000000000,      0xa0000000000,      0x140000000000,
+    0x280000000000,     0x500000000000,     0xa00000000000,     0x400000000000,
+    0x2000000000000,    0x5000000000000,    0xa000000000000,    0x14000000000000,
+    0x28000000000000,   0x50000000000000,   0xa0000000000000,   0x40000000000000,
+    0x200000000000000,  0x500000000000000,  0xa00000000000000,  0x1400000000000000,
+    0x2800000000000000, 0x5000000000000000, 0xa000000000000000, 0x4000000000000000,
+    0x0,                0x0,                0x0,                0x0,
+    0x0,                0x0,                0x0,                0x0,
+];
+
+#[rustfmt::skip]
+pub const BLACK_PAWN_ATTACKS: [u64; 64] = [
+    0x0,              0x0,              0x0,              0x0,
+    0x0,              0x0,              0x0,              0x0,
+    0x2,              0x5,              0xa,              0x14,
+    0x28,             0x50,             0xa0,             0x40,
+    0x200,            0x500,            0xa00,            0x1400,
+    0x2800,           0x5000,           0xa000,           0x4000,
+    0x20000,          0x50000,          0xa0000,          0x140000,
+    0x280000,         0x500000,         0xa00000,         0x400000,
+    0x2000000,        0x5000000,        0xa000000,        0x14000000,
+    0x28000000,       0x50000000,       0xa0000000,       0x40000000,
+    0x200000000,      0x500000000,      0xa00000000,      0x1400000000,
+    0x2800000000,     0x5000000000,     0xa000000000,     0x4000000000,
+    0x20000000000,    0x50000000000,    0xa0000000000,    0x140000000000,
+    0x280000000000,   0x500000000000,   0xa00000000000,   0x400000000000,
+    0x2000000000000,  0x5000000000000,  0xa000000000000,  0x14000000000000,
+    0x28000000000000, 0x50000000000000, 0xa0000000000000, 0x40000000000000,
+];
+
+pub const RANK2: u64 = 0x000000000000FF00;
+pub const RANK7: u64 = 0x00FF000000000000;
+
 #[inline]
 pub fn pop_lsb(bb: &mut u64) -> Option<usize> {
     if *bb == 0 {
@@ -67,7 +110,7 @@ impl Board {
     pub fn new() -> Self {
         let mut bitboards = [0u64; 12];
 
-        // White pieces
+        // Black pieces
         bitboards[Piece::BP as usize] = 0x00FF000000000000;
         bitboards[Piece::BN as usize] = 0x4200000000000000;
         bitboards[Piece::BB as usize] = 0x2400000000000000;
@@ -75,7 +118,7 @@ impl Board {
         bitboards[Piece::BQ as usize] = 0x0800000000000000;
         bitboards[Piece::BK as usize] = 0x1000000000000000;
 
-        // Black pieces
+        // White pieces
         bitboards[Piece::WP as usize] = 0xFF00;
         bitboards[Piece::WN as usize] = 0x0042;
         bitboards[Piece::WB as usize] = 0x0024;
@@ -93,6 +136,24 @@ impl Board {
 
         board.build_occupancy();
         board
+    }
+
+    fn build_occupancy(&mut self) {
+        self.occupancy[WHITE] = self.bb(Piece::WP)
+            | self.bb(Piece::WN)
+            | self.bb(Piece::WB)
+            | self.bb(Piece::WR)
+            | self.bb(Piece::WQ)
+            | self.bb(Piece::WK);
+
+        self.occupancy[BLACK] = self.bb(Piece::BP)
+            | self.bb(Piece::BN)
+            | self.bb(Piece::BB)
+            | self.bb(Piece::BR)
+            | self.bb(Piece::BQ)
+            | self.bb(Piece::BK);
+
+        self.occupancy[BOTH] = self.occupancy[WHITE] | self.occupancy[BLACK];
     }
 
     pub fn move_piece(&mut self, from: usize, to: usize) {
@@ -133,22 +194,8 @@ impl Board {
         }
     }
 
-    fn build_occupancy(&mut self) {
-        self.occupancy[WHITE] = self.bb(Piece::WP)
-            | self.bb(Piece::WN)
-            | self.bb(Piece::WB)
-            | self.bb(Piece::WR)
-            | self.bb(Piece::WQ)
-            | self.bb(Piece::WK);
-
-        self.occupancy[BLACK] = self.bb(Piece::BP)
-            | self.bb(Piece::BN)
-            | self.bb(Piece::BB)
-            | self.bb(Piece::BR)
-            | self.bb(Piece::BQ)
-            | self.bb(Piece::BK);
-
-        self.occupancy[BOTH] = self.occupancy[WHITE] | self.occupancy[BLACK];
+    pub fn all_occ(&self) -> u64 {
+        self.occupancy[BOTH]
     }
 
     pub fn bb(&self, piece: Piece) -> u64 {
@@ -161,13 +208,15 @@ impl Board {
     pub fn gen_moves(&self) -> Vec<Move> {
         let mut moves: Vec<Move> = Vec::new();
 
-        self.gen_king_attack(&mut moves);
-        self.gen_knight_attack(&mut moves);
+        self.gen_king_moves(&mut moves);
+        self.gen_knight_moves(&mut moves);
+        self.gen_pawn_moves(&mut moves);
 
         let (bishop_bb, rook_bb, queen_bb) = match self.side_to_move {
             Color::White => (self.bb(Piece::WB), self.bb(Piece::WR), self.bb(Piece::WQ)),
             Color::Black => (self.bb(Piece::BB), self.bb(Piece::BR), self.bb(Piece::BQ)),
         };
+
         const ROOK_DIRS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
         const BISHOP_DIRS: [(i32, i32); 4] = [(1, 1), (1, -1), (-1, 1), (-1, -1)];
         const QUEEN_DIRS: [(i32, i32); 8] = [
@@ -188,7 +237,7 @@ impl Board {
         moves
     }
 
-    pub fn gen_king_attack(&self, moves: &mut Vec<Move>) {
+    pub fn gen_king_moves(&self, moves: &mut Vec<Move>) {
         let piece = match self.side_to_move {
             Color::White => Piece::WK,
             Color::Black => Piece::BK,
@@ -214,7 +263,7 @@ impl Board {
         }
     }
 
-    pub fn gen_knight_attack(&self, moves: &mut Vec<Move>) {
+    pub fn gen_knight_moves(&self, moves: &mut Vec<Move>) {
         let piece = match self.side_to_move {
             Color::White => Piece::WN,
             Color::Black => Piece::BN,
@@ -240,12 +289,76 @@ impl Board {
         }
     }
 
-    pub fn gen_sliding_moves(
-        &self,
-        moves: &mut Vec<Move>,
-        mut bb: u64,
-        directions: &[(i32, i32)],
-    ) {
+    pub fn gen_pawn_moves(&self, moves: &mut Vec<Move>) {
+        let (piece, start_pos, end_pos, attacks, dir) = match self.side_to_move {
+            Color::White => (Piece::WP, RANK2, RANK7 << 2, WHITE_PAWN_ATTACKS, 8i8),
+            Color::Black => (Piece::BP, RANK7, RANK2 >> 2, BLACK_PAWN_ATTACKS, -8i8),
+        };
+
+        let pawn_bb = self.bb(piece);
+        let empty = !self.all_occ();
+
+        // forward pawn moves
+        let (mut single, mut double) = match piece {
+            Piece::WP => {
+                let single = (pawn_bb << 8) & empty;
+                let double = ((pawn_bb & start_pos) << 16) & empty & (empty << 8);
+                (single, double)
+            }
+            Piece::BP => {
+                let single = (pawn_bb >> 8) & empty;
+                let double = ((pawn_bb & start_pos) >> 16) & empty & (empty >> 8);
+                (single, double)
+            }
+            _ => unreachable!(),
+        };
+
+        // Single push
+        while let Some(to) = pop_lsb(&mut single) {
+            let from = (to as i8 - dir) as usize;
+
+            // Handling Quiet Promotions
+            if from as u64 & end_pos != 0 {
+                moves.push(Move::new(from, to, MoveFlag::PromoRook));
+                moves.push(Move::new(from, to, MoveFlag::PromoKnight));
+                moves.push(Move::new(from, to, MoveFlag::PromoBishop));
+                moves.push(Move::new(from, to, MoveFlag::PromoQueen));
+            } else {
+                moves.push(Move::new(from, to, MoveFlag::Quiet));
+            }
+        }
+
+        // Double push
+        while let Some(to) = pop_lsb(&mut double) {
+            let from = (to as i8 - (2 * dir)) as usize;
+            moves.push(Move::new(from, to, MoveFlag::Quiet));
+        }
+
+        // Captures
+        let mut bb = pawn_bb;
+        while let Some(from) = pop_lsb(&mut bb) {
+            let to_move = &self.side_to_move;
+            let occ = self.occ(to_move);
+
+            let mut atk = attacks[from] & !occ;
+
+            while let Some(to) = pop_lsb(&mut atk) {
+                if (1 << to) & self.occ(&self.side_to_move.opponent()) != 0 {
+                    // Handling Capture Promotions
+                    if from as u64 & end_pos != 0 {
+                        moves.push(Move::new(from, to, MoveFlag::PromoCapRook));
+                        moves.push(Move::new(from, to, MoveFlag::PromoCapKnight));
+                        moves.push(Move::new(from, to, MoveFlag::PromoCapBishop));
+                        moves.push(Move::new(from, to, MoveFlag::PromoCapQueen));
+                    } else {
+                        moves.push(Move::new(from, to, MoveFlag::Capture));
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn gen_sliding_moves(&self, moves: &mut Vec<Move>, mut bb: u64, directions: &[(i32, i32)]) {
         let own_occ = self.occ(&self.side_to_move);
         let enemy_occ = self.occ(&self.side_to_move.opponent());
 

@@ -69,11 +69,15 @@ fn main() {
                     .any(|mv| mv.from == from.index() && mv.to == to.index())
                 {
                     board.move_piece(from.index(), to.index());
-                    board.print_many(vec![board.render_board()]);
+
+                    let bb = board
+                        .gen_moves()
+                        .iter()
+                        .fold(0u64, |acc, mv| acc | (1u64 << mv.to));
+                    board.print_many(vec![board.render_board(), board.render_bitboard(bb)]);
                 } else {
                     println!("Invalid move")
                 }
-
             }
 
             _ => {
