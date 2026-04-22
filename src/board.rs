@@ -83,6 +83,8 @@ pub const BLACK_PAWN_ATTACKS: [u64; 64] = [
 
 pub const RANK2: u64 = 0x000000000000FF00;
 pub const RANK7: u64 = 0x00FF000000000000;
+pub const RANK8: u64 = 0xFF00000000000000;
+pub const RANK1: u64 = 0x00000000000000FF;
 
 #[inline]
 pub fn pop_lsb(bb: &mut u64) -> Option<usize> {
@@ -291,8 +293,8 @@ impl Board {
 
     pub fn gen_pawn_moves(&self, moves: &mut Vec<Move>) {
         let (piece, start_pos, end_pos, attacks, dir) = match self.side_to_move {
-            Color::White => (Piece::WP, RANK2, RANK7 << 2, WHITE_PAWN_ATTACKS, 8i8),
-            Color::Black => (Piece::BP, RANK7, RANK2 >> 2, BLACK_PAWN_ATTACKS, -8i8),
+            Color::White => (Piece::WP, RANK2, RANK8, WHITE_PAWN_ATTACKS, 8i8),
+            Color::Black => (Piece::BP, RANK7, RANK1, BLACK_PAWN_ATTACKS, -8i8),
         };
 
         let pawn_bb = self.bb(piece);
@@ -318,7 +320,7 @@ impl Board {
             let from = (to as i8 - dir) as usize;
 
             // Handling Quiet Promotions
-            if from as u64 & end_pos != 0 {
+            if (1u64 << to) & end_pos != 0 {
                 moves.push(Move::new(from, to, MoveFlag::PromoRook));
                 moves.push(Move::new(from, to, MoveFlag::PromoKnight));
                 moves.push(Move::new(from, to, MoveFlag::PromoBishop));
@@ -336,23 +338,21 @@ impl Board {
 
         // Captures
         let mut bb = pawn_bb;
-        while let Some(from) = pop_lsb(&mut bb) {
-            let to_move = &self.side_to_move;
-            let occ = self.occ(to_move);
+        let enemy = self.occ(&self.side_to_move.opponent());
 
-            let mut atk = attacks[from] & !occ;
+        while let Some(from) = pop_lsb(&mut bb) {
+
+            let mut atk = attacks[from] & enemy;
 
             while let Some(to) = pop_lsb(&mut atk) {
-                if (1 << to) & self.occ(&self.side_to_move.opponent()) != 0 {
-                    // Handling Capture Promotions
-                    if from as u64 & end_pos != 0 {
-                        moves.push(Move::new(from, to, MoveFlag::PromoCapRook));
-                        moves.push(Move::new(from, to, MoveFlag::PromoCapKnight));
-                        moves.push(Move::new(from, to, MoveFlag::PromoCapBishop));
-                        moves.push(Move::new(from, to, MoveFlag::PromoCapQueen));
-                    } else {
-                        moves.push(Move::new(from, to, MoveFlag::Capture));
-                    }
+                // Handling Capture Promotions
+                if (1u64 << to) & end_pos != 0 {
+                    moves.push(Move::new(from, to, MoveFlag::PromoCapRook));
+                    moves.push(Move::new(from, to, MoveFlag::PromoCapKnight));
+                    moves.push(Move::new(from, to, MoveFlag::PromoCapBishop));
+                    moves.push(Move::new(from, to, MoveFlag::PromoCapQueen));
+                } else {
+                    moves.push(Move::new(from, to, MoveFlag::Capture));
                 }
             }
         }
