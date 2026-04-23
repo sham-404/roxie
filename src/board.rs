@@ -622,7 +622,7 @@ impl Board {
                 for i in 0..12 {
                     if (self.bitboards[i] >> sq) & 1 == 1 {
                         let piece = Piece::from_val(i);
-                        row.push_str(&format!("│ {} ", Piece::piece_to_char(piece)));
+                        row.push_str(&format!("│ {} ", Piece::piece_to_glyph(piece)));
                         found = true;
                         break;
                     }

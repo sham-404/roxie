@@ -16,6 +16,7 @@ pub enum Piece {
     BK,
 }
 
+#[allow(dead_code)]
 impl Piece {
     pub fn piece_to_char(piece: Piece) -> char {
         match piece {
@@ -32,6 +33,24 @@ impl Piece {
             Piece::BR => 'r',
             Piece::BQ => 'q',
             Piece::BK => 'k',
+        }
+    }
+
+    pub fn piece_to_glyph(piece: Piece) -> &'static str {
+        match piece {
+            Piece::WP => "♟",
+            Piece::WN => "♞",
+            Piece::WB => "♝",
+            Piece::WR => "♜",
+            Piece::WQ => "♛",
+            Piece::WK => "♚",
+
+            Piece::BP => "♙",
+            Piece::BN => "♘",
+            Piece::BB => "♗",
+            Piece::BR => "♖",
+            Piece::BQ => "♕",
+            Piece::BK => "♔",
         }
     }
 
@@ -102,10 +121,9 @@ impl Undo {
     pub fn new(captured: Option<Piece>, ensq: Option<u8>) -> Self {
         Self {
             captured,
-            en_passant_sq: ensq
+            en_passant_sq: ensq,
         }
     }
-    
 }
 
 #[repr(u8)]
