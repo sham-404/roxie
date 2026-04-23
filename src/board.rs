@@ -161,96 +161,86 @@ impl Board {
     }
 
     pub fn make_move(&mut self, mov: &Move) {
-
+        // Actually moving the piece
         let (from, to) = (Square::new(mov.from), Square::new(mov.to));
 
         let from_mask = 1u64 << from.index();
         let to_mask = 1u64 << to.index();
 
         // Handling captures
-        for p in 0..12 {
-            if to_mask & self.bitboards[p] != 0 {
-                self.bitboards[p] ^= to_mask;
-                break;
+        if mov.flag != MoveFlag::EnPassant {
+            for p in 0..12 {
+                if to_mask & self.bitboards[p] != 0 {
+                    self.bitboards[p] ^= to_mask;
+                    break;
+                }
             }
         }
 
         for n in 0..12 {
             let piece = &mut self.bitboards[n];
             if from_mask & *piece != 0 {
-                *piece ^= from_mask;
-                *piece ^= to_mask;
+                *piece &= !from_mask;
+                *piece |= to_mask;
 
                 break;
             }
         }
 
         // Handling Special Moves (for piece state)
-        match mov.flag {
-            MoveFlag::PromoKnight | MoveFlag::PromoCapKnight => {
-                let (pawn_bb, promo_bb) = match self.side_to_move {
-                    Color::White => self.bb_mut_pair(Piece::WP, Piece::WN),
-                    Color::Black => self.bb_mut_pair(Piece::BP, Piece::BN),
-                };
+        // En passant
+        if mov.flag == MoveFlag::EnPassant {
+            let captured_sq = match self.side_to_move {
+                Color::White => mov.to - 8,
+                Color::Black => mov.to + 8,
+            };
 
-                *pawn_bb ^= to_mask;
-                *promo_bb ^= to_mask;
-            }
+            let enemy_pawn_bb = match self.side_to_move {
+                Color::White => self.mut_bb(Piece::BP),
+                Color::Black => self.mut_bb(Piece::WP),
+            };
 
-            MoveFlag::PromoBishop | MoveFlag::PromoCapBishop => {
-                let (pawn_bb, promo_bb) = match self.side_to_move {
-                    Color::White => self.bb_mut_pair(Piece::WP, Piece::WB),
-                    Color::Black => self.bb_mut_pair(Piece::BP, Piece::BB),
-                };
-
-                *pawn_bb ^= to_mask;
-                *promo_bb ^= to_mask;
-            }
-
-            MoveFlag::PromoRook | MoveFlag::PromoCapRook => {
-                let (pawn_bb, promo_bb) = match self.side_to_move {
-                    Color::White => self.bb_mut_pair(Piece::WP, Piece::WR),
-                    Color::Black => self.bb_mut_pair(Piece::BP, Piece::BR),
-                };
-
-                *pawn_bb ^= to_mask;
-                *promo_bb ^= to_mask;
-            }
-
-            MoveFlag::PromoQueen | MoveFlag::PromoCapQueen => {
-                let (pawn_bb, promo_bb) = match self.side_to_move {
-                    Color::White => self.bb_mut_pair(Piece::WP, Piece::WQ),
-                    Color::Black => self.bb_mut_pair(Piece::BP, Piece::BQ),
-                };
-
-                *pawn_bb ^= to_mask;
-                *promo_bb ^= to_mask;
-            }
-
-            MoveFlag::EnPassant => {
-                let enemy_pawn_bb = match self.side_to_move {
-                    Color::White => self.mut_bb(Piece::BP),
-                    Color::Black => self.mut_bb(Piece::WP),
-                };
-
-                let captured_sq = (mov.from / 8) * 8 + (mov.to % 8);
-
-                *enemy_pawn_bb ^= 1u64 << captured_sq;
-            }
-
-            _ => {}
+            *enemy_pawn_bb &= !(1u64 << captured_sq);
         }
 
+        // Promotions
+        let promo_piece = match self.side_to_move {
+            Color::White => match mov.flag {
+                MoveFlag::PromoKnight | MoveFlag::PromoCapKnight => Some(Piece::WN),
+                MoveFlag::PromoBishop | MoveFlag::PromoCapBishop => Some(Piece::WB),
+                MoveFlag::PromoRook | MoveFlag::PromoCapRook => Some(Piece::WR),
+                MoveFlag::PromoQueen | MoveFlag::PromoCapQueen => Some(Piece::WQ),
+                _ => None,
+            },
+            Color::Black => match mov.flag {
+                MoveFlag::PromoKnight | MoveFlag::PromoCapKnight => Some(Piece::BN),
+                MoveFlag::PromoBishop | MoveFlag::PromoCapBishop => Some(Piece::BB),
+                MoveFlag::PromoRook | MoveFlag::PromoCapRook => Some(Piece::BR),
+                MoveFlag::PromoQueen | MoveFlag::PromoCapQueen => Some(Piece::BQ),
+                _ => None,
+            },
+        };
 
-        // Post move activities
-        self.build_occupancy();
+        if let Some(promo) = promo_piece {
+            let pawn = match self.side_to_move {
+                Color::White => Piece::WP,
+                Color::Black => Piece::BP,
+            };
+
+            let (pawn_bb, promo_bb) = self.mut_bb_pair(pawn, promo);
+
+            *pawn_bb &= !from_mask;
+            *promo_bb |= to_mask;
+        }
 
         // Handling Special moves (for board state)
-        self.en_passant = None;
         self.en_passant = match mov.flag {
             MoveFlag::DoublePush => Some(((mov.from + mov.to) / 2) as u8),
             _ => None,
         };
+
+        // Post move activities
+        self.build_occupancy();
 
         self.side_to_move = self.side_to_move.opponent();
     }
@@ -308,8 +298,8 @@ impl Board {
                             return true;
                         }
                         // return true if the blocking piece is an enemy rook,
-                        // bishop or a queen, else break the loop as we have 
-                        // been blocked by our own piece, or an non sliding 
+                        // bishop or a queen, else break the loop as we have
+                        // been blocked by our own piece, or an non sliding
                         // enemy piece
 
                         break;
@@ -368,7 +358,7 @@ impl Board {
         &mut self.bitboards[piece as usize]
     }
 
-    fn bb_mut_pair(&mut self, a: Piece, b: Piece) -> (&mut u64, &mut u64) {
+    fn mut_bb_pair(&mut self, a: Piece, b: Piece) -> (&mut u64, &mut u64) {
         let ai = a as usize;
         let bi = b as usize;
 

@@ -36,7 +36,7 @@ impl Piece {
     }
 
     pub fn from_val(val: usize) -> Self {
-        let piece = match val {
+        match val {
             0 => Piece::WP,
             1 => Piece::WN,
             2 => Piece::WB,
@@ -51,15 +51,13 @@ impl Piece {
             10 => Piece::BQ,
             11 => Piece::BK,
             _ => unreachable!(),
-        };
-
-        piece
+        }
     }
 }
 
 #[allow(dead_code)]
 #[repr(u8)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum MoveFlag {
     Quiet = 0b0000,
     DoublePush = 0b0001,
