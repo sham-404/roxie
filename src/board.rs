@@ -101,7 +101,8 @@ pub fn pop_lsb(bb: &mut u64) -> Option<usize> {
 pub struct Board {
     bitboards: [u64; 12],
     occupancy: [u64; 3],
-    pub side_to_move: Color,
+    side_to_move: Color,
+    en_passant: Option<u8>,
 }
 
 const WHITE: usize = 0;
@@ -134,6 +135,7 @@ impl Board {
             bitboards,
             occupancy,
             side_to_move: Color::White,
+            en_passant: None,
         };
 
         board.build_occupancy();
@@ -187,7 +189,7 @@ impl Board {
             }
         }
 
-        // Handling Special Moves
+        // Handling Special Moves (for piece state)
         match mov.flag {
             MoveFlag::PromoKnight | MoveFlag::PromoCapKnight => {
                 let (pawn_bb, promo_bb) = match self.side_to_move {
@@ -208,6 +210,7 @@ impl Board {
                 *pawn_bb ^= to_mask;
                 *promo_bb ^= to_mask;
             }
+
             MoveFlag::PromoRook | MoveFlag::PromoCapRook => {
                 let (pawn_bb, promo_bb) = match self.side_to_move {
                     Color::White => self.bb_mut_pair(Piece::WP, Piece::WR),
@@ -217,6 +220,7 @@ impl Board {
                 *pawn_bb ^= to_mask;
                 *promo_bb ^= to_mask;
             }
+
             MoveFlag::PromoQueen | MoveFlag::PromoCapQueen => {
                 let (pawn_bb, promo_bb) = match self.side_to_move {
                     Color::White => self.bb_mut_pair(Piece::WP, Piece::WQ),
@@ -226,9 +230,37 @@ impl Board {
                 *pawn_bb ^= to_mask;
                 *promo_bb ^= to_mask;
             }
+
+            MoveFlag::EnPassant => {
+                let enemy_pawn_bb = match self.side_to_move {
+                    Color::White => self.mut_bb(Piece::BP),
+                    Color::Black => self.mut_bb(Piece::WP),
+                };
+
+                let captured_sq = (mov.from / 8) * 8 + (mov.to % 8);
+
+                *enemy_pawn_bb ^= 1u64 << captured_sq;
+            }
+
             _ => {}
         }
         self.build_occupancy();
+    }
+
+    pub fn make_move(&mut self, mov: &Move) {
+        self.move_piece(mov);
+
+        // Post move activities
+
+        // Handling Special moves (for board state)
+        self.en_passant = None;
+        match mov.flag {
+            MoveFlag::DoublePush => self.en_passant = Some(((mov.from + mov.to) / 2) as u8),
+            _ => {}
+        }
+
+        self.side_to_move = self.side_to_move.opponent();
+        println!("{:#?}", mov);
     }
 
     pub fn occ(&self, color: &Color) -> u64 {
@@ -244,6 +276,10 @@ impl Board {
 
     pub fn bb(&self, piece: Piece) -> u64 {
         self.bitboards[piece as usize]
+    }
+
+    pub fn mut_bb(&mut self, piece: Piece) -> &mut u64 {
+        &mut self.bitboards[piece as usize]
     }
 
     fn bb_mut_pair(&mut self, a: Piece, b: Piece) -> (&mut u64, &mut u64) {
@@ -390,7 +426,7 @@ impl Board {
         // Double push
         while let Some(to) = pop_lsb(&mut double) {
             let from = (to as i8 - (2 * dir)) as usize;
-            moves.push(Move::new(from, to, MoveFlag::Quiet));
+            moves.push(Move::new(from, to, MoveFlag::DoublePush));
         }
 
         // Captures
@@ -398,11 +434,26 @@ impl Board {
         let enemy = self.occ(&self.side_to_move.opponent());
 
         while let Some(from) = pop_lsb(&mut bb) {
-            let mut atk = attacks[from] & enemy;
+            // To include en_passant sq, as there wont be any enemy there
+            // (must be handled explicitely while creating the Move)
+            let target = match self.en_passant {
+                Some(sq) => enemy | (1u64 << sq),
+                None => enemy,
+            };
+
+            let mut atk = attacks[from] & target;
 
             while let Some(to) = pop_lsb(&mut atk) {
-                // Handling Capture Promotions
+                // Handling en_passant
+                if let Some(sq) = self.en_passant {
+                    if sq as usize == to {
+                        moves.push(Move::new(from, to, MoveFlag::EnPassant));
+                        continue;
+                    }
+                }
+
                 if (1u64 << to) & end_pos != 0 {
+                    // Handling Capture Promotions
                     moves.push(Move::new(from, to, MoveFlag::PromoCapKnight));
                     moves.push(Move::new(from, to, MoveFlag::PromoCapRook));
                     moves.push(Move::new(from, to, MoveFlag::PromoCapQueen));

@@ -59,6 +59,7 @@ impl Piece {
 
 #[allow(dead_code)]
 #[repr(u8)]
+#[derive(Debug)]
 pub enum MoveFlag {
     Quiet = 0b0000,
     DoublePush = 0b0001,
@@ -80,6 +81,7 @@ pub enum MoveFlag {
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct Move {
     pub from: usize,
     pub to: usize,

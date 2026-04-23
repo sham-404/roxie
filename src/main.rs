@@ -72,7 +72,7 @@ fn main() {
                         .iter()
                         .find(|&mv| mv.from == from.index() && mv.to == to.index())
                         .unwrap();
-                    board.move_piece(mov);
+                    board.make_move(mov);
 
                     let bb = board
                         .gen_moves()
