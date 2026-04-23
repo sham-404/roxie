@@ -260,7 +260,100 @@ impl Board {
         }
 
         self.side_to_move = self.side_to_move.opponent();
-        println!("{:#?}", mov);
+    }
+
+    fn is_square_atacked(&self, pos: usize, cur_color: &Color) -> bool {
+        let all_occ = self.all_occ();
+
+        let (en_pawn, en_king, en_queen, en_bishop, en_rook, en_knight) = match cur_color {
+            Color::White => (
+                self.bb(Piece::BP),
+                self.bb(Piece::BK),
+                self.bb(Piece::BQ),
+                self.bb(Piece::BB),
+                self.bb(Piece::BR),
+                self.bb(Piece::BN),
+            ),
+            Color::Black => (
+                self.bb(Piece::WP),
+                self.bb(Piece::WK),
+                self.bb(Piece::WQ),
+                self.bb(Piece::WB),
+                self.bb(Piece::WR),
+                self.bb(Piece::WN),
+            ),
+        };
+
+        // Sliding pieces
+        let directions = [
+            ([(1, 1), (1, -1), (-1, 1), (-1, -1)], true), // diagonals
+            ([(1, 0), (-1, 0), (0, 1), (0, -1)], false),  // straight
+        ];
+        let from = Square::new(pos);
+
+        for (dir, is_diag) in directions {
+            for (dr, df) in dir {
+                let mut sq = from;
+
+                while let Some(next) = sq.offset(dr, df) {
+                    let to_bb = 1u64 << next.index();
+
+                    // Some piece is blocking our way
+                    if to_bb & all_occ != 0 {
+                        // Enemy queen attacks
+                        if en_queen & to_bb != 0 {
+                            return true;
+                        }
+
+                        // Enemy bishop attacks
+                        if (en_bishop & to_bb != 0) && is_diag {
+                            return true;
+                        }
+
+                        // Enemy rook attacks
+                        if (en_rook & to_bb != 0) && !is_diag {
+                            return true;
+                        }
+                        // return true if the blocking piece is an enemy rook,
+                        // bishop or a queen, else break the loop as we have 
+                        // been blocked by our own piece, or an non sliding 
+                        // enemy piece
+
+                        break;
+                    }
+                    sq = next;
+                }
+            }
+        }
+
+        // Knights
+        let possible_knight_atk_sq = KNIGHT_ATTACKS[pos];
+
+        // Enemy knight is attacking
+        if en_knight & possible_knight_atk_sq != 0 {
+            return true;
+        }
+
+        // King
+        let possible_king_atk_sq = KING_ATTACKS[pos];
+
+        // Enemy King attacks
+        if en_king & possible_king_atk_sq != 0 {
+            return true;
+        }
+
+        // if a opp pawn is in cur color pawn's attacking sq, then
+        // the opponent pawn is attacking the current sq
+        let possible_pawn_atk_sq = match cur_color {
+            Color::White => WHITE_PAWN_ATTACKS[pos],
+            Color::Black => BLACK_PAWN_ATTACKS[pos],
+        };
+
+        if en_pawn & possible_pawn_atk_sq != 0 {
+            return true;
+        }
+
+        false
     }
 
     pub fn occ(&self, color: &Color) -> u64 {
