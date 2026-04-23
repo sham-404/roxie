@@ -92,6 +92,22 @@ impl Move {
     }
 }
 
+#[derive(Debug)]
+pub struct Undo {
+    captured: Option<Piece>,
+    en_passant_sq: Option<u8>,
+}
+
+impl Undo {
+    pub fn new(captured: Option<Piece>, ensq: Option<u8>) -> Self {
+        Self {
+            captured,
+            en_passant_sq: ensq
+        }
+    }
+    
+}
+
 #[repr(u8)]
 pub enum Color {
     White,

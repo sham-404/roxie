@@ -160,22 +160,37 @@ impl Board {
         self.occupancy[BOTH] = self.occupancy[WHITE] | self.occupancy[BLACK];
     }
 
-    pub fn make_move(&mut self, mov: &Move) {
-        // Actually moving the piece
+    pub fn make_move(&mut self, mov: &Move) -> Undo {
+        ////// Actually moving the piece
         let (from, to) = (Square::new(mov.from), Square::new(mov.to));
 
         let from_mask = 1u64 << from.index();
         let to_mask = 1u64 << to.index();
 
-        // Handling captures
-        if mov.flag != MoveFlag::EnPassant {
-            for p in 0..12 {
-                if to_mask & self.bitboards[p] != 0 {
-                    self.bitboards[p] ^= to_mask;
-                    break;
-                }
+        debug_assert!(self.occupancy[BOTH] & from_mask != 0);
+
+        // Detecting captures
+        let (captured, captured_sq) = match mov.flag {
+            MoveFlag::EnPassant => {
+                let captured_sq = match self.side_to_move {
+                    Color::White => mov.to - 8,
+                    Color::Black => mov.to + 8,
+                };
+
+                (self.piece_on(captured_sq), captured_sq)
             }
+            _ => (self.piece_on(mov.to), mov.to),
+        };
+
+        // Constructing undo
+        let undo = Undo::new(captured, self.en_passant);
+
+        // Handling captures
+        if let Some(piece) = captured {
+            let bb = self.mut_bb(piece);
+            *bb &= !(1u64 << captured_sq);
         }
+
 
         for n in 0..12 {
             let piece = &mut self.bitboards[n];
@@ -188,21 +203,6 @@ impl Board {
         }
 
         // Handling Special Moves (for piece state)
-        // En passant
-        if mov.flag == MoveFlag::EnPassant {
-            let captured_sq = match self.side_to_move {
-                Color::White => mov.to - 8,
-                Color::Black => mov.to + 8,
-            };
-
-            let enemy_pawn_bb = match self.side_to_move {
-                Color::White => self.mut_bb(Piece::BP),
-                Color::Black => self.mut_bb(Piece::WP),
-            };
-
-            *enemy_pawn_bb &= !(1u64 << captured_sq);
-        }
-
         // Promotions
         let promo_piece = match self.side_to_move {
             Color::White => match mov.flag {
@@ -233,7 +233,7 @@ impl Board {
             *promo_bb |= to_mask;
         }
 
-        // Handling Special moves (for board state)
+        /////// Handling Special moves (for board state)
         self.en_passant = match mov.flag {
             MoveFlag::DoublePush => Some(((mov.from + mov.to) / 2) as u8),
             _ => None,
@@ -243,6 +243,8 @@ impl Board {
         self.build_occupancy();
 
         self.side_to_move = self.side_to_move.opponent();
+
+        undo
     }
 
     fn is_square_atacked(&self, pos: usize, cur_color: &Color) -> bool {
@@ -337,6 +339,19 @@ impl Board {
         }
 
         false
+    }
+
+    #[inline]
+    pub fn piece_on(&self, sq: usize) -> Option<Piece> {
+        let mask = 1u64 << sq;
+
+        for p in 0..12 {
+            if self.bitboards[p] & mask != 0 {
+                return Some(Piece::from_val(p));
+            }
+        }
+
+        None
     }
 
     pub fn occ(&self, color: &Color) -> u64 {
