@@ -160,16 +160,12 @@ impl Board {
         self.occupancy[BOTH] = self.occupancy[WHITE] | self.occupancy[BLACK];
     }
 
-    pub fn move_piece(&mut self, mov: &Move) {
+    pub fn make_move(&mut self, mov: &Move) {
+
         let (from, to) = (Square::new(mov.from), Square::new(mov.to));
 
         let from_mask = 1u64 << from.index();
         let to_mask = 1u64 << to.index();
-
-        // No piece in from
-        if self.occupancy[BOTH] & from_mask == 0 {
-            return;
-        }
 
         // Handling captures
         for p in 0..12 {
@@ -244,20 +240,17 @@ impl Board {
 
             _ => {}
         }
-        self.build_occupancy();
-    }
 
-    pub fn make_move(&mut self, mov: &Move) {
-        self.move_piece(mov);
 
         // Post move activities
+        self.build_occupancy();
 
         // Handling Special moves (for board state)
         self.en_passant = None;
-        match mov.flag {
-            MoveFlag::DoublePush => self.en_passant = Some(((mov.from + mov.to) / 2) as u8),
-            _ => {}
-        }
+        self.en_passant = match mov.flag {
+            MoveFlag::DoublePush => Some(((mov.from + mov.to) / 2) as u8),
+            _ => None,
+        };
 
         self.side_to_move = self.side_to_move.opponent();
     }
