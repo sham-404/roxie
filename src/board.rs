@@ -1,90 +1,6 @@
+use crate::r#const::*;
 use crate::items::*;
 use crate::square::Square;
-
-#[rustfmt::skip]
-const KING_ATTACKS: [u64; 64] = [
-    0x302,              0x705,              0xe0a,              0x1c14,
-    0x3828,             0x7050,             0xe0a0,             0xc040,
-    0x30203,            0x70507,            0xe0a0e,            0x1c141c,
-    0x382838,           0x705070,           0xe0a0e0,           0xc040c0,
-    0x3020300,          0x7050700,          0xe0a0e00,          0x1c141c00,
-    0x38283800,         0x70507000,         0xe0a0e000,         0xc040c000,
-    0x302030000,        0x705070000,        0xe0a0e0000,        0x1c141c0000,
-    0x3828380000,       0x7050700000,       0xe0a0e00000,       0xc040c00000,
-    0x30203000000,      0x70507000000,      0xe0a0e000000,      0x1c141c000000,
-    0x382838000000,     0x705070000000,     0xe0a0e0000000,     0xc040c0000000,
-    0x3020300000000,    0x7050700000000,    0xe0a0e00000000,    0x1c141c00000000,
-    0x38283800000000,   0x70507000000000,   0xe0a0e000000000,   0xc040c000000000,
-    0x302030000000000,  0x705070000000000,  0xe0a0e0000000000,  0x1c141c0000000000,
-    0x3828380000000000, 0x7050700000000000, 0xe0a0e00000000000, 0xc040c00000000000,
-    0x203000000000000,  0x507000000000000,  0xa0e000000000000,  0x141c000000000000,
-    0x2838000000000000, 0x5070000000000000, 0xa0e0000000000000, 0x40c0000000000000,
-];
-
-#[rustfmt::skip]
-pub const KNIGHT_ATTACKS: [u64; 64] = [
-    0x20400,            0x50800,            0xa1100,            0x142200,
-    0x284400,           0x508800,           0xa01000,           0x402000,
-    0x2040004,          0x5080008,          0xa110011,          0x14220022,
-    0x28440044,         0x50880088,         0xa0100010,         0x40200020,
-    0x204000402,        0x508000805,        0xa1100110a,        0x1422002214,
-    0x2844004428,       0x5088008850,       0xa0100010a0,       0x4020002040,
-    0x20400040200,      0x50800080500,      0xa1100110a00,      0x142200221400,
-    0x284400442800,     0x508800885000,     0xa0100010a000,     0x402000204000,
-    0x2040004020000,    0x5080008050000,    0xa1100110a0000,    0x14220022140000,
-    0x28440044280000,   0x50880088500000,   0xa0100010a00000,   0x40200020400000,
-    0x204000402000000,  0x508000805000000,  0xa1100110a000000,  0x1422002214000000,
-    0x2844004428000000, 0x5088008850000000, 0xa0100010a0000000, 0x4020002040000000,
-    0x400040200000000,  0x800080500000000,  0x1100110a00000000, 0x2200221400000000,
-    0x4400442800000000, 0x8800885000000000, 0x100010a000000000, 0x2000204000000000,
-    0x4020000000000,    0x8050000000000,    0x110a0000000000,   0x22140000000000,
-    0x44280000000000,   0x0088500000000000, 0x0010a00000000000, 0x20400000000000,
-];
-
-#[rustfmt::skip]
-pub const WHITE_PAWN_ATTACKS: [u64; 64] = [
-    0x200,              0x500,              0xa00,              0x1400,
-    0x2800,             0x5000,             0xa000,             0x4000,
-    0x20000,            0x50000,            0xa0000,            0x140000,
-    0x280000,           0x500000,           0xa00000,           0x400000,
-    0x2000000,          0x5000000,          0xa000000,          0x14000000,
-    0x28000000,         0x50000000,         0xa0000000,         0x40000000,
-    0x200000000,        0x500000000,        0xa00000000,        0x1400000000,
-    0x2800000000,       0x5000000000,       0xa000000000,       0x4000000000,
-    0x20000000000,      0x50000000000,      0xa0000000000,      0x140000000000,
-    0x280000000000,     0x500000000000,     0xa00000000000,     0x400000000000,
-    0x2000000000000,    0x5000000000000,    0xa000000000000,    0x14000000000000,
-    0x28000000000000,   0x50000000000000,   0xa0000000000000,   0x40000000000000,
-    0x200000000000000,  0x500000000000000,  0xa00000000000000,  0x1400000000000000,
-    0x2800000000000000, 0x5000000000000000, 0xa000000000000000, 0x4000000000000000,
-    0x0,                0x0,                0x0,                0x0,
-    0x0,                0x0,                0x0,                0x0,
-];
-
-#[rustfmt::skip]
-pub const BLACK_PAWN_ATTACKS: [u64; 64] = [
-    0x0,              0x0,              0x0,              0x0,
-    0x0,              0x0,              0x0,              0x0,
-    0x2,              0x5,              0xa,              0x14,
-    0x28,             0x50,             0xa0,             0x40,
-    0x200,            0x500,            0xa00,            0x1400,
-    0x2800,           0x5000,           0xa000,           0x4000,
-    0x20000,          0x50000,          0xa0000,          0x140000,
-    0x280000,         0x500000,         0xa00000,         0x400000,
-    0x2000000,        0x5000000,        0xa000000,        0x14000000,
-    0x28000000,       0x50000000,       0xa0000000,       0x40000000,
-    0x200000000,      0x500000000,      0xa00000000,      0x1400000000,
-    0x2800000000,     0x5000000000,     0xa000000000,     0x4000000000,
-    0x20000000000,    0x50000000000,    0xa0000000000,    0x140000000000,
-    0x280000000000,   0x500000000000,   0xa00000000000,   0x400000000000,
-    0x2000000000000,  0x5000000000000,  0xa000000000000,  0x14000000000000,
-    0x28000000000000, 0x50000000000000, 0xa0000000000000, 0x40000000000000,
-];
-
-pub const RANK2: u64 = 0x000000000000FF00;
-pub const RANK7: u64 = 0x00FF000000000000;
-pub const RANK8: u64 = 0xFF00000000000000;
-pub const RANK1: u64 = 0x00000000000000FF;
 
 #[inline]
 pub fn pop_lsb(bb: &mut u64) -> Option<usize> {
@@ -106,13 +22,11 @@ pub fn mask(idx: usize) -> u64 {
 pub struct Board {
     bitboards: [u64; 12],
     occupancy: [u64; 3],
+    castling: CastlingRights,
     side_to_move: Color,
     en_passant: Option<u8>,
 }
 
-const WHITE: usize = 0;
-const BLACK: usize = 1;
-const BOTH: usize = 2;
 
 impl Board {
     pub fn new() -> Self {
@@ -140,6 +54,7 @@ impl Board {
             bitboards,
             occupancy,
             side_to_move: Color::White,
+            castling: CastlingRights::new(),
             en_passant: None,
         };
 
@@ -169,8 +84,8 @@ impl Board {
         ////// Actually moving the piece
         let (from, to) = (Square::new(mov.from), Square::new(mov.to));
 
-        let from_mask = 1u64 << from.index();
-        let to_mask = 1u64 << to.index();
+        let from_mask = mask(from.index());
+        let to_mask = mask(to.index());
 
         debug_assert!(self.occupancy[BOTH] & from_mask != 0);
 
@@ -193,7 +108,7 @@ impl Board {
         // Handling captures
         if let Some(piece) = captured {
             let bb = self.mut_bb(piece);
-            *bb &= !(1u64 << captured_sq);
+            *bb &= !mask(captured_sq);
         }
 
         for n in 0..12 {
@@ -349,7 +264,7 @@ impl Board {
                 let mut sq = from;
 
                 while let Some(next) = sq.offset(dr, df) {
-                    let to_bb = 1u64 << next.index();
+                    let to_bb = mask(next.index());
 
                     // Some piece is blocking our way
                     if to_bb & all_occ != 0 {
@@ -411,7 +326,7 @@ impl Board {
 
     #[inline]
     pub fn piece_on(&self, sq: usize) -> Option<Piece> {
-        let mask = 1u64 << sq;
+        let mask = mask(sq);
 
         for p in 0..12 {
             if self.bitboards[p] & mask != 0 {
@@ -572,7 +487,7 @@ impl Board {
             let from = (to as i8 - dir) as usize;
 
             // Handling Quiet Promotions
-            if (1u64 << to) & end_pos != 0 {
+            if mask(to) & end_pos != 0 {
                 moves.push(Move::new(from, to, MoveFlag::PromoKnight));
                 moves.push(Move::new(from, to, MoveFlag::PromoRook));
                 moves.push(Move::new(from, to, MoveFlag::PromoQueen));
@@ -596,7 +511,7 @@ impl Board {
             // To include en_passant sq, as there wont be any enemy there
             // (must be handled explicitely while creating the Move)
             let target = match self.en_passant {
-                Some(sq) => enemy | (1u64 << sq),
+                Some(sq) => enemy | mask(sq as usize),
                 None => enemy,
             };
 
@@ -611,7 +526,7 @@ impl Board {
                     }
                 }
 
-                if (1u64 << to) & end_pos != 0 {
+                if mask(to) & end_pos != 0 {
                     // Handling Capture Promotions
                     moves.push(Move::new(from, to, MoveFlag::PromoCapKnight));
                     moves.push(Move::new(from, to, MoveFlag::PromoCapRook));
@@ -635,7 +550,7 @@ impl Board {
                 let mut sq = from;
 
                 while let Some(next) = sq.offset(dr, df) {
-                    let to_bb = 1u64 << next.index();
+                    let to_bb = mask(next.index());
 
                     // blocked by own piece
                     if to_bb & own_occ != 0 {
@@ -805,5 +720,40 @@ impl Board {
         lines.push("     a   b   c   d   e   f   g   h".to_string());
 
         lines
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct CastlingRights(pub u8);
+
+impl CastlingRights {
+    pub fn new() -> Self {
+        Self(WK | WQ | BK | BQ)
+    }
+
+    pub fn white_kingside(self) -> bool {
+        self.0 & WK != 0
+    }
+
+    pub fn white_queenside(self) -> bool {
+        self.0 & WQ != 0
+    }
+
+    pub fn black_kingside(self) -> bool {
+        self.0 & BK != 0
+    }
+
+    pub fn black_queenside(self) -> bool {
+        self.0 & BQ != 0
+    }
+
+    // remove rights
+    pub fn remove(&mut self, mask: u8) {
+        self.0 &= !mask;
+    }
+
+    // add rights
+    pub fn add(&mut self, mask: u8) {
+        self.0 |= mask;
     }
 }

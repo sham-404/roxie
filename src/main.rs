@@ -1,6 +1,7 @@
 mod board;
 mod items;
 mod square;
+mod r#const;
 
 use crate::board::Board;
 use crate::square::Square;
