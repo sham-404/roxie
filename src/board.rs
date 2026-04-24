@@ -16,7 +16,28 @@ pub fn pop_lsb(bb: &mut u64) -> Option<usize> {
 
 #[inline]
 pub fn mask(idx: usize) -> u64 {
-    1u64 << idx
+    #[rustfmt::skip]
+    const SQUARE_BB: [u64; 65] = [
+        0x1,                0x2,                0x4,                0x8,
+        0x10,               0x20,               0x40,               0x80,
+        0x100,              0x200,              0x400,              0x800,
+        0x1000,             0x2000,             0x4000,             0x8000,
+        0x10000,            0x20000,            0x40000,            0x80000,
+        0x100000,           0x200000,           0x400000,           0x800000,
+        0x1000000,          0x2000000,          0x4000000,          0x8000000,
+        0x10000000,         0x20000000,         0x40000000,         0x80000000,
+        0x100000000,        0x200000000,        0x400000000,        0x800000000,
+        0x1000000000,       0x2000000000,       0x4000000000,       0x8000000000,
+        0x10000000000,      0x20000000000,      0x40000000000,      0x80000000000,
+        0x100000000000,     0x200000000000,     0x400000000000,     0x800000000000,
+        0x1000000000000,    0x2000000000000,    0x4000000000000,    0x8000000000000,
+        0x10000000000000,   0x20000000000000,   0x40000000000000,   0x80000000000000,
+        0x100000000000000,  0x200000000000000,  0x400000000000000,  0x800000000000000,
+        0x1000000000000000, 0x2000000000000000, 0x4000000000000000, 0x8000000000000000,
+        0x0,
+    ];
+
+    SQUARE_BB[idx]
 }
 
 pub struct Board {
@@ -26,7 +47,6 @@ pub struct Board {
     side_to_move: Color,
     en_passant: Option<u8>,
 }
-
 
 impl Board {
     pub fn new() -> Self {
@@ -62,32 +82,8 @@ impl Board {
         board
     }
 
-    fn build_occupancy(&mut self) {
-        self.occupancy[WHITE] = self.bb(Piece::WP)
-            | self.bb(Piece::WN)
-            | self.bb(Piece::WB)
-            | self.bb(Piece::WR)
-            | self.bb(Piece::WQ)
-            | self.bb(Piece::WK);
-
-        self.occupancy[BLACK] = self.bb(Piece::BP)
-            | self.bb(Piece::BN)
-            | self.bb(Piece::BB)
-            | self.bb(Piece::BR)
-            | self.bb(Piece::BQ)
-            | self.bb(Piece::BK);
-
-        self.occupancy[BOTH] = self.occupancy[WHITE] | self.occupancy[BLACK];
-    }
-
     pub fn make_move(&mut self, mov: &Move) -> Undo {
-        ////// Actually moving the piece
-        let (from, to) = (Square::new(mov.from), Square::new(mov.to));
-
-        let from_mask = mask(from.index());
-        let to_mask = mask(to.index());
-
-        debug_assert!(self.occupancy[BOTH] & from_mask != 0);
+        debug_assert!(self.occupancy[BOTH] & mask(mov.from) != 0);
 
         // Detecting captures
         let (captured, captured_sq) = match mov.flag {
@@ -106,20 +102,12 @@ impl Board {
         let undo = Undo::new(captured, self.en_passant);
 
         // Handling captures
-        if let Some(piece) = captured {
-            let bb = self.mut_bb(piece);
-            *bb &= !mask(captured_sq);
+        if captured.is_some() {
+            self.remove_piece(captured_sq);
         }
 
-        for n in 0..12 {
-            let piece = &mut self.bitboards[n];
-            if from_mask & *piece != 0 {
-                *piece &= !from_mask;
-                *piece |= to_mask;
-
-                break;
-            }
-        }
+        // Moving the piece on the board
+        self.move_piece_quiet(mov.from, mov.to);
 
         // Handling Special Moves (for piece state)
         // Promotions
@@ -141,15 +129,11 @@ impl Board {
         };
 
         if let Some(promo) = promo_piece {
-            let pawn = match self.side_to_move {
-                Color::White => Piece::WP,
-                Color::Black => Piece::BP,
-            };
+            // Removing the pawn, which is in the promotion square
+            self.remove_piece(mov.to);
 
-            let (pawn_bb, promo_bb) = self.mut_bb_pair(pawn, promo);
-
-            *pawn_bb &= !from_mask;
-            *promo_bb |= to_mask;
+            // Adding the promotion piece
+            self.add_piece(promo, mov.to);
         }
 
         /////// Handling Special moves (for board state)
@@ -161,7 +145,7 @@ impl Board {
         // Post move activities
         self.build_occupancy();
 
-        self.side_to_move = self.side_to_move.opponent();
+        // self.side_to_move = self.side_to_move.opponent();
 
         undo
     }
@@ -171,11 +155,10 @@ impl Board {
             .piece_on(mov.to)
             .expect("undo_move(): piece is not on mov.to");
 
-        let (piece_bb, from_mask, to_mask) = (self.mut_bb(piece), mask(mov.from), mask(mov.to));
+        let (from_mask, to_mask) = (mask(mov.from), mask(mov.to));
 
         // move piece back
-        *piece_bb &= !to_mask;
-        *piece_bb |= from_mask;
+        self.move_piece_quiet(mov.to, mov.from);
 
         // handle captures
         match mov.flag {
@@ -185,7 +168,7 @@ impl Board {
             | MoveFlag::PromoCapBishop
             | MoveFlag::PromoCapKnight => {
                 let cap_piece = undo.captured.expect("Capture without captured piece");
-                *self.mut_bb(cap_piece) |= to_mask;
+                self.add_piece(cap_piece, mov.to);
             }
             MoveFlag::EnPassant => {
                 let cap_piece = undo.captured.expect("EP without captured piece");
@@ -196,7 +179,7 @@ impl Board {
                     mov.to + 8
                 };
 
-                *self.mut_bb(cap_piece) |= mask(cap_sq);
+                self.add_piece(cap_piece, cap_sq);
             }
             _ => {}
         }
@@ -218,10 +201,11 @@ impl Board {
                     _ => unreachable!("promotion undo with non-promoted piece"),
                 };
 
-                // Removing the Promoted piece from mov.from and
+                // Removing the Promoted piece from mov.from
+                // (cuz it got added when we try to undo the move
+                self.remove_piece(mov.from);
                 // adding the relevent pawn on Promotion moves
-                *self.mut_bb(piece) &= !from_mask;
-                *self.mut_bb(pawn) |= from_mask;
+                self.add_piece(pawn, mov.from);
             }
             _ => {}
         }
@@ -335,6 +319,53 @@ impl Board {
         }
 
         None
+    }
+}
+
+///////// Helpers
+impl Board {
+    fn move_piece_quiet(&mut self, from: usize, to: usize) {
+        let (from_mask, to_mask) = (mask(from), mask(to));
+        let piece = self.piece_on(from).expect("There ain't no piece in from");
+
+        let piece_bb = self.mut_bb(piece);
+        *piece_bb &= !from_mask;
+        *piece_bb |= to_mask;
+    }
+
+    fn remove_piece(&mut self, pos: usize) {
+        let pos_mask = mask(pos);
+
+        let piece = self
+            .piece_on(pos)
+            .expect("No piece in the square to remove");
+
+        let piece_bb = self.mut_bb(piece);
+        *piece_bb &= !pos_mask;
+    }
+
+    fn add_piece(&mut self, piece: Piece, pos: usize) {
+        let pos_mask = mask(pos);
+
+        *self.mut_bb(piece) |= pos_mask;
+    }
+
+    fn build_occupancy(&mut self) {
+        self.occupancy[WHITE] = self.bb(Piece::WP)
+            | self.bb(Piece::WN)
+            | self.bb(Piece::WB)
+            | self.bb(Piece::WR)
+            | self.bb(Piece::WQ)
+            | self.bb(Piece::WK);
+
+        self.occupancy[BLACK] = self.bb(Piece::BP)
+            | self.bb(Piece::BN)
+            | self.bb(Piece::BB)
+            | self.bb(Piece::BR)
+            | self.bb(Piece::BQ)
+            | self.bb(Piece::BK);
+
+        self.occupancy[BOTH] = self.occupancy[WHITE] | self.occupancy[BLACK];
     }
 
     pub fn occ(&self, color: &Color) -> u64 {
@@ -720,40 +751,5 @@ impl Board {
         lines.push("     a   b   c   d   e   f   g   h".to_string());
 
         lines
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct CastlingRights(pub u8);
-
-impl CastlingRights {
-    pub fn new() -> Self {
-        Self(WK | WQ | BK | BQ)
-    }
-
-    pub fn white_kingside(self) -> bool {
-        self.0 & WK != 0
-    }
-
-    pub fn white_queenside(self) -> bool {
-        self.0 & WQ != 0
-    }
-
-    pub fn black_kingside(self) -> bool {
-        self.0 & BK != 0
-    }
-
-    pub fn black_queenside(self) -> bool {
-        self.0 & BQ != 0
-    }
-
-    // remove rights
-    pub fn remove(&mut self, mask: u8) {
-        self.0 &= !mask;
-    }
-
-    // add rights
-    pub fn add(&mut self, mask: u8) {
-        self.0 |= mask;
     }
 }

@@ -1,3 +1,5 @@
+use crate::r#const::*;
+
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Piece {
@@ -138,5 +140,41 @@ impl Color {
             Color::White => Color::Black,
             Color::Black => Color::White,
         }
+    }
+}
+
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct CastlingRights(pub u8);
+
+impl CastlingRights {
+    pub fn new() -> Self {
+        Self(WK | WQ | BK | BQ)
+    }
+
+    pub fn white_kingside(self) -> bool {
+        self.0 & WK != 0
+    }
+
+    pub fn white_queenside(self) -> bool {
+        self.0 & WQ != 0
+    }
+
+    pub fn black_kingside(self) -> bool {
+        self.0 & BK != 0
+    }
+
+    pub fn black_queenside(self) -> bool {
+        self.0 & BQ != 0
+    }
+
+    // remove rights
+    pub fn remove(&mut self, mask: u8) {
+        self.0 &= !mask;
+    }
+
+    // add rights
+    pub fn add(&mut self, mask: u8) {
+        self.0 |= mask;
     }
 }
