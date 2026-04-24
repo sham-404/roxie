@@ -159,7 +159,6 @@ impl Board {
                 };
 
                 self.move_piece_quiet(king_pos - 4, king_pos - 1);
-
             }
             _ => {}
         }
@@ -193,7 +192,7 @@ impl Board {
         }
 
         // If black kingside rook moved, or captured
-        if mov.from == BK_START_POS + 3 || mov.to == WK_START_POS + 3 {
+        if mov.from == BK_START_POS + 3 || mov.to == BK_START_POS + 3 {
             self.castling.remove(BK);
         }
 
@@ -211,7 +210,7 @@ impl Board {
     }
 
     pub fn undo_move(&mut self, mov: &Move, undo: &Undo) {
-        let piece = self
+        let cur_piece = self
             .piece_on(mov.to)
             .expect("undo_move(): piece is not on mov.to");
 
@@ -253,7 +252,7 @@ impl Board {
             | MoveFlag::PromoCapBishop
             | MoveFlag::PromoCapKnight => {
                 // restore pawn
-                let pawn = match piece {
+                let pawn = match cur_piece {
                     Piece::WQ | Piece::WR | Piece::WB | Piece::WN => Piece::WP,
                     Piece::BQ | Piece::BR | Piece::BB | Piece::BN => Piece::BP,
                     _ => unreachable!("promotion undo with non-promoted piece"),
@@ -261,9 +260,22 @@ impl Board {
 
                 // Removing the Promoted piece from mov.from
                 // (cuz it got added when we try to undo the move
-                self.remove_piece(piece, mov.from);
+                self.remove_piece(cur_piece, mov.from);
                 // adding the relevent pawn on Promotion moves
                 self.add_piece(pawn, mov.from);
+            }
+            _ => {}
+        }
+
+        // castling
+        match mov.flag {
+            MoveFlag::KingCastle => {
+                // rook: f -> h
+                self.move_piece_quiet(mov.to - 1, mov.to + 1);
+            }
+            MoveFlag::QueenCastle => {
+                // rook: d -> a
+                self.move_piece_quiet(mov.to + 1, mov.to - 2);
             }
             _ => {}
         }
@@ -649,43 +661,34 @@ impl Board {
     }
 
     fn gen_castling_moves(&self, moves: &mut Vec<Move>) {
-        match self.side_to_move {
-            Color::White => {
-                let mut king_bb = self.bb(Piece::WK);
-                let king_pos = pop_lsb(&mut king_bb).expect("There is no King!!!");
+        let (king_piece, color, ks_rights, qs_rights) = match self.side_to_move {
+            Color::White => (
+                Piece::WK,
+                Color::White,
+                self.castling.white_kingside(),
+                self.castling.white_queenside(),
+            ),
+            Color::Black => (
+                Piece::BK,
+                Color::Black,
+                self.castling.black_kingside(),
+                self.castling.black_queenside(),
+            ),
+        };
 
-                if self.castling.white_kingside() {
-                    if self.can_castle_kingside(king_pos, Color::White) {
-                        moves.push(Move::new(king_pos, king_pos + 2, MoveFlag::KingCastle));
-                    }
-                }
+        let mut king_bb = self.bb(king_piece);
+        let king_pos = pop_lsb(&mut king_bb).expect("There is no King!!!");
 
-                if self.castling.white_queenside() {
-                    if self.can_castle_queenside(king_pos, Color::White) {
-                        moves.push(Move::new(king_pos, king_pos - 2, MoveFlag::QueenCastle));
-                    }
-                }
-            }
-            Color::Black => {
-                let mut king_bb = self.bb(Piece::BK);
-                let king_pos = pop_lsb(&mut king_bb).expect("There is no King!!!");
+        if ks_rights && self.can_castle_kingside(king_pos, &color) {
+            moves.push(Move::new(king_pos, king_pos + 2, MoveFlag::KingCastle));
+        }
 
-                if self.castling.black_kingside() {
-                    if self.can_castle_kingside(king_pos, Color::Black) {
-                        moves.push(Move::new(king_pos, king_pos + 2, MoveFlag::KingCastle));
-                    }
-                }
-
-                if self.castling.black_queenside() {
-                    if self.can_castle_queenside(king_pos, Color::Black) {
-                        moves.push(Move::new(king_pos, king_pos - 2, MoveFlag::QueenCastle));
-                    }
-                }
-            }
+        if qs_rights && self.can_castle_queenside(king_pos, &color) {
+            moves.push(Move::new(king_pos, king_pos - 2, MoveFlag::QueenCastle));
         }
     }
 
-    fn can_castle_kingside(&self, king_pos: usize, color: Color) -> bool {
+    fn can_castle_kingside(&self, king_pos: usize, color: &Color) -> bool {
         let (start_pos, rook) = match color {
             Color::White => (WK_START_POS, Piece::WR),
             Color::Black => (BK_START_POS, Piece::BR),
@@ -707,7 +710,7 @@ impl Board {
             && !self.is_square_atacked(king_pos + 2, &color)
     }
 
-    fn can_castle_queenside(&self, king_pos: usize, color: Color) -> bool {
+    fn can_castle_queenside(&self, king_pos: usize, color: &Color) -> bool {
         let (start_pos, rook) = match color {
             Color::White => (WK_START_POS, Piece::WR),
             Color::Black => (BK_START_POS, Piece::BR),
