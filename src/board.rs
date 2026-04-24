@@ -98,6 +98,11 @@ pub fn pop_lsb(bb: &mut u64) -> Option<usize> {
     Some(sq)
 }
 
+#[inline]
+pub fn mask(idx: usize) -> u64 {
+    1u64 << idx
+}
+
 pub struct Board {
     bitboards: [u64; 12],
     occupancy: [u64; 3],
@@ -191,7 +196,6 @@ impl Board {
             *bb &= !(1u64 << captured_sq);
         }
 
-
         for n in 0..12 {
             let piece = &mut self.bitboards[n];
             if from_mask & *piece != 0 {
@@ -245,6 +249,70 @@ impl Board {
         self.side_to_move = self.side_to_move.opponent();
 
         undo
+    }
+
+    pub fn undo_move(&mut self, mov: &Move, undo: &Undo) {
+        let piece = self
+            .piece_on(mov.to)
+            .expect("undo_move(): piece is not on mov.to");
+
+        let (piece_bb, from_mask, to_mask) = (self.mut_bb(piece), mask(mov.from), mask(mov.to));
+
+        // move piece back
+        *piece_bb &= !to_mask;
+        *piece_bb |= from_mask;
+
+        // handle captures
+        match mov.flag {
+            MoveFlag::Capture
+            | MoveFlag::PromoCapQueen
+            | MoveFlag::PromoCapRook
+            | MoveFlag::PromoCapBishop
+            | MoveFlag::PromoCapKnight => {
+                let cap_piece = undo.captured.expect("Capture without captured piece");
+                *self.mut_bb(cap_piece) |= to_mask;
+            }
+            MoveFlag::EnPassant => {
+                let cap_piece = undo.captured.expect("EP without captured piece");
+
+                let cap_sq = if cap_piece == Piece::BP {
+                    mov.to - 8
+                } else {
+                    mov.to + 8
+                };
+
+                *self.mut_bb(cap_piece) |= mask(cap_sq);
+            }
+            _ => {}
+        }
+
+        // Handling Promotions
+        match mov.flag {
+            MoveFlag::PromoQueen
+            | MoveFlag::PromoRook
+            | MoveFlag::PromoBishop
+            | MoveFlag::PromoKnight
+            | MoveFlag::PromoCapQueen
+            | MoveFlag::PromoCapRook
+            | MoveFlag::PromoCapBishop
+            | MoveFlag::PromoCapKnight => {
+                // restore pawn
+                let pawn = match piece {
+                    Piece::WQ | Piece::WR | Piece::WB | Piece::WN => Piece::WP,
+                    Piece::BQ | Piece::BR | Piece::BB | Piece::BN => Piece::BP,
+                    _ => unreachable!("promotion undo with non-promoted piece"),
+                };
+
+                // Removing the Promoted piece from mov.from and
+                // adding the relevent pawn on Promotion moves
+                *self.mut_bb(piece) &= !from_mask;
+                *self.mut_bb(pawn) |= from_mask;
+            }
+            _ => {}
+        }
+
+        // restore state
+        self.en_passant = undo.prev_en_passant_sq;
     }
 
     fn is_square_atacked(&self, pos: usize, cur_color: &Color) -> bool {

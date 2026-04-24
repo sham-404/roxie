@@ -1,5 +1,5 @@
 #[repr(u8)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Piece {
     WP,
     WN,
@@ -113,15 +113,15 @@ impl Move {
 
 #[derive(Debug)]
 pub struct Undo {
-    captured: Option<Piece>,
-    en_passant_sq: Option<u8>,
+    pub captured: Option<Piece>,
+    pub prev_en_passant_sq: Option<u8>,
 }
 
 impl Undo {
     pub fn new(captured: Option<Piece>, ensq: Option<u8>) -> Self {
         Self {
             captured,
-            en_passant_sq: ensq,
+            prev_en_passant_sq: ensq,
         }
     }
 }
