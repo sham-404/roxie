@@ -79,7 +79,7 @@ fn main() {
                         .gen_moves()
                         .iter()
                         .fold(0u64, |acc, mv| acc | (1u64 << mv.to));
-                    board.print_many(vec![board.render_board(), board.render_bitboard(bb)]);
+                    board.print_many(vec![board.render_board(), board.render_bitboard(bb), board.render_bitboard(board.all_occ())]);
                 } else {
                     println!("Invalid move")
                 }

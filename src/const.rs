@@ -7,8 +7,8 @@ pub const WQ: u8 = 0b0010;
 pub const BK: u8 = 0b0100;
 pub const BQ: u8 = 0b1000;
 
-const WK_START_POS: usize = 4;
-const BK_START_POS: usize = 60;
+pub const WK_START_POS: usize = 4;
+pub const BK_START_POS: usize = 60;
 
 #[rustfmt::skip]
 pub const KING_ATTACKS: [u64; 64] = [

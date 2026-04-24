@@ -85,6 +85,10 @@ impl Board {
     pub fn make_move(&mut self, mov: &Move) -> Undo {
         debug_assert!(self.occupancy[BOTH] & mask(mov.from) != 0);
 
+        let cur_piece = self
+            .piece_on(mov.from)
+            .expect("make_move(): Why there is no piece of mov.from?");
+
         // Detecting captures
         let (captured, captured_sq) = match mov.flag {
             MoveFlag::EnPassant => {
@@ -99,11 +103,11 @@ impl Board {
         };
 
         // Constructing undo
-        let undo = Undo::new(captured, self.en_passant);
+        let undo = Undo::new(captured, self.castling, self.en_passant);
 
         // Handling captures
-        if captured.is_some() {
-            self.remove_piece(captured_sq);
+        if let Some(cap_piece) = captured {
+            self.remove_piece(cap_piece, captured_sq);
         }
 
         // Moving the piece on the board
@@ -130,22 +134,78 @@ impl Board {
 
         if let Some(promo) = promo_piece {
             // Removing the pawn, which is in the promotion square
-            self.remove_piece(mov.to);
+            self.remove_piece(cur_piece, mov.to);
 
             // Adding the promotion piece
             self.add_piece(promo, mov.to);
         }
 
+        // castling
+        match mov.flag {
+            MoveFlag::KingCastle => {
+                let king_pos = match cur_piece {
+                    Piece::WK => WK_START_POS,
+                    Piece::BK => BK_START_POS,
+                    _ => unreachable!("Non king move got Castle flag"),
+                };
+
+                self.move_piece_quiet(king_pos + 3, king_pos + 1);
+            }
+            MoveFlag::QueenCastle => {
+                let king_pos = match cur_piece {
+                    Piece::WK => WK_START_POS,
+                    Piece::BK => BK_START_POS,
+                    _ => unreachable!("Non king move got Castle flag"),
+                };
+
+                self.move_piece_quiet(king_pos - 4, king_pos - 1);
+
+            }
+            _ => {}
+        }
+
         /////// Handling Special moves (for board state)
+        // updating en_passant square
         self.en_passant = match mov.flag {
             MoveFlag::DoublePush => Some(((mov.from + mov.to) / 2) as u8),
             _ => None,
         };
 
+        //// Handling castling rights
+        // White king moves
+        if mov.from == WK_START_POS {
+            self.castling.remove(WK | WQ);
+        }
+
+        // Black king moves
+        if mov.from == BK_START_POS {
+            self.castling.remove(BK | BQ);
+        }
+
+        // If white kingside rook moved, or captured
+        if mov.from == WK_START_POS + 3 || mov.to == WK_START_POS + 3 {
+            self.castling.remove(WK);
+        }
+
+        // If white queenside rook moved, or captured
+        if mov.from == WK_START_POS - 4 || mov.to == WK_START_POS - 4 {
+            self.castling.remove(WQ);
+        }
+
+        // If black kingside rook moved, or captured
+        if mov.from == BK_START_POS + 3 || mov.to == WK_START_POS + 3 {
+            self.castling.remove(BK);
+        }
+
+        // If black queenside rook moved, or captured
+        if mov.from == BK_START_POS - 4 || mov.to == BK_START_POS - 4 {
+            self.castling.remove(BQ);
+        }
+
         // Post move activities
         self.build_occupancy();
 
-        // self.side_to_move = self.side_to_move.opponent();
+        self.side_to_move = self.side_to_move.opponent();
 
         undo
     }
@@ -154,8 +214,6 @@ impl Board {
         let piece = self
             .piece_on(mov.to)
             .expect("undo_move(): piece is not on mov.to");
-
-        let (from_mask, to_mask) = (mask(mov.from), mask(mov.to));
 
         // move piece back
         self.move_piece_quiet(mov.to, mov.from);
@@ -203,7 +261,7 @@ impl Board {
 
                 // Removing the Promoted piece from mov.from
                 // (cuz it got added when we try to undo the move
-                self.remove_piece(mov.from);
+                self.remove_piece(piece, mov.from);
                 // adding the relevent pawn on Promotion moves
                 self.add_piece(pawn, mov.from);
             }
@@ -212,6 +270,7 @@ impl Board {
 
         // restore state
         self.en_passant = undo.prev_en_passant_sq;
+        self.castling = undo.prev_castling_rights;
     }
 
     fn is_square_atacked(&self, pos: usize, cur_color: &Color) -> bool {
@@ -333,15 +392,10 @@ impl Board {
         *piece_bb |= to_mask;
     }
 
-    fn remove_piece(&mut self, pos: usize) {
+    fn remove_piece(&mut self, piece: Piece, pos: usize) {
         let pos_mask = mask(pos);
 
-        let piece = self
-            .piece_on(pos)
-            .expect("No piece in the square to remove");
-
-        let piece_bb = self.mut_bb(piece);
-        *piece_bb &= !pos_mask;
+        *self.mut_bb(piece) &= !pos_mask;
     }
 
     fn add_piece(&mut self, piece: Piece, pos: usize) {
@@ -386,21 +440,6 @@ impl Board {
     pub fn mut_bb(&mut self, piece: Piece) -> &mut u64 {
         &mut self.bitboards[piece as usize]
     }
-
-    fn mut_bb_pair(&mut self, a: Piece, b: Piece) -> (&mut u64, &mut u64) {
-        let ai = a as usize;
-        let bi = b as usize;
-
-        assert!(ai != bi);
-
-        if ai < bi {
-            let (left, right) = self.bitboards.split_at_mut(bi);
-            (&mut left[ai], &mut right[0])
-        } else {
-            let (left, right) = self.bitboards.split_at_mut(ai);
-            (&mut right[0], &mut left[bi])
-        }
-    }
 }
 
 ////////// Move generations
@@ -433,6 +472,8 @@ impl Board {
         self.gen_sliding_moves(&mut moves, bishop_bb, &BISHOP_DIRS);
         self.gen_sliding_moves(&mut moves, rook_bb, &ROOK_DIRS);
         self.gen_sliding_moves(&mut moves, queen_bb, &QUEEN_DIRS);
+
+        self.gen_castling_moves(&mut moves);
 
         moves
     }
@@ -605,6 +646,87 @@ impl Board {
                 }
             }
         }
+    }
+
+    fn gen_castling_moves(&self, moves: &mut Vec<Move>) {
+        match self.side_to_move {
+            Color::White => {
+                let mut king_bb = self.bb(Piece::WK);
+                let king_pos = pop_lsb(&mut king_bb).expect("There is no King!!!");
+
+                if self.castling.white_kingside() {
+                    if self.can_castle_kingside(king_pos, Color::White) {
+                        moves.push(Move::new(king_pos, king_pos + 2, MoveFlag::KingCastle));
+                    }
+                }
+
+                if self.castling.white_queenside() {
+                    if self.can_castle_queenside(king_pos, Color::White) {
+                        moves.push(Move::new(king_pos, king_pos - 2, MoveFlag::QueenCastle));
+                    }
+                }
+            }
+            Color::Black => {
+                let mut king_bb = self.bb(Piece::BK);
+                let king_pos = pop_lsb(&mut king_bb).expect("There is no King!!!");
+
+                if self.castling.black_kingside() {
+                    if self.can_castle_kingside(king_pos, Color::Black) {
+                        moves.push(Move::new(king_pos, king_pos + 2, MoveFlag::KingCastle));
+                    }
+                }
+
+                if self.castling.black_queenside() {
+                    if self.can_castle_queenside(king_pos, Color::Black) {
+                        moves.push(Move::new(king_pos, king_pos - 2, MoveFlag::QueenCastle));
+                    }
+                }
+            }
+        }
+    }
+
+    fn can_castle_kingside(&self, king_pos: usize, color: Color) -> bool {
+        let (start_pos, rook) = match color {
+            Color::White => (WK_START_POS, Piece::WR),
+            Color::Black => (BK_START_POS, Piece::BR),
+        };
+
+        let occ = self.all_occ();
+
+        // return true if king is in start pos
+        // king is not in attack
+        // adjacent squares are Empty
+        // rook is in place
+        // adjacent Empty squares are not in attack
+
+        start_pos == king_pos
+            && !self.is_square_atacked(king_pos, &color)
+            && occ & (mask(king_pos + 1) | mask(king_pos + 2)) == 0
+            && self.piece_on(king_pos + 3) == Some(rook)
+            && !self.is_square_atacked(king_pos + 1, &color)
+            && !self.is_square_atacked(king_pos + 2, &color)
+    }
+
+    fn can_castle_queenside(&self, king_pos: usize, color: Color) -> bool {
+        let (start_pos, rook) = match color {
+            Color::White => (WK_START_POS, Piece::WR),
+            Color::Black => (BK_START_POS, Piece::BR),
+        };
+
+        let occ = self.all_occ();
+
+        // return true if king is in start pos
+        // king is not in attack
+        // adjacent squares are Empty
+        // rook is in place
+        // adjacent Empty squares are not in attack
+
+        start_pos == king_pos
+            && !self.is_square_atacked(king_pos, &color)
+            && occ & (mask(king_pos - 1) | mask(king_pos - 2) | mask(king_pos - 3)) == 0
+            && self.piece_on(king_pos - 4) == Some(rook)
+            && !self.is_square_atacked(king_pos - 1, &color)
+            && !self.is_square_atacked(king_pos - 2, &color)
     }
 }
 

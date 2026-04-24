@@ -117,13 +117,15 @@ impl Move {
 pub struct Undo {
     pub captured: Option<Piece>,
     pub prev_en_passant_sq: Option<u8>,
+    pub prev_castling_rights: CastlingRights,
 }
 
 impl Undo {
-    pub fn new(captured: Option<Piece>, ensq: Option<u8>) -> Self {
+    pub fn new(captured: Option<Piece>, castling: CastlingRights, ensq: Option<u8>) -> Self {
         Self {
             captured,
             prev_en_passant_sq: ensq,
+            prev_castling_rights: castling,
         }
     }
 }
