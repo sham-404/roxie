@@ -40,6 +40,7 @@ pub fn mask(idx: usize) -> u64 {
     SQUARE_BB[idx]
 }
 
+#[derive(Clone)]
 pub struct Board {
     bitboards: [u64; 12],
     occupancy: [u64; 3],
@@ -83,7 +84,7 @@ impl Board {
     }
 
     pub fn make_move(&mut self, mov: &Move) -> Undo {
-        debug_assert!(self.occupancy[BOTH] & mask(mov.from) != 0);
+        // debug_assert!(self.occupancy[BOTH] & mask(mov.from) != 0);
 
         let cur_piece = self
             .piece_on(mov.from)
@@ -283,6 +284,8 @@ impl Board {
         // restore state
         self.en_passant = undo.prev_en_passant_sq;
         self.castling = undo.prev_castling_rights;
+
+        self.side_to_move.opponent();
     }
 
     fn is_square_atacked(&self, pos: usize, cur_color: &Color) -> bool {
@@ -456,7 +459,7 @@ impl Board {
 
 ////////// Move generations
 impl Board {
-    pub fn gen_moves(&self) -> Vec<Move> {
+    pub fn gen_moves(&mut self) -> Vec<Move> {
         let mut moves: Vec<Move> = Vec::new();
 
         self.gen_king_moves(&mut moves);
@@ -487,6 +490,9 @@ impl Board {
 
         self.gen_castling_moves(&mut moves);
 
+        // let legal = self.filter_illegal(moves);
+        //
+        // legal
         moves
     }
 
@@ -688,6 +694,32 @@ impl Board {
         }
     }
 
+    fn filter_illegal(&mut self, moves: Vec<Move>) -> Vec<Move> {
+        let mut legal: Vec<Move> = Vec::new();
+
+        let king = match self.side_to_move {
+            Color::White => Piece::WK,
+            Color::Black => Piece::BK,
+        };
+
+        let color = self.side_to_move;
+
+        for mv in &moves {
+            let undo = self.make_move(&mv);
+
+            let mut king_bb = self.bb(king);
+            let king_pos = pop_lsb(&mut king_bb).expect("There is no King!!!");
+
+            if !self.is_square_atacked(king_pos, &color) {
+                legal.push(*mv);
+            }
+
+            self.undo_move(&mv, &undo);
+        }
+
+        legal
+    }
+
     fn can_castle_kingside(&self, king_pos: usize, color: &Color) -> bool {
         let (start_pos, rook) = match color {
             Color::White => (WK_START_POS, Piece::WR),
@@ -733,10 +765,16 @@ impl Board {
     }
 }
 
-////////// Debugging board
+////////// Debugging board (enhanced)
+
 #[allow(dead_code)]
 impl Board {
-    pub fn render_board(&self) -> Vec<String> {
+    pub fn render_board_debug(
+        &self,
+        cursor: u64,
+        selected: u64,
+        moves: u64,
+    ) -> Vec<String> {
         let mut lines = Vec::new();
 
         // Top border
@@ -756,19 +794,44 @@ impl Board {
 
             for file in 0..8 {
                 let sq = rank * 8 + file;
+
+                let is_cursor = (cursor >> sq) & 1 == 1;
+                let is_selected = (selected >> sq) & 1 == 1;
+                let is_move = (moves >> sq) & 1 == 1;
+
                 let mut found = false;
 
                 for i in 0..12 {
                     if (self.bitboards[i] >> sq) & 1 == 1 {
                         let piece = Piece::from_val(i);
-                        row.push_str(&format!("│ {} ", Piece::piece_to_glyph(piece)));
+                        let glyph = Piece::piece_to_char(piece);
+
+                        // Priority: cursor > selected > moves
+                        if is_cursor {
+                            row.push_str(&format!("│[{}]", glyph));
+                        } else if is_selected {
+                            row.push_str(&format!("│({})", glyph));
+                        } else if is_move {
+                            row.push_str(&format!("│ {}*", glyph));
+                        } else {
+                            row.push_str(&format!("│ {} ", glyph));
+                        }
+
                         found = true;
                         break;
                     }
                 }
 
                 if !found {
-                    row.push_str("│   ");
+                    if is_cursor {
+                        row.push_str("│[ ]");
+                    } else if is_selected {
+                        row.push_str("│(*)");
+                    } else if is_move {
+                        row.push_str("│ * ");
+                    } else {
+                        row.push_str("│   ");
+                    }
                 }
             }
 
@@ -815,66 +878,5 @@ impl Board {
             }
             println!();
         }
-    }
-
-    pub fn render_bitboard(&self, bb: u64) -> Vec<String> {
-        let mut lines = Vec::new();
-
-        // Top border
-        let mut top = String::from("   ");
-        for file in 0..8 {
-            if file == 0 {
-                top.push_str("┌───");
-            } else {
-                top.push_str("┬───");
-            }
-        }
-        top.push('┐');
-        lines.push(top);
-
-        for rank in (0..8).rev() {
-            let mut row = format!("{}  ", rank + 1);
-
-            for file in 0..8 {
-                let sq = rank * 8 + file;
-                if (bb >> sq) & 1 == 1 {
-                    row.push_str("│ X ");
-                } else {
-                    row.push_str("│ . ");
-                }
-            }
-
-            row.push('│');
-            lines.push(row);
-
-            if rank > 0 {
-                let mut sep = String::from("   ");
-                for file in 0..8 {
-                    if file == 0 {
-                        sep.push_str("├───");
-                    } else {
-                        sep.push_str("┼───");
-                    }
-                }
-                sep.push('┤');
-                lines.push(sep);
-            }
-        }
-
-        // Bottom border
-        let mut bottom = String::from("   ");
-        for file in 0..8 {
-            if file == 0 {
-                bottom.push_str("└───");
-            } else {
-                bottom.push_str("┴───");
-            }
-        }
-        bottom.push('┘');
-        lines.push(bottom);
-
-        lines.push("     a   b   c   d   e   f   g   h".to_string());
-
-        lines
     }
 }

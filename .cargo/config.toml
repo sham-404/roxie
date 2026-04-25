@@ -1,0 +1,2 @@
+[env]
+RUSTFLAGS = "--cfg feature=\"debug_ui\""

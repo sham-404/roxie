@@ -76,9 +76,8 @@ impl Piece {
     }
 }
 
-#[allow(dead_code)]
 #[repr(u8)]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum MoveFlag {
     Quiet = 0b0000,
     DoublePush = 0b0001,
@@ -99,8 +98,7 @@ pub enum MoveFlag {
     PromoCapQueen = 0b1111,
 }
 
-#[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Move {
     pub from: usize,
     pub to: usize,
@@ -131,6 +129,7 @@ impl Undo {
 }
 
 #[repr(u8)]
+#[derive(Clone, Copy)]
 pub enum Color {
     White,
     Black,
