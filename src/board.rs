@@ -225,6 +225,7 @@ impl Board {
             | MoveFlag::PromoCapRook
             | MoveFlag::PromoCapBishop
             | MoveFlag::PromoCapKnight => {
+                println!("{:#?}", mov);
                 let cap_piece = undo.captured.expect("Capture without captured piece");
                 self.add_piece(cap_piece, mov.to);
             }
@@ -240,6 +241,7 @@ impl Board {
                 self.add_piece(cap_piece, cap_sq);
             }
             _ => {}
+
         }
 
         // Handling Promotions
@@ -285,7 +287,9 @@ impl Board {
         self.en_passant = undo.prev_en_passant_sq;
         self.castling = undo.prev_castling_rights;
 
-        self.side_to_move.opponent();
+        self.build_occupancy();
+
+        self.side_to_move = self.side_to_move.opponent();
     }
 
     fn is_square_atacked(&self, pos: usize, cur_color: &Color) -> bool {
@@ -490,10 +494,7 @@ impl Board {
 
         self.gen_castling_moves(&mut moves);
 
-        // let legal = self.filter_illegal(moves);
-        //
-        // legal
-        moves
+        self.filter_illegal(moves)
     }
 
     pub fn gen_king_moves(&self, moves: &mut Vec<Move>) {
