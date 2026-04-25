@@ -51,7 +51,25 @@ pub struct Board {
 
 impl Board {
     pub fn new() -> Self {
+        let bitboards = [0u64; 12];
+
+        let occupancy: [u64; 3] = [0; 3];
+
+        let board = Self {
+            bitboards,
+            occupancy,
+            side_to_move: Color::White,
+            castling: CastlingRights::new(),
+            en_passant: None,
+        };
+
+        board
+    }
+
+    pub fn start_pos() -> Self {
         let mut bitboards = [0u64; 12];
+
+        let occupancy: [u64; 3] = [0; 3];
 
         // Black pieces
         bitboards[Piece::BP as usize] = 0x00FF000000000000;
@@ -69,8 +87,6 @@ impl Board {
         bitboards[Piece::WQ as usize] = 0x0008;
         bitboards[Piece::WK as usize] = 0x0010;
 
-        let occupancy: [u64; 3] = [0; 3];
-
         let mut board = Self {
             bitboards,
             occupancy,
@@ -80,9 +96,79 @@ impl Board {
         };
 
         board.build_occupancy();
+
         board
     }
 
+    pub fn load_fen(fen: &str) -> Self {
+        let mut board = Self::new();
+
+        board.bitboards = [0; 12];
+        board.occupancy = [0; 3];
+        board.en_passant = None;
+        board.castling = CastlingRights::new();
+
+        let mut parts = fen.split_whitespace();
+
+        let piece_part = parts.next().expect("Invalid FEN");
+        let side_part = parts.next().expect("Invalid FEN");
+        let castling_part = parts.next().expect("Invalid FEN");
+        let ep_part = parts.next().expect("Invalid FEN");
+
+        let mut rank: i32 = 7;
+        let mut file: i32 = 0;
+
+        for c in piece_part.chars() {
+            match c {
+                '/' => {
+                    rank -= 1;
+                    file = 0;
+                }
+                '1'..='8' => {
+                    file += c.to_digit(10).unwrap() as i32;
+                }
+                _ => {
+                    if let Some(piece) = Piece::from_char(c) {
+                        let sq = (rank * 8 + file) as usize;
+                        board.bitboards[piece as usize] |= mask(sq);
+                        file += 1;
+                    } else {
+                        panic!("Invalid piece char in FEN: {}", c);
+                    }
+                }
+            }
+        }
+
+        board.side_to_move = match side_part {
+            "w" => Color::White,
+            "b" => Color::Black,
+            _ => panic!("Invalid side to move"),
+        };
+
+        if castling_part != "-" {
+            for c in castling_part.chars() {
+                match c {
+                    'K' => board.castling.add(WK),
+                    'Q' => board.castling.add(WQ),
+                    'k' => board.castling.add(BK),
+                    'q' => board.castling.add(BQ),
+                    _ => panic!("Invalid castling char"),
+                }
+            }
+        }
+
+        if ep_part != "-" {
+            let bytes = ep_part.as_bytes();
+            let file = (bytes[0] - b'a') as usize;
+            let rank = (bytes[1] - b'1') as usize;
+            let sq = rank * 8 + file;
+            board.en_passant = Some(sq as u8);
+        }
+
+        board.build_occupancy();
+
+        board
+    }
     pub fn make_move(&mut self, mov: &Move) -> Undo {
         // debug_assert!(self.occupancy[BOTH] & mask(mov.from) != 0);
 
@@ -240,7 +326,6 @@ impl Board {
                 self.add_piece(cap_piece, cap_sq);
             }
             _ => {}
-
         }
 
         // Handling Promotions
@@ -769,12 +854,7 @@ impl Board {
 
 #[allow(dead_code)]
 impl Board {
-    pub fn render_board_debug(
-        &self,
-        cursor: u64,
-        selected: u64,
-        moves: u64,
-    ) -> Vec<String> {
+    pub fn render_board_debug(&self, cursor: u64, selected: u64, moves: u64) -> Vec<String> {
         let mut lines = Vec::new();
 
         // Top border

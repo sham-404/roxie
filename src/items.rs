@@ -38,6 +38,26 @@ impl Piece {
         }
     }
 
+    pub fn from_char(c: char) -> Option<Self> {
+        match c {
+            'P' => Some(Self::WP),
+            'N' => Some(Self::WN),
+            'B' => Some(Self::WB),
+            'R' => Some(Self::WR),
+            'Q' => Some(Self::WQ),
+            'K' => Some(Self::WK),
+
+            'p' => Some(Self::BP),
+            'n' => Some(Self::BN),
+            'b' => Some(Self::BB),
+            'r' => Some(Self::BR),
+            'q' => Some(Self::BQ),
+            'k' => Some(Self::BK),
+
+            _ => None,
+        }
+    }
+
     pub fn piece_to_glyph(piece: Piece) -> &'static str {
         match piece {
             Piece::WP => "♟",
@@ -150,7 +170,7 @@ pub struct CastlingRights(pub u8);
 
 impl CastlingRights {
     pub fn new() -> Self {
-        Self(WK | WQ | BK | BQ)
+        Self(0)
     }
 
     pub fn white_kingside(self) -> bool {
