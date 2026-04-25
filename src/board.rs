@@ -225,7 +225,6 @@ impl Board {
             | MoveFlag::PromoCapRook
             | MoveFlag::PromoCapBishop
             | MoveFlag::PromoCapKnight => {
-                println!("{:#?}", mov);
                 let cap_piece = undo.captured.expect("Capture without captured piece");
                 self.add_piece(cap_piece, mov.to);
             }
