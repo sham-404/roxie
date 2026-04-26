@@ -1,5 +1,7 @@
+use roxie::uci::uci_loop;
+
 fn main() {
-    println!("Normal main entry point");
+    uci_loop();
 }
 
 #[cfg(test)]

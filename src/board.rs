@@ -130,7 +130,7 @@ impl Board {
                 _ => {
                     if let Some(piece) = Piece::from_char(c) {
                         let sq = (rank * 8 + file) as usize;
-                        board.bitboards[piece as usize] |= mask(sq);
+                        *board.mut_bb(piece) |= mask(sq);
                         file += 1;
                     } else {
                         panic!("Invalid piece char in FEN: {}", c);
@@ -170,7 +170,7 @@ impl Board {
         board
     }
     pub fn make_move(&mut self, mov: &Move) -> Undo {
-        // debug_assert!(self.occupancy[BOTH] & mask(mov.from) != 0);
+        debug_assert!(self.occupancy[BOTH] & mask(mov.from) != 0);
 
         let cur_piece = self
             .piece_on(mov.from)

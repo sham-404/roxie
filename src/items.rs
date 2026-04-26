@@ -1,3 +1,4 @@
+use crate::board::Board;
 use crate::r#const::*;
 
 #[repr(u8)]
@@ -118,6 +119,7 @@ pub enum MoveFlag {
     PromoCapQueen = 0b1111,
 }
 
+use crate::r#const::SQ_TO_COORD;
 #[derive(Debug, Clone, Copy)]
 pub struct Move {
     pub from: usize,
@@ -128,6 +130,36 @@ pub struct Move {
 impl Move {
     pub fn new(from: usize, to: usize, flag: MoveFlag) -> Self {
         Self { from, to, flag }
+    }
+
+    pub fn to_coord(&self) -> String {
+        let mut coord = format!("{}{}", SQ_TO_COORD[self.from], SQ_TO_COORD[self.to]);
+
+        let promo = match self.flag {
+            MoveFlag::PromoQueen | MoveFlag::PromoCapQueen => Some('q'),
+            MoveFlag::PromoKnight | MoveFlag::PromoCapKnight => Some('n'),
+            MoveFlag::PromoRook | MoveFlag::PromoCapRook => Some('r'),
+            MoveFlag::PromoBishop | MoveFlag::PromoCapBishop => Some('b'),
+            _ => None,
+        };
+
+        if let Some(c) = promo {
+            coord.push(c);
+        }
+
+        coord
+    }
+
+    pub fn from_uci(mv_str: &str, board: &mut Board) -> Move {
+        let moves = board.gen_moves();
+
+        for mv in moves {
+            if mv.to_coord() == mv_str {
+                return mv;
+            }
+        }
+
+        panic!("Invalid move: {}", mv_str);
     }
 }
 
@@ -164,7 +196,6 @@ impl Color {
     }
 }
 
-
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct CastlingRights(pub u8);
 
@@ -197,5 +228,29 @@ impl CastlingRights {
     // add rights
     pub fn add(&mut self, mask: u8) {
         self.0 |= mask;
+    }
+}
+
+//// Helpers
+
+pub struct Rng(u64);
+
+impl Rng {
+    pub fn new(seed: u64) -> Self {
+        Self(seed)
+    }
+
+    pub fn next(&mut self) -> u64 {
+        // xorshift64*
+        let mut x = self.0;
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        self.0 = x;
+        x.wrapping_mul(0x2545F4914F6CDD1D)
+    }
+
+    pub fn gen_range(&mut self, n: usize) -> usize {
+        (self.next() as usize) % n
     }
 }
