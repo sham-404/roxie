@@ -39,7 +39,9 @@ pub fn uci_loop() {
 
                 "position" => handle_position(&mut words, &mut board),
 
-                "go" => uci_print!("bestmove {}", find_best_move(&mut board).to_coord()),
+                "go" => {
+                    uci_print!("bestmove {}", find_best_move(&mut board).to_coord())
+                }
 
                 "quit" => break,
 
