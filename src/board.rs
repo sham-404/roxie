@@ -67,25 +67,25 @@ impl Board {
     }
 
     pub fn start_pos() -> Self {
-        let mut bitboards = [0u64; 12];
-
         let occupancy: [u64; 3] = [0; 3];
 
-        // Black pieces
-        bitboards[Piece::BP as usize] = 0x00FF000000000000;
-        bitboards[Piece::BN as usize] = 0x4200000000000000;
-        bitboards[Piece::BB as usize] = 0x2400000000000000;
-        bitboards[Piece::BR as usize] = 0x8100000000000000;
-        bitboards[Piece::BQ as usize] = 0x0800000000000000;
-        bitboards[Piece::BK as usize] = 0x1000000000000000;
+        let mut bitboards = [0u64; 12];
 
         // White pieces
-        bitboards[Piece::WP as usize] = 0xFF00;
-        bitboards[Piece::WN as usize] = 0x0042;
-        bitboards[Piece::WB as usize] = 0x0024;
-        bitboards[Piece::WR as usize] = 0x0081;
-        bitboards[Piece::WQ as usize] = 0x0008;
-        bitboards[Piece::WK as usize] = 0x0010;
+        bitboards[Piece::to_idx(Piece::WHITE | Piece::PAWN)] = 0xFF00;
+        bitboards[Piece::to_idx(Piece::WHITE | Piece::KNIGHT)] = 0x0042;
+        bitboards[Piece::to_idx(Piece::WHITE | Piece::BISHOP)] = 0x0024;
+        bitboards[Piece::to_idx(Piece::WHITE | Piece::ROOK)] = 0x0081;
+        bitboards[Piece::to_idx(Piece::WHITE | Piece::QUEEN)] = 0x0008;
+        bitboards[Piece::to_idx(Piece::WHITE | Piece::KING)] = 0x0010;
+
+        // Black pieces
+        bitboards[Piece::to_idx(Piece::BLACK | Piece::PAWN)] = 0x00FF000000000000;
+        bitboards[Piece::to_idx(Piece::BLACK | Piece::KNIGHT)] = 0x4200000000000000;
+        bitboards[Piece::to_idx(Piece::BLACK | Piece::BISHOP)] = 0x2400000000000000;
+        bitboards[Piece::to_idx(Piece::BLACK | Piece::ROOK)] = 0x8100000000000000;
+        bitboards[Piece::to_idx(Piece::BLACK | Piece::QUEEN)] = 0x0800000000000000;
+        bitboards[Piece::to_idx(Piece::BLACK | Piece::KING)] = 0x1000000000000000;
 
         let mut board = Self {
             bitboards,
@@ -172,9 +172,7 @@ impl Board {
     pub fn make_move(&mut self, mov: &Move) -> Undo {
         debug_assert!(self.occupancy[BOTH] & mask(mov.from) != 0);
 
-        let cur_piece = self
-            .piece_on(mov.from)
-            .expect("make_move(): Why there is no piece of mov.from?");
+        let cur_piece = self.piece_on(mov.from);
 
         // Detecting captures
         let (captured, captured_sq) = match mov.flag {
@@ -193,8 +191,8 @@ impl Board {
         let undo = Undo::new(captured, self.castling, self.en_passant);
 
         // Handling captures
-        if let Some(cap_piece) = captured {
-            self.remove_piece(cap_piece, captured_sq);
+        if captured != 0 {
+            self.remove_piece(captured, captured_sq);
         }
 
         // Moving the piece on the board
@@ -204,46 +202,48 @@ impl Board {
         // Promotions
         let promo_piece = match self.side_to_move {
             Color::White => match mov.flag {
-                MoveFlag::PromoKnight | MoveFlag::PromoCapKnight => Some(Piece::WN),
-                MoveFlag::PromoBishop | MoveFlag::PromoCapBishop => Some(Piece::WB),
-                MoveFlag::PromoRook | MoveFlag::PromoCapRook => Some(Piece::WR),
-                MoveFlag::PromoQueen | MoveFlag::PromoCapQueen => Some(Piece::WQ),
-                _ => None,
+                MoveFlag::PromoKnight | MoveFlag::PromoCapKnight => Piece::WHITE | Piece::KNIGHT,
+                MoveFlag::PromoBishop | MoveFlag::PromoCapBishop => Piece::WHITE | Piece::BISHOP,
+                MoveFlag::PromoRook | MoveFlag::PromoCapRook => Piece::WHITE | Piece::ROOK,
+                MoveFlag::PromoQueen | MoveFlag::PromoCapQueen => Piece::WHITE | Piece::QUEEN,
+                _ => Piece::NONE,
             },
             Color::Black => match mov.flag {
-                MoveFlag::PromoKnight | MoveFlag::PromoCapKnight => Some(Piece::BN),
-                MoveFlag::PromoBishop | MoveFlag::PromoCapBishop => Some(Piece::BB),
-                MoveFlag::PromoRook | MoveFlag::PromoCapRook => Some(Piece::BR),
-                MoveFlag::PromoQueen | MoveFlag::PromoCapQueen => Some(Piece::BQ),
-                _ => None,
+                MoveFlag::PromoKnight | MoveFlag::PromoCapKnight => Piece::BLACK | Piece::KNIGHT,
+                MoveFlag::PromoBishop | MoveFlag::PromoCapBishop => Piece::BLACK | Piece::BISHOP,
+                MoveFlag::PromoRook | MoveFlag::PromoCapRook => Piece::BLACK | Piece::ROOK,
+                MoveFlag::PromoQueen | MoveFlag::PromoCapQueen => Piece::BLACK | Piece::QUEEN,
+                _ => Piece::NONE,
             },
         };
 
-        if let Some(promo) = promo_piece {
+        if promo_piece != Piece::NONE {
             // Removing the pawn, which is in the promotion square
             self.remove_piece(cur_piece, mov.to);
 
             // Adding the promotion piece
-            self.add_piece(promo, mov.to);
+            self.add_piece(promo_piece, mov.to);
         }
 
         // castling
         match mov.flag {
             MoveFlag::KingCastle => {
-                let king_pos = match cur_piece {
-                    Piece::WK => WK_START_POS,
-                    Piece::BK => BK_START_POS,
-                    _ => unreachable!("Non king move got Castle flag"),
-                };
+                debug_assert!(
+                    cur_piece != Piece::KING,
+                    "Non king move got the castling flag"
+                );
+                let is_black = (cur_piece & Piece::BLACK) != 0;
+                let king_pos = if is_black { BK_START_POS } else { WK_START_POS };
 
                 self.move_piece_quiet(king_pos + 3, king_pos + 1);
             }
             MoveFlag::QueenCastle => {
-                let king_pos = match cur_piece {
-                    Piece::WK => WK_START_POS,
-                    Piece::BK => BK_START_POS,
-                    _ => unreachable!("Non king move got Castle flag"),
-                };
+                debug_assert!(
+                    cur_piece != Piece::KING,
+                    "Non king move got the castling flag"
+                );
+                let is_black = (cur_piece & Piece::BLACK) != 0;
+                let king_pos = if is_black { BK_START_POS } else { WK_START_POS };
 
                 self.move_piece_quiet(king_pos - 4, king_pos - 1);
             }
@@ -297,9 +297,12 @@ impl Board {
     }
 
     pub fn undo_move(&mut self, mov: &Move, undo: &Undo) {
-        let cur_piece = self
-            .piece_on(mov.to)
-            .expect("undo_move(): piece is not on mov.to");
+        let cur_piece = self.piece_on(mov.to);
+
+        debug_assert!(
+            cur_piece != Piece::NONE,
+            "undo_move(): piece is not on mov.to"
+        );
 
         // move piece back
         self.move_piece_quiet(mov.to, mov.from);
@@ -311,13 +314,16 @@ impl Board {
             | MoveFlag::PromoCapRook
             | MoveFlag::PromoCapBishop
             | MoveFlag::PromoCapKnight => {
-                let cap_piece = undo.captured.expect("Capture without captured piece");
+                let cap_piece = undo.captured;
+                debug_assert!(cap_piece != Piece::NONE, "Capture without captured piece");
+
                 self.add_piece(cap_piece, mov.to);
             }
             MoveFlag::EnPassant => {
-                let cap_piece = undo.captured.expect("EP without captured piece");
+                let cap_piece = undo.captured;
+                debug_assert!(cap_piece != Piece::NONE, "EP without captured piece");
 
-                let cap_sq = if cap_piece == Piece::BP {
+                let cap_sq = if Piece::get_color(cap_piece) == Piece::BLACK {
                     mov.to - 8
                 } else {
                     mov.to + 8
@@ -339,10 +345,10 @@ impl Board {
             | MoveFlag::PromoCapBishop
             | MoveFlag::PromoCapKnight => {
                 // restore pawn
-                let pawn = match cur_piece {
-                    Piece::WQ | Piece::WR | Piece::WB | Piece::WN => Piece::WP,
-                    Piece::BQ | Piece::BR | Piece::BB | Piece::BN => Piece::BP,
-                    _ => unreachable!("promotion undo with non-promoted piece"),
+                let pawn = if Piece::get_color(cur_piece) == Piece::WHITE {
+                    Piece::WHITE | Piece::PAWN
+                } else {
+                    Piece::BLACK | Piece::PAWN
                 };
 
                 // Removing the Promoted piece from mov.from
@@ -379,24 +385,22 @@ impl Board {
     fn is_square_atacked(&self, pos: usize, cur_color: &Color) -> bool {
         let all_occ = self.all_occ();
 
-        let (en_pawn, en_king, en_queen, en_bishop, en_rook, en_knight) = match cur_color {
-            Color::White => (
-                self.bb(Piece::BP),
-                self.bb(Piece::BK),
-                self.bb(Piece::BQ),
-                self.bb(Piece::BB),
-                self.bb(Piece::BR),
-                self.bb(Piece::BN),
-            ),
-            Color::Black => (
-                self.bb(Piece::WP),
-                self.bb(Piece::WK),
-                self.bb(Piece::WQ),
-                self.bb(Piece::WB),
-                self.bb(Piece::WR),
-                self.bb(Piece::WN),
-            ),
+        let color = if cur_color == &Color::White {
+            Piece::WHITE
+        } else {
+            Piece::BLACK
         };
+
+        let enemy_col = Piece::enemy(color);
+
+        let (en_pawn, en_king, en_queen, en_bishop, en_rook, en_knight) = (
+            self.bb(enemy_col | Piece::PAWN),
+            self.bb(enemy_col | Piece::KING),
+            self.bb(enemy_col | Piece::QUEEN),
+            self.bb(enemy_col | Piece::BISHOP),
+            self.bb(enemy_col | Piece::ROOK),
+            self.bb(enemy_col | Piece::KNIGHT),
+        );
 
         // Sliding pieces
         let directions = [
@@ -471,16 +475,17 @@ impl Board {
     }
 
     #[inline]
-    pub fn piece_on(&self, sq: usize) -> Option<Piece> {
-        let mask = mask(sq);
+    pub fn piece_on(&self, sq: usize) -> PieceInfo {
+        let mask = 1u64 << sq;
 
-        for p in 0..12 {
-            if self.bitboards[p] & mask != 0 {
-                return Some(Piece::from_val(p));
+        for idx in 0..12 {
+            if self.bitboards[idx] & mask != 0 {
+                // Convert the bitboard index (0-11) back to our 5-bit PieceInfo
+                return Piece::from_idx(idx);
             }
         }
 
-        None
+        Piece::NONE // Returns 0
     }
 }
 
@@ -488,39 +493,33 @@ impl Board {
 impl Board {
     fn move_piece_quiet(&mut self, from: usize, to: usize) {
         let (from_mask, to_mask) = (mask(from), mask(to));
-        let piece = self.piece_on(from).expect("There ain't no piece in from");
+        let piece = self.piece_on(from);
+
+        debug_assert!(piece != Piece::NONE, "There ain't no piece in from");
 
         let piece_bb = self.mut_bb(piece);
         *piece_bb &= !from_mask;
         *piece_bb |= to_mask;
     }
 
-    fn remove_piece(&mut self, piece: Piece, pos: usize) {
+    fn remove_piece(&mut self, piece: PieceInfo, pos: usize) {
         let pos_mask = mask(pos);
 
         *self.mut_bb(piece) &= !pos_mask;
     }
 
-    fn add_piece(&mut self, piece: Piece, pos: usize) {
+    fn add_piece(&mut self, piece: PieceInfo, pos: usize) {
         let pos_mask = mask(pos);
 
         *self.mut_bb(piece) |= pos_mask;
     }
 
-    fn build_occupancy(&mut self) {
-        self.occupancy[WHITE] = self.bb(Piece::WP)
-            | self.bb(Piece::WN)
-            | self.bb(Piece::WB)
-            | self.bb(Piece::WR)
-            | self.bb(Piece::WQ)
-            | self.bb(Piece::WK);
+    pub fn build_occupancy(&mut self) {
+        // all white bitboards (indices 0..6)
+        self.occupancy[WHITE] = self.bitboards[0..6].iter().fold(0, |acc, &bb| acc | bb);
 
-        self.occupancy[BLACK] = self.bb(Piece::BP)
-            | self.bb(Piece::BN)
-            | self.bb(Piece::BB)
-            | self.bb(Piece::BR)
-            | self.bb(Piece::BQ)
-            | self.bb(Piece::BK);
+        // all black bitboards (indices 6..12)
+        self.occupancy[BLACK] = self.bitboards[6..12].iter().fold(0, |acc, &bb| acc | bb);
 
         self.occupancy[BOTH] = self.occupancy[WHITE] | self.occupancy[BLACK];
     }
@@ -540,12 +539,23 @@ impl Board {
         self.occupancy[BOTH]
     }
 
-    pub fn bb(&self, piece: Piece) -> u64 {
-        self.bitboards[piece as usize]
+    #[inline(always)]
+    pub fn bb(&self, piece: PieceInfo) -> u64 {
+        if piece == Piece::NONE {
+            return 0;
+        }
+
+        self.bitboards[Piece::to_idx(piece)]
     }
 
-    pub fn mut_bb(&mut self, piece: Piece) -> &mut u64 {
-        &mut self.bitboards[piece as usize]
+    #[inline(always)]
+    pub fn mut_bb(&mut self, piece: PieceInfo) -> &mut u64 {
+        debug_assert!(
+            piece != Piece::NONE,
+            "Attempted to get mutable bitboard of Piece::NONE"
+        );
+
+        &mut self.bitboards[Piece::to_idx(piece)]
     }
 }
 
@@ -558,10 +568,17 @@ impl Board {
         self.gen_knight_moves(&mut moves);
         self.gen_pawn_moves(&mut moves);
 
-        let (bishop_bb, rook_bb, queen_bb) = match self.side_to_move {
-            Color::White => (self.bb(Piece::WB), self.bb(Piece::WR), self.bb(Piece::WQ)),
-            Color::Black => (self.bb(Piece::BB), self.bb(Piece::BR), self.bb(Piece::BQ)),
+        let color = if self.side_to_move == Color::White {
+            Piece::WHITE
+        } else {
+            Piece::BLACK
         };
+
+        let (bishop_bb, rook_bb, queen_bb) = (
+            self.bb(color | Piece::BISHOP),
+            self.bb(color | Piece::ROOK),
+            self.bb(color | Piece::QUEEN),
+        );
 
         const ROOK_DIRS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
         const BISHOP_DIRS: [(i32, i32); 4] = [(1, 1), (1, -1), (-1, 1), (-1, -1)];
@@ -586,12 +603,15 @@ impl Board {
     }
 
     pub fn gen_king_moves(&self, moves: &mut Vec<Move>) {
-        let piece = match self.side_to_move {
-            Color::White => Piece::WK,
-            Color::Black => Piece::BK,
+        let color = if self.side_to_move == Color::White {
+            Piece::WHITE
+        } else {
+            Piece::BLACK
         };
 
-        let mut bb = self.bb(piece);
+        let king = color | Piece::KING;
+
+        let mut bb = self.bb(king);
 
         while let Some(from) = pop_lsb(&mut bb) {
             let to_move = &self.side_to_move;
@@ -612,12 +632,15 @@ impl Board {
     }
 
     pub fn gen_knight_moves(&self, moves: &mut Vec<Move>) {
-        let piece = match self.side_to_move {
-            Color::White => Piece::WN,
-            Color::Black => Piece::BN,
+        let color = if self.side_to_move == Color::White {
+            Piece::WHITE
+        } else {
+            Piece::BLACK
         };
 
-        let mut bb = self.bb(piece);
+        let knight = color | Piece::KNIGHT;
+
+        let mut bb = self.bb(knight);
 
         while let Some(from) = pop_lsb(&mut bb) {
             let to_move = &self.side_to_move;
@@ -638,22 +661,34 @@ impl Board {
     }
 
     pub fn gen_pawn_moves(&self, moves: &mut Vec<Move>) {
-        let (piece, start_pos, end_pos, attacks, dir) = match self.side_to_move {
-            Color::White => (Piece::WP, RANK2, RANK8, WHITE_PAWN_ATTACKS, 8i8),
-            Color::Black => (Piece::BP, RANK7, RANK1, BLACK_PAWN_ATTACKS, -8i8),
+        let (pawn, start_pos, end_pos, attacks, dir) = match self.side_to_move {
+            Color::White => (
+                Piece::WHITE | Piece::PAWN,
+                RANK2,
+                RANK8,
+                WHITE_PAWN_ATTACKS,
+                8i8,
+            ),
+            Color::Black => (
+                Piece::BLACK | Piece::PAWN,
+                RANK7,
+                RANK1,
+                BLACK_PAWN_ATTACKS,
+                -8i8,
+            ),
         };
 
-        let pawn_bb = self.bb(piece);
+        let pawn_bb = self.bb(pawn);
         let empty = !self.all_occ();
 
         // forward pawn moves
-        let (mut single, mut double) = match piece {
-            Piece::WP => {
+        let (mut single, mut double) = match Piece::get_color(pawn) {
+            Piece::WHITE => {
                 let single = (pawn_bb << 8) & empty;
                 let double = ((pawn_bb & start_pos) << 16) & empty & (empty << 8);
                 (single, double)
             }
-            Piece::BP => {
+            Piece::BLACK => {
                 let single = (pawn_bb >> 8) & empty;
                 let double = ((pawn_bb & start_pos) >> 16) & empty & (empty >> 8);
                 (single, double)
@@ -758,13 +793,13 @@ impl Board {
     fn gen_castling_moves(&self, moves: &mut Vec<Move>) {
         let (king_piece, color, ks_rights, qs_rights) = match self.side_to_move {
             Color::White => (
-                Piece::WK,
+                Piece::WHITE | Piece::KING,
                 Color::White,
                 self.castling.white_kingside(),
                 self.castling.white_queenside(),
             ),
             Color::Black => (
-                Piece::BK,
+                Piece::BLACK | Piece::KING,
                 Color::Black,
                 self.castling.black_kingside(),
                 self.castling.black_queenside(),
@@ -786,10 +821,13 @@ impl Board {
     fn filter_illegal(&mut self, moves: Vec<Move>) -> Vec<Move> {
         let mut legal: Vec<Move> = Vec::new();
 
-        let king = match self.side_to_move {
-            Color::White => Piece::WK,
-            Color::Black => Piece::BK,
+        let color = if self.side_to_move == Color::White {
+            Piece::WHITE
+        } else {
+            Piece::BLACK
         };
+
+        let king = color | Piece::KING;
 
         let color = self.side_to_move;
 
@@ -811,8 +849,8 @@ impl Board {
 
     fn can_castle_kingside(&self, king_pos: usize, color: &Color) -> bool {
         let (start_pos, rook) = match color {
-            Color::White => (WK_START_POS, Piece::WR),
-            Color::Black => (BK_START_POS, Piece::BR),
+            Color::White => (WK_START_POS, Piece::WHITE | Piece::ROOK),
+            Color::Black => (BK_START_POS, Piece::BLACK | Piece::ROOK),
         };
 
         let occ = self.all_occ();
@@ -826,15 +864,15 @@ impl Board {
         start_pos == king_pos
             && !self.is_square_atacked(king_pos, &color)
             && occ & (mask(king_pos + 1) | mask(king_pos + 2)) == 0
-            && self.piece_on(king_pos + 3) == Some(rook)
+            && self.piece_on(king_pos + 3) == rook
             && !self.is_square_atacked(king_pos + 1, &color)
             && !self.is_square_atacked(king_pos + 2, &color)
     }
 
     fn can_castle_queenside(&self, king_pos: usize, color: &Color) -> bool {
         let (start_pos, rook) = match color {
-            Color::White => (WK_START_POS, Piece::WR),
-            Color::Black => (BK_START_POS, Piece::BR),
+            Color::White => (WK_START_POS, Piece::WHITE | Piece::ROOK),
+            Color::Black => (BK_START_POS, Piece::BLACK | Piece::ROOK),
         };
 
         let occ = self.all_occ();
@@ -848,7 +886,7 @@ impl Board {
         start_pos == king_pos
             && !self.is_square_atacked(king_pos, &color)
             && occ & (mask(king_pos - 1) | mask(king_pos - 2) | mask(king_pos - 3)) == 0
-            && self.piece_on(king_pos - 4) == Some(rook)
+            && self.piece_on(king_pos - 4) == rook
             && !self.is_square_atacked(king_pos - 1, &color)
             && !self.is_square_atacked(king_pos - 2, &color)
     }
@@ -887,8 +925,8 @@ impl Board {
 
                 for i in 0..12 {
                     if (self.bitboards[i] >> sq) & 1 == 1 {
-                        let piece = Piece::from_val(i);
-                        let glyph = Piece::piece_to_char(piece);
+                        let piece = Piece::from_idx(i);
+                        let glyph = Piece::to_char(piece);
 
                         // Priority: cursor > selected > moves
                         if is_cursor {

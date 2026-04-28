@@ -1,98 +1,116 @@
 use crate::board::Board;
 use crate::r#const::*;
 
-#[repr(u8)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Piece {
-    WP,
-    WN,
-    WB,
-    WR,
-    WQ,
-    WK,
+pub type PieceInfo = u8;
 
-    BP,
-    BN,
-    BB,
-    BR,
-    BQ,
-    BK,
-}
+pub struct Piece;
 
-#[allow(dead_code)]
 impl Piece {
-    pub fn piece_to_char(piece: Piece) -> char {
-        match piece {
-            Piece::WP => 'P',
-            Piece::WN => 'N',
-            Piece::WB => 'B',
-            Piece::WR => 'R',
-            Piece::WQ => 'Q',
-            Piece::WK => 'K',
+    // Piece Types (Bits 0-2)
+    pub const NONE: PieceInfo = 0;
+    pub const PAWN: PieceInfo = 1;
+    pub const KNIGHT: PieceInfo = 2;
+    pub const BISHOP: PieceInfo = 3;
+    pub const ROOK: PieceInfo = 4;
+    pub const QUEEN: PieceInfo = 5;
+    pub const KING: PieceInfo = 6;
 
-            Piece::BP => 'p',
-            Piece::BN => 'n',
-            Piece::BB => 'b',
-            Piece::BR => 'r',
-            Piece::BQ => 'q',
-            Piece::BK => 'k',
-        }
+    // Colors (Bits 3-4)
+    pub const WHITE: PieceInfo = 8;
+    pub const BLACK: PieceInfo = 16;
+
+    // Masks
+    const TYPE_MASK: u8 = 0b00111;
+    const COLOR_MASK: u8 = 0b11000;
+
+    #[inline(always)]
+    pub fn get_type(p: PieceInfo) -> u8 {
+        p & Self::TYPE_MASK
     }
 
-    pub fn from_char(c: char) -> Option<Self> {
-        match c {
-            'P' => Some(Self::WP),
-            'N' => Some(Self::WN),
-            'B' => Some(Self::WB),
-            'R' => Some(Self::WR),
-            'Q' => Some(Self::WQ),
-            'K' => Some(Self::WK),
-
-            'p' => Some(Self::BP),
-            'n' => Some(Self::BN),
-            'b' => Some(Self::BB),
-            'r' => Some(Self::BR),
-            'q' => Some(Self::BQ),
-            'k' => Some(Self::BK),
-
-            _ => None,
-        }
+    #[inline(always)]
+    pub fn get_color(p: PieceInfo) -> u8 {
+        p & Self::COLOR_MASK
     }
 
-    pub fn piece_to_glyph(piece: Piece) -> &'static str {
-        match piece {
-            Piece::WP => "♟",
-            Piece::WN => "♞",
-            Piece::WB => "♝",
-            Piece::WR => "♜",
-            Piece::WQ => "♛",
-            Piece::WK => "♚",
-
-            Piece::BP => "♙",
-            Piece::BN => "♘",
-            Piece::BB => "♗",
-            Piece::BR => "♖",
-            Piece::BQ => "♕",
-            Piece::BK => "♔",
-        }
+    #[inline(always)]
+    pub fn from_idx(idx: usize) -> PieceInfo {
+        // idx 0-5 -> White Pawn to King
+        // idx 6-11 -> Black Pawn to King
+        let color = if idx < 6 { Self::WHITE } else { Self::BLACK };
+        let piece_type = (idx % 6) as u8 + 1;
+        color | piece_type
     }
 
-    pub fn from_val(val: usize) -> Self {
-        match val {
-            0 => Piece::WP,
-            1 => Piece::WN,
-            2 => Piece::WB,
-            3 => Piece::WR,
-            4 => Piece::WQ,
-            5 => Piece::WK,
+    // Indexes the pieces from 1 t0 11 for bitboards
+    pub const fn to_idx(p: PieceInfo) -> usize {
+        // This maps:
+        // White (P, N, B, R, Q, K) -> 0, 1, 2, 3, 4, 5
+        // Black (P, N, B, R, Q, K) -> 6, 7, 8, 9, 10, 11
+        let type_idx = (p & 0b111) as usize - 1;
+        let color_idx = if (p & 16) != 0 { 6 } else { 0 };
+        type_idx + color_idx
+    }
 
-            6 => Piece::BP,
-            7 => Piece::BN,
-            8 => Piece::BB,
-            9 => Piece::BR,
-            10 => Piece::BQ,
-            11 => Piece::BK,
-            _ => unreachable!(),
+    pub fn enemy(color: PieceInfo) -> PieceInfo {
+        debug_assert!(
+            color == color & Self::COLOR_MASK,
+            "ts is not even a color dawg"
+        );
+        color ^ 0b11000
+    }
+
+    pub fn to_char(p: PieceInfo) -> char {
+        let t = Self::get_type(p);
+        let mut c = match t {
+            Self::PAWN => 'P',
+            Self::KNIGHT => 'N',
+            Self::BISHOP => 'B',
+            Self::ROOK => 'R',
+            Self::QUEEN => 'Q',
+            Self::KING => 'K',
+            _ => return ' ',
+        };
+        if Self::get_color(p) == Self::BLACK {
+            c = c.to_ascii_lowercase();
+        }
+        c
+    }
+
+    pub fn from_char(c: char) -> Option<PieceInfo> {
+        let color = if c.is_uppercase() {
+            Self::WHITE
+        } else {
+            Self::BLACK
+        };
+        let t = match c.to_ascii_uppercase() {
+            'P' => Self::PAWN,
+            'N' => Self::KNIGHT,
+            'B' => Self::BISHOP,
+            'R' => Self::ROOK,
+            'Q' => Self::QUEEN,
+            'K' => Self::KING,
+            _ => return None,
+        };
+        Some(color | t)
+    }
+
+    pub fn to_glyph(p: PieceInfo) -> &'static str {
+        match p {
+            0b01001 => "♟", // White Pawn
+            0b01010 => "♞", // White Knight
+            0b01011 => "♝", // White Bishop
+            0b01100 => "♜", // White Rook
+            0b01101 => "♛", // White Queen
+            0b01110 => "♚", // White King
+
+            0b10001 => "♙", // Black Pawn (inverted for terminal contrast usually)
+            0b10010 => "♘",
+            0b10011 => "♗",
+            0b10100 => "♖",
+            0b10101 => "♕",
+            0b10110 => "♔",
+            _ => " ",
         }
     }
 }
@@ -165,13 +183,13 @@ impl Move {
 
 #[derive(Debug)]
 pub struct Undo {
-    pub captured: Option<Piece>,
+    pub captured: PieceInfo,
     pub prev_en_passant_sq: Option<u8>,
     pub prev_castling_rights: CastlingRights,
 }
 
 impl Undo {
-    pub fn new(captured: Option<Piece>, castling: CastlingRights, ensq: Option<u8>) -> Self {
+    pub fn new(captured: PieceInfo, castling: CastlingRights, ensq: Option<u8>) -> Self {
         Self {
             captured,
             prev_en_passant_sq: ensq,
@@ -181,7 +199,7 @@ impl Undo {
 }
 
 #[repr(u8)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Color {
     White,
     Black,
