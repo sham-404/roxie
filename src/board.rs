@@ -44,6 +44,7 @@ pub fn mask(idx: usize) -> u64 {
 pub struct Board {
     bitboards: [u64; 12],
     occupancy: [u64; 3],
+    mailbox: [PieceInfo; 64],
     castling: CastlingRights,
     side_to_move: Color,
     en_passant: Option<u8>,
@@ -54,10 +55,12 @@ impl Board {
         let bitboards = [0u64; 12];
 
         let occupancy: [u64; 3] = [0; 3];
+        let mailbox: [PieceInfo; 64] = [0u8; 64];
 
         let board = Self {
             bitboards,
             occupancy,
+            mailbox,
             side_to_move: Color::White,
             castling: CastlingRights::new(),
             en_passant: None,
@@ -87,14 +90,18 @@ impl Board {
         bitboards[Piece::to_idx(Piece::BLACK | Piece::QUEEN)] = 0x0800000000000000;
         bitboards[Piece::to_idx(Piece::BLACK | Piece::KING)] = 0x1000000000000000;
 
+        let mailbox = [Piece::NONE; 64];
+
         let mut board = Self {
             bitboards,
             occupancy,
+            mailbox,
             side_to_move: Color::White,
             castling: CastlingRights::new(),
             en_passant: None,
         };
 
+        board.build_mailbox();
         board.build_occupancy();
 
         board
@@ -165,6 +172,7 @@ impl Board {
             board.en_passant = Some(sq as u8);
         }
 
+        board.build_mailbox();
         board.build_occupancy();
 
         board
@@ -476,16 +484,7 @@ impl Board {
 
     #[inline]
     pub fn piece_on(&self, sq: usize) -> PieceInfo {
-        let mask = 1u64 << sq;
-
-        for idx in 0..12 {
-            if self.bitboards[idx] & mask != 0 {
-                // Convert the bitboard index (0-11) back to our 5-bit PieceInfo
-                return Piece::from_idx(idx);
-            }
-        }
-
-        Piece::NONE // Returns 0
+        return self.mailbox[sq];
     }
 }
 
@@ -500,18 +499,23 @@ impl Board {
         let piece_bb = self.mut_bb(piece);
         *piece_bb &= !from_mask;
         *piece_bb |= to_mask;
+
+        self.mailbox[from] = Piece::NONE;
+        self.mailbox[to] = piece;
     }
 
     fn remove_piece(&mut self, piece: PieceInfo, pos: usize) {
         let pos_mask = mask(pos);
 
         *self.mut_bb(piece) &= !pos_mask;
+        self.mailbox[pos] = Piece::NONE;
     }
 
     fn add_piece(&mut self, piece: PieceInfo, pos: usize) {
         let pos_mask = mask(pos);
 
         *self.mut_bb(piece) |= pos_mask;
+        self.mailbox[pos] = piece;
     }
 
     pub fn build_occupancy(&mut self) {
@@ -522,6 +526,20 @@ impl Board {
         self.occupancy[BLACK] = self.bitboards[6..12].iter().fold(0, |acc, &bb| acc | bb);
 
         self.occupancy[BOTH] = self.occupancy[WHITE] | self.occupancy[BLACK];
+    }
+
+    pub fn build_mailbox(&mut self) {
+        self.mailbox = [Piece::NONE; 64];
+
+        for (idx, &bb) in self.bitboards.iter().enumerate() {
+            let mut current_bb = bb;
+
+            while current_bb != 0 {
+                if let Some(sq) = pop_lsb(&mut current_bb) {
+                    self.mailbox[sq] = Piece::from_idx(idx);
+                }
+            }
+        }
     }
 
     pub fn side_to_move(&self) -> Color {
