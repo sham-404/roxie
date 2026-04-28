@@ -22,23 +22,23 @@ def resolve_outdir(outdir):
     return os.path.join(SCRIPT_DIR, outdir)
 
 
-def run_match(engine1, engine2, games, tc, depth, outdir):
+def run_match(engine1, engine2, games, tc, depth, outdir, save):
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    # 📁 Fix output directory
-    results_dir = resolve_outdir(outdir)
-    pgns_dir = resolve_outdir("pgns")
 
     name1 = os.path.basename(engine1)
     name2 = os.path.basename(engine2)
 
     base_name = f"{ts}_{name1}_vs_{name2}"
 
-    os.makedirs(results_dir, exist_ok=True)
-    os.makedirs(pgns_dir, exist_ok=True)
+    if save:
+        results_dir = resolve_outdir(outdir)
+        pgns_dir = resolve_outdir("pgns")
 
-    json_file = os.path.join(results_dir, f"{base_name}.json")
-    pgn_file = os.path.join(pgns_dir, f"{base_name}.pgn")
+        os.makedirs(results_dir, exist_ok=True)
+        os.makedirs(pgns_dir, exist_ok=True)
+
+    json_file = None
+    pgn_file = None
 
     cmd = [
         "cutechess-cli",
@@ -61,9 +61,10 @@ def run_match(engine1, engine2, games, tc, depth, outdir):
         "-games",
         str(games),
         "-repeat",
-        "-pgnout",
-        pgn_file,
     ]
+
+    if save:
+        cmd += ["-pgnout", pgn_file]
 
     print("Running:\n", " ".join(cmd), "\n")
 
@@ -75,24 +76,28 @@ def run_match(engine1, engine2, games, tc, depth, outdir):
 
     summary = parse_summary(result.stdout)
 
-    if summary:
-        data = {
-            "engine1": name1,
-            "engine2": name2,
-            "timestamp": ts,  # 🧠 useful metadata
-            "games": summary["total"],
-            "result": {
-                "engine1_wins": summary["wins"],
-                "engine1_losses": summary["losses"],
-                "draws": summary["draws"],
-            },
-            "score_percent": summary["score_pct"],
-        }
+    if save:
+        json_file = os.path.join(results_dir, f"{base_name}.json")
+        pgn_file = os.path.join(pgns_dir, f"{base_name}.pgn")
 
-        with open(json_file, "w") as f:
-            json.dump(data, f, indent=4)
+        if summary:
+            data = {
+                "engine1": name1,
+                "engine2": name2,
+                "timestamp": ts,  # 🧠 useful metadata
+                "games": summary["total"],
+                "result": {
+                    "engine1_wins": summary["wins"],
+                    "engine1_losses": summary["losses"],
+                    "draws": summary["draws"],
+                },
+                "score_percent": summary["score_pct"],
+            }
 
-        print(f"\nJSON saved to: {json_file}")
+            with open(json_file, "w") as f:
+                json.dump(data, f, indent=4)
+
+            print(f"\nJSON saved to: {json_file}")
 
     return pgn_file, json_file
 
@@ -124,6 +129,7 @@ def main():
     ap.add_argument("--tc", default="0.1+0.01")
     ap.add_argument("--depth", type=int, default=1)
     ap.add_argument("-o", "--outdir", default="results")  # 🔥 cleaner default
+    ap.add_argument("--save", action="store_true", help="store PGN and JSON results")
 
     args = ap.parse_args()
 
@@ -134,6 +140,7 @@ def main():
         args.tc,
         args.depth,
         args.outdir,
+        args.save,
     )
 
 
