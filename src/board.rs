@@ -525,6 +525,10 @@ impl Board {
         self.occupancy[BOTH] = self.occupancy[WHITE] | self.occupancy[BLACK];
     }
 
+    pub fn side_to_move(&self) -> Color {
+        self.side_to_move
+    }
+
     pub fn occ(&self, color: &Color) -> u64 {
         match color {
             Color::White => self.occupancy[WHITE],

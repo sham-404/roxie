@@ -5,3 +5,4 @@ pub mod square;
 pub mod perft;
 pub mod uci;
 pub mod search;
+pub mod evaluation;
