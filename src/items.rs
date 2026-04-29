@@ -2,6 +2,7 @@ use crate::board::Board;
 use crate::r#const::*;
 
 pub type PieceInfo = u8;
+pub type FlagInfo = u8;
 
 pub struct Piece;
 
@@ -43,6 +44,7 @@ impl Piece {
     }
 
     // Indexes the pieces from 1 t0 11 for bitboards
+    #[inline(always)]
     pub const fn to_idx(p: PieceInfo) -> usize {
         // This maps:
         // White (P, N, B, R, Q, K) -> 0, 1, 2, 3, 4, 5
@@ -52,6 +54,7 @@ impl Piece {
         type_idx + color_idx
     }
 
+    #[inline(always)]
     pub fn enemy(color: PieceInfo) -> PieceInfo {
         debug_assert!(
             color == color & Self::COLOR_MASK,
@@ -115,26 +118,58 @@ impl Piece {
     }
 }
 
-#[repr(u8)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum MoveFlag {
-    Quiet = 0b0000,
-    DoublePush = 0b0001,
-    KingCastle = 0b0010,
-    QueenCastle = 0b0011,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MoveFlag(pub FlagInfo);
+//     0          0          00           -> 4 bit encoding
+// promotion   capture  promo_pieces or   -> their representation
+//                      special_moves
 
-    Capture = 0b1000,
-    EnPassant = 0b1010,
+impl MoveFlag {
+    pub const QUIET: MoveFlag = MoveFlag(0b0000);
+    pub const DOUBLE_PUSH: MoveFlag = MoveFlag(0b0001);
+    pub const KING_CASTLE: MoveFlag = MoveFlag(0b0010);
+    pub const QUEEN_CASTLE: MoveFlag = MoveFlag(0b0011);
 
-    PromoKnight = 0b0100,
-    PromoBishop = 0b0101,
-    PromoRook = 0b0110,
-    PromoQueen = 0b0111,
+    pub const CAPTURE: MoveFlag = MoveFlag(0b1000);
+    pub const EN_PASSANT: MoveFlag = MoveFlag(0b1010);
 
-    PromoCapKnight = 0b1100,
-    PromoCapBishop = 0b1101,
-    PromoCapRook = 0b1110,
-    PromoCapQueen = 0b1111,
+    // Check masks
+    pub const CAPTURE_BIT: FlagInfo = 0b1000;
+    pub const PROMO_BIT: FlagInfo = 0b0100;
+    pub const PIECE_BIT: FlagInfo = 0b0011;
+
+    // Raw bits for the match in to_coord and make_move
+    pub const KNIGHT: FlagInfo = 0b00;
+    pub const BISHOP: FlagInfo = 0b01;
+    pub const ROOK: FlagInfo = 0b10;
+    pub const QUEEN: FlagInfo = 0b11;
+
+    // Promotion variants
+    pub const PROMO_KNIGHT: MoveFlag = MoveFlag(0b0100);
+    pub const PROMO_BISHOP: MoveFlag = MoveFlag(0b0101);
+    pub const PROMO_ROOK: MoveFlag = MoveFlag(0b0110);
+    pub const PROMO_QUEEN: MoveFlag = MoveFlag(0b0111);
+
+    pub const PROMO_CAP_KNIGHT: MoveFlag = MoveFlag(0b1100);
+    pub const PROMO_CAP_BISHOP: MoveFlag = MoveFlag(0b1101);
+    pub const PROMO_CAP_ROOK: MoveFlag = MoveFlag(0b1110);
+    pub const PROMO_CAP_QUEEN: MoveFlag = MoveFlag(0b1111);
+
+    #[inline(always)]
+    pub fn is_capture(self) -> bool {
+        (self.0 & Self::CAPTURE_BIT) != 0
+    }
+
+    #[inline(always)]
+    pub fn is_promo(self) -> bool {
+        (self.0 & Self::PROMO_BIT) != 0
+    }
+
+    #[inline(always)]
+    pub fn is_castle(self) -> bool {
+        self.0 & 0b1110 == 0b0010
+    }
+
 }
 
 use crate::r#const::SQ_TO_COORD;
@@ -145,22 +180,23 @@ pub struct Move(pub u16);
 
 impl Move {
     pub fn new(from: usize, to: usize, flag: MoveFlag) -> Self {
-        let m = (from as u16) | ((to as u16) << 6) | ((flag as u16) << 12);
+        let m = (from as u16) | ((to as u16) << 6) | ((flag.0 as u16) << 12);
         Move(m)
     }
 
+    #[inline(always)]
     pub fn from(self) -> usize {
         (self.0 & 0x3F) as usize
     }
 
+    #[inline(always)]
     pub fn to(self) -> usize {
         ((self.0 >> 6) & 0x3F) as usize
     }
 
+    #[inline(always)]
     pub fn flag(self) -> MoveFlag {
-        // This tells the compiler: "Trust me, these 4 bits ARE a MoveFlag."
-        // Zero branches, zero math.
-        unsafe { std::mem::transmute(((self.0 >> 12) & 0xF) as u8) }
+        MoveFlag(((self.0 >> 12) & 0xF) as FlagInfo)
     }
 
     pub fn to_coord(&self) -> String {
@@ -170,16 +206,16 @@ impl Move {
 
         let mut coord = format!("{}{}", SQ_TO_COORD[from], SQ_TO_COORD[to]);
 
-        let promo = match flag {
-            MoveFlag::PromoQueen | MoveFlag::PromoCapQueen => Some('q'),
-            MoveFlag::PromoKnight | MoveFlag::PromoCapKnight => Some('n'),
-            MoveFlag::PromoRook | MoveFlag::PromoCapRook => Some('r'),
-            MoveFlag::PromoBishop | MoveFlag::PromoCapBishop => Some('b'),
-            _ => None,
-        };
-
-        if let Some(c) = promo {
-            coord.push(c);
+        if flag.is_promo() {
+            // Mask the last 2 bits to get 0:N, 1:B, 2:R, 3:Q
+            let promo_char = match flag.0 & MoveFlag::PIECE_BIT {
+                MoveFlag::KNIGHT => 'n',
+                MoveFlag::BISHOP => 'b',
+                MoveFlag::ROOK => 'r',
+                MoveFlag::QUEEN => 'q',
+                _ => unreachable!(),
+            };
+            coord.push(promo_char);
         }
 
         coord
@@ -223,6 +259,7 @@ pub enum Color {
 }
 
 impl Color {
+    #[inline(always)]
     pub fn opponent(&self) -> Self {
         match self {
             Color::White => Color::Black,
@@ -239,28 +276,34 @@ impl CastlingRights {
         Self(0)
     }
 
+    #[inline(always)]
     pub fn white_kingside(self) -> bool {
         self.0 & WK != 0
     }
 
+    #[inline(always)]
     pub fn white_queenside(self) -> bool {
         self.0 & WQ != 0
     }
 
+    #[inline(always)]
     pub fn black_kingside(self) -> bool {
         self.0 & BK != 0
     }
 
+    #[inline(always)]
     pub fn black_queenside(self) -> bool {
         self.0 & BQ != 0
     }
 
     // remove rights
+    #[inline(always)]
     pub fn remove(&mut self, mask: u8) {
         self.0 &= !mask;
     }
 
     // add rights
+    #[inline(always)]
     pub fn add(&mut self, mask: u8) {
         self.0 |= mask;
     }
