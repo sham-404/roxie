@@ -157,21 +157,21 @@ impl Board {
         board
     }
     pub fn make_move(&mut self, mov: &Move) -> Undo {
-        debug_assert!(self.occupancy[BOTH] & mask(mov.from) != 0);
+        debug_assert!(self.occupancy[BOTH] & mask(mov.from()) != 0);
 
-        let cur_piece = self.piece_on(mov.from);
+        let cur_piece = self.piece_on(mov.from());
 
         // Detecting captures
-        let (captured, captured_sq) = match mov.flag {
+        let (captured, captured_sq) = match mov.flag() {
             MoveFlag::EnPassant => {
                 let captured_sq = match self.side_to_move {
-                    Color::White => mov.to - 8,
-                    Color::Black => mov.to + 8,
+                    Color::White => mov.to() - 8,
+                    Color::Black => mov.to() + 8,
                 };
 
                 (self.piece_on(captured_sq), captured_sq)
             }
-            _ => (self.piece_on(mov.to), mov.to),
+            _ => (self.piece_on(mov.to()), mov.to()),
         };
 
         // Constructing undo
@@ -183,19 +183,19 @@ impl Board {
         }
 
         // Moving the piece on the board
-        self.move_piece_quiet(mov.from, mov.to);
+        self.move_piece_quiet(mov.from(), mov.to());
 
         // Handling Special Moves (for piece state)
         // Promotions
         let promo_piece = match self.side_to_move {
-            Color::White => match mov.flag {
+            Color::White => match mov.flag() {
                 MoveFlag::PromoKnight | MoveFlag::PromoCapKnight => Piece::WHITE | Piece::KNIGHT,
                 MoveFlag::PromoBishop | MoveFlag::PromoCapBishop => Piece::WHITE | Piece::BISHOP,
                 MoveFlag::PromoRook | MoveFlag::PromoCapRook => Piece::WHITE | Piece::ROOK,
                 MoveFlag::PromoQueen | MoveFlag::PromoCapQueen => Piece::WHITE | Piece::QUEEN,
                 _ => Piece::NONE,
             },
-            Color::Black => match mov.flag {
+            Color::Black => match mov.flag() {
                 MoveFlag::PromoKnight | MoveFlag::PromoCapKnight => Piece::BLACK | Piece::KNIGHT,
                 MoveFlag::PromoBishop | MoveFlag::PromoCapBishop => Piece::BLACK | Piece::BISHOP,
                 MoveFlag::PromoRook | MoveFlag::PromoCapRook => Piece::BLACK | Piece::ROOK,
@@ -206,14 +206,14 @@ impl Board {
 
         if promo_piece != Piece::NONE {
             // Removing the pawn, which is in the promotion square
-            self.remove_piece(cur_piece, mov.to);
+            self.remove_piece(cur_piece, mov.to());
 
             // Adding the promotion piece
-            self.add_piece(promo_piece, mov.to);
+            self.add_piece(promo_piece, mov.to());
         }
 
         // castling
-        match mov.flag {
+        match mov.flag() {
             MoveFlag::KingCastle => {
                 debug_assert!(
                     cur_piece != Piece::KING,
@@ -239,39 +239,39 @@ impl Board {
 
         /////// Handling Special moves (for board state)
         // updating en_passant square
-        self.en_passant = match mov.flag {
-            MoveFlag::DoublePush => Some(((mov.from + mov.to) / 2) as u8),
+        self.en_passant = match mov.flag() {
+            MoveFlag::DoublePush => Some(((mov.from() + mov.to()) / 2) as u8),
             _ => None,
         };
 
         //// Handling castling rights
         // White king moves
-        if mov.from == WK_START_POS {
+        if mov.from() == WK_START_POS {
             self.castling.remove(WK | WQ);
         }
 
         // Black king moves
-        if mov.from == BK_START_POS {
+        if mov.from() == BK_START_POS {
             self.castling.remove(BK | BQ);
         }
 
         // If white kingside rook moved, or captured
-        if mov.from == WK_START_POS + 3 || mov.to == WK_START_POS + 3 {
+        if mov.from() == WK_START_POS + 3 || mov.to() == WK_START_POS + 3 {
             self.castling.remove(WK);
         }
 
         // If white queenside rook moved, or captured
-        if mov.from == WK_START_POS - 4 || mov.to == WK_START_POS - 4 {
+        if mov.from() == WK_START_POS - 4 || mov.to() == WK_START_POS - 4 {
             self.castling.remove(WQ);
         }
 
         // If black kingside rook moved, or captured
-        if mov.from == BK_START_POS + 3 || mov.to == BK_START_POS + 3 {
+        if mov.from() == BK_START_POS + 3 || mov.to() == BK_START_POS + 3 {
             self.castling.remove(BK);
         }
 
         // If black queenside rook moved, or captured
-        if mov.from == BK_START_POS - 4 || mov.to == BK_START_POS - 4 {
+        if mov.from() == BK_START_POS - 4 || mov.to() == BK_START_POS - 4 {
             self.castling.remove(BQ);
         }
 
@@ -284,7 +284,7 @@ impl Board {
     }
 
     pub fn undo_move(&mut self, mov: &Move, undo: &Undo) {
-        let cur_piece = self.piece_on(mov.to);
+        let cur_piece = self.piece_on(mov.to());
 
         debug_assert!(
             cur_piece != Piece::NONE,
@@ -292,10 +292,10 @@ impl Board {
         );
 
         // move piece back
-        self.move_piece_quiet(mov.to, mov.from);
+        self.move_piece_quiet(mov.to(), mov.from());
 
         // handle captures
-        match mov.flag {
+        match mov.flag() {
             MoveFlag::Capture
             | MoveFlag::PromoCapQueen
             | MoveFlag::PromoCapRook
@@ -304,16 +304,16 @@ impl Board {
                 let cap_piece = undo.captured;
                 debug_assert!(cap_piece != Piece::NONE, "Capture without captured piece");
 
-                self.add_piece(cap_piece, mov.to);
+                self.add_piece(cap_piece, mov.to());
             }
             MoveFlag::EnPassant => {
                 let cap_piece = undo.captured;
                 debug_assert!(cap_piece != Piece::NONE, "EP without captured piece");
 
                 let cap_sq = if Piece::get_color(cap_piece) == Piece::BLACK {
-                    mov.to - 8
+                    mov.to() - 8
                 } else {
-                    mov.to + 8
+                    mov.to() + 8
                 };
 
                 self.add_piece(cap_piece, cap_sq);
@@ -322,7 +322,7 @@ impl Board {
         }
 
         // Handling Promotions
-        match mov.flag {
+        match mov.flag() {
             MoveFlag::PromoQueen
             | MoveFlag::PromoRook
             | MoveFlag::PromoBishop
@@ -340,22 +340,22 @@ impl Board {
 
                 // Removing the Promoted piece from mov.from
                 // (cuz it got added when we try to undo the move
-                self.remove_piece(cur_piece, mov.from);
+                self.remove_piece(cur_piece, mov.from());
                 // adding the relevent pawn on Promotion moves
-                self.add_piece(pawn, mov.from);
+                self.add_piece(pawn, mov.from());
             }
             _ => {}
         }
 
         // castling
-        match mov.flag {
+        match mov.flag() {
             MoveFlag::KingCastle => {
                 // rook: f -> h
-                self.move_piece_quiet(mov.to - 1, mov.to + 1);
+                self.move_piece_quiet(mov.to() - 1, mov.to() + 1);
             }
             MoveFlag::QueenCastle => {
                 // rook: d -> a
-                self.move_piece_quiet(mov.to + 1, mov.to - 2);
+                self.move_piece_quiet(mov.to() + 1, mov.to() - 2);
             }
             _ => {}
         }

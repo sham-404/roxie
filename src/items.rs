@@ -138,22 +138,39 @@ pub enum MoveFlag {
 }
 
 use crate::r#const::SQ_TO_COORD;
-#[derive(Debug, Clone, Copy)]
-pub struct Move {
-    pub from: usize,
-    pub to: usize,
-    pub flag: MoveFlag,
-}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Move(pub u16);
+// 0000   000000   000000 -> 16 bits
+// flag     to      from  -> encoding format
 
 impl Move {
     pub fn new(from: usize, to: usize, flag: MoveFlag) -> Self {
-        Self { from, to, flag }
+        let m = (from as u16) | ((to as u16) << 6) | ((flag as u16) << 12);
+        Move(m)
+    }
+
+    pub fn from(self) -> usize {
+        (self.0 & 0x3F) as usize
+    }
+
+    pub fn to(self) -> usize {
+        ((self.0 >> 6) & 0x3F) as usize
+    }
+
+    pub fn flag(self) -> MoveFlag {
+        // This tells the compiler: "Trust me, these 4 bits ARE a MoveFlag."
+        // Zero branches, zero math.
+        unsafe { std::mem::transmute(((self.0 >> 12) & 0xF) as u8) }
     }
 
     pub fn to_coord(&self) -> String {
-        let mut coord = format!("{}{}", SQ_TO_COORD[self.from], SQ_TO_COORD[self.to]);
+        let from = self.from();
+        let to = self.to();
+        let flag = self.flag();
 
-        let promo = match self.flag {
+        let mut coord = format!("{}{}", SQ_TO_COORD[from], SQ_TO_COORD[to]);
+
+        let promo = match flag {
             MoveFlag::PromoQueen | MoveFlag::PromoCapQueen => Some('q'),
             MoveFlag::PromoKnight | MoveFlag::PromoCapKnight => Some('n'),
             MoveFlag::PromoRook | MoveFlag::PromoCapRook => Some('r'),
