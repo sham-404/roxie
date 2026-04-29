@@ -1,13 +1,13 @@
-use crate::{board::Board, items::{Move, MoveFlag, Rng}};
+use crate::{board::Board, items::{Move, Rng}};
 
-pub fn find_best_move(board: &mut Board) -> Move {
+pub fn find_best_move(board: &mut Board) -> Option<Move> {
     let moves = board.gen_moves();
 
     let mut rng = Rng::new(29834827345);
     if moves.len() == 0 {
-        return Move::new(64, 64, MoveFlag::Quiet);
+        return None;
     }
     
     let idx = rng.gen_range(moves.len());
-    moves[idx]
+    Some(moves[idx])
 }

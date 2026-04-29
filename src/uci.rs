@@ -40,7 +40,12 @@ pub fn uci_loop() {
                 "position" => handle_position(&mut words, &mut board),
 
                 "go" => {
-                    uci_print!("bestmove {}", find_best_move(&mut board).to_coord())
+                    let mov = find_best_move(&mut board);
+                    let coord = match mov {
+                        Some(mv) => mv.to_coord(),
+                        None => String::from("0000"),
+                    };
+                    uci_print!("bestmove {}", coord);
                 }
 
                 "quit" => break,
