@@ -35,6 +35,15 @@ impl Piece {
     }
 
     #[inline(always)]
+    pub fn get_color_idx(p: PieceInfo) -> usize {
+        if p & Self::COLOR_MASK == Piece::WHITE {
+            WHITE
+        } else {
+            BLACK
+        }
+    }
+
+    #[inline(always)]
     pub fn from_idx(idx: usize) -> PieceInfo {
         // idx 0-5 -> White Pawn to King
         // idx 6-11 -> Black Pawn to King
@@ -169,7 +178,6 @@ impl MoveFlag {
     pub fn is_castle(self) -> bool {
         self.0 & 0b1110 == 0b0010
     }
-
 }
 
 use crate::r#const::SQ_TO_COORD;

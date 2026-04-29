@@ -259,8 +259,6 @@ impl Board {
         }
 
         // Post move activities
-        self.build_occupancy();
-
         self.side_to_move = self.side_to_move.opponent();
 
         undo
@@ -328,8 +326,6 @@ impl Board {
         // restore state
         self.en_passant = undo.prev_en_passant_sq;
         self.castling = undo.prev_castling_rights;
-
-        self.build_occupancy();
 
         self.side_to_move = self.side_to_move.opponent();
     }
@@ -446,6 +442,10 @@ impl Board {
 
         self.mailbox[from] = Piece::NONE;
         self.mailbox[to] = piece;
+
+        let color = Piece::get_color_idx(piece);
+        self.occupancy[color] ^= from_mask | to_mask;
+        self.occupancy[BOTH] ^= from_mask | to_mask;
     }
 
     fn remove_piece(&mut self, piece: PieceInfo, pos: usize) {
@@ -453,6 +453,10 @@ impl Board {
 
         *self.mut_bb(piece) &= !pos_mask;
         self.mailbox[pos] = Piece::NONE;
+
+        let color = Piece::get_color_idx(piece);
+        self.occupancy[color] &= !pos_mask;
+        self.occupancy[BOTH] &= !pos_mask;
     }
 
     fn add_piece(&mut self, piece: PieceInfo, pos: usize) {
@@ -460,6 +464,10 @@ impl Board {
 
         *self.mut_bb(piece) |= pos_mask;
         self.mailbox[pos] = piece;
+
+        let color = Piece::get_color_idx(piece);
+        self.occupancy[color] |= pos_mask;
+        self.occupancy[BOTH] |= pos_mask;
     }
 
     pub fn build_occupancy(&mut self) {
