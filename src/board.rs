@@ -92,7 +92,7 @@ impl Board {
         board.bitboards = [0; 12];
         board.occupancy = [0; 3];
         board.en_passant = None;
-        board.castling = CastlingRights::new();
+        board.castling = CastlingRights::none();
 
         let mut parts = fen.split_whitespace();
 
@@ -420,6 +420,18 @@ impl Board {
         }
 
         false
+    }
+
+    pub fn in_check(&self) -> bool {
+        let color = match self.side_to_move {
+            Color::White => Piece::WHITE,
+            Color::Black => Piece::BLACK,
+        };
+
+        self.is_square_atacked(
+            pop_lsb(&mut self.bb(color | Piece::KING)).unwrap(),
+            &self.side_to_move,
+        )
     }
 
     #[inline]
@@ -895,7 +907,7 @@ impl Board {
                 for i in 0..12 {
                     if (self.bitboards[i] >> sq) & 1 == 1 {
                         let piece = Piece::from_idx(i);
-                        let glyph = Piece::to_char(piece);
+                        let glyph = Piece::to_glyph(piece);
 
                         // Priority: cursor > selected > moves
                         if is_cursor {

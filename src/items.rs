@@ -281,6 +281,10 @@ pub struct CastlingRights(pub u8);
 
 impl CastlingRights {
     pub fn new() -> Self {
+        Self(WK | WQ | BK | BQ)
+    }
+
+    pub fn none() -> Self {
         Self(0)
     }
 
