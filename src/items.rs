@@ -247,14 +247,16 @@ pub struct Undo {
     pub captured: PieceInfo,
     pub prev_en_passant_sq: Option<u8>,
     pub prev_castling_rights: CastlingRights,
+    pub prev_last_irreversible: usize,
 }
 
 impl Undo {
-    pub fn new(captured: PieceInfo, castling: CastlingRights, ensq: Option<u8>) -> Self {
+    pub fn new(captured: PieceInfo, castling: CastlingRights, ensq: Option<u8>, last_irreversible: usize) -> Self {
         Self {
             captured,
             prev_en_passant_sq: ensq,
             prev_castling_rights: castling,
+            prev_last_irreversible: last_irreversible,
         }
     }
 }
@@ -270,6 +272,16 @@ impl History {
             stack: [0; 1024],
             len: 0,
         }
+    }
+
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    #[inline(always)]
+    pub fn get(&self, idx: usize) -> u64 {
+        self.stack[idx]
     }
 
     #[inline(always)]

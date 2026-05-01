@@ -7,7 +7,13 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use roxie::{board::Board, perft::perft, zobrist::init_zobrist};
+    use roxie::{
+        board::{Board},
+        items::{Move, MoveFlag},
+        perft::perft,
+        search::find_best_move,
+        zobrist::init_zobrist,
+    };
     const FEN: &str = "r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1 ";
 
     static DEPTH_1: u64 = 6;
@@ -15,6 +21,27 @@ mod tests {
     static DEPTH_3: u64 = 9467;
     static DEPTH_4: u64 = 422333;
     static DEPTH_5: u64 = 15833292;
+
+    #[test]
+    fn zobrist_test() {
+        init_zobrist();
+        let mut board = Board::start_pos();
+        let old = board.zobrist_key;
+        let mv = Move::new(8, 16, MoveFlag::QUIET);
+        let undo = board.make_move(&mv);
+        board.unmake_move(&mv, &undo);
+        let new = board.zobrist_key;
+        println!("{}", old);
+
+        assert_eq!(old, new);
+    }
+
+    #[test]
+    fn best_move() {
+        init_zobrist();
+        let mut board = Board::load_fen(FEN);
+        _ = find_best_move(&mut board, 5);
+    }
 
     #[test]
     fn perft_1() {

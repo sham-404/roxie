@@ -25,6 +25,14 @@ pub fn find_best_move(board: &mut Board, depth: u16) -> Option<Move> {
 }
 
 fn negamax(board: &mut Board, depth: u16) -> i32 {
+    if board.is_threefold() {
+        if board.side_to_move() == Color::White {
+            return -1;
+        } else {
+            return 1;
+        }
+    }
+
     if depth == 0 {
         let color_fac = if board.side_to_move() == Color::White {
             1

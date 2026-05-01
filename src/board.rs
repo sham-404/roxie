@@ -61,9 +61,9 @@ pub struct Board {
     castling: CastlingRights,
     side_to_move: Color,
     en_passant: Option<u8>,
-    zobrist_key: u64,
+    pub zobrist_key: u64,
     history: History,
-    last_irreversible_mv_idx: usize,
+    last_irreversible: usize,
 }
 
 impl Board {
@@ -81,7 +81,7 @@ impl Board {
             en_passant: None,
             zobrist_key: 0,
             history: History::new(),
-            last_irreversible_mv_idx: 0,
+            last_irreversible: 0,
         };
 
         board
@@ -211,7 +211,12 @@ impl Board {
 
         // Constructing undo
         self.history.push(self.zobrist_key);
-        let undo = Undo::new(captured, self.castling, self.en_passant);
+        let undo = Undo::new(captured, self.castling, self.en_passant, self.last_irreversible);
+
+        // update last_irreversible
+        if captured != Piece::NONE || cur_piece == Piece::PAWN {
+            self.last_irreversible = self.history.len();
+        }
 
         // Update zobrist key (must be done before making the move)
         self.update_zobrist_key(mov, &undo);
@@ -363,6 +368,7 @@ impl Board {
         // restore state
         self.en_passant = undo.prev_en_passant_sq;
         self.castling = undo.prev_castling_rights;
+        self.last_irreversible = undo.prev_last_irreversible;
         self.zobrist_key = self.history.pop();
 
         // self.update_zobrist_key(mov, undo);
@@ -472,6 +478,23 @@ impl Board {
             pop_lsb(&mut self.bb(color | Piece::KING)).unwrap(),
             &self.side_to_move,
         )
+    }
+
+    pub fn is_threefold(&self) -> bool {
+        let cur = self.zobrist_key;
+        let mut count = 1;
+
+        for i in self.last_irreversible..self.history.len() {
+            if self.history.get(i) == cur {
+                count += 1;
+            }
+
+            if count >= 3 {
+                return true;
+            }
+        }
+        
+        false
     }
 
     #[inline]
