@@ -269,6 +269,7 @@ impl Undo {
 }
 
 const MAX_MOVES: usize = 256;
+#[derive(Debug)]
 pub struct MoveList {
     pub moves: [Move; MAX_MOVES],
     pub len: usize,
@@ -298,6 +299,10 @@ impl MoveList {
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    pub fn clear(&mut self) {
+        self.len = 0;
     }
 
     #[inline(always)]

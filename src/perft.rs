@@ -13,7 +13,7 @@ pub fn perft(board: &mut Board, depth: u32) -> u64 {
 
     let mut nodes = 0;
 
-    for mov in move_list.moves {
+    for mov in move_list.as_slice() {
         let undo = board.make_move(&mov);
         nodes += perft(board, depth - 1);
         board.unmake_move(&mov, &undo);

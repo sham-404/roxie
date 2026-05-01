@@ -489,7 +489,7 @@ impl Board {
         let cur = self.zobrist_key;
         let mut count = 1;
 
-        for i in self.last_irreversible..self.history.len() {
+        for i in (self.last_irreversible..self.history.len()).rev() {
             if self.history.get(i) == cur {
                 count += 1;
             }
@@ -971,7 +971,7 @@ impl Board {
         }
     }
 
-    pub fn filter_illegal(&mut self, list: &mut MoveList) {
+    fn filter_illegal(&mut self, moves: &mut MoveList) {
         let color = if self.side_to_move == Color::White {
             Piece::WHITE
         } else {
@@ -979,31 +979,26 @@ impl Board {
         };
 
         let king = color | Piece::KING;
-        let stm = self.side_to_move;
+        let our_col = self.side_to_move;
+        let mut last_legal_mv_idx: isize = -1;
 
-        let mut i = 0;
-
-        while i < list.len {
-            let mv = list.moves[i];
+        for idx in 0..moves.len() {
+            let mv = moves.moves[idx];
 
             let undo = self.make_move(&mv);
 
             let mut king_bb = self.bb(king);
             let king_pos = pop_lsb(&mut king_bb).expect("There is no King!!!");
 
-            let illegal = self.is_square_atacked(king_pos, &stm);
+            // after make_move, side_to_move is opponent
+            if !self.is_square_atacked(king_pos, &our_col) {
+                moves.moves[(last_legal_mv_idx + 1) as usize] = mv;
+                last_legal_mv_idx += 1;
+            }
 
             self.unmake_move(&mv, &undo);
-
-            if illegal {
-                // Remove move by swapping with last
-                list.len -= 1;
-                list.moves[i] = list.moves[list.len];
-                // don't increment i (we need to check swapped move)
-            } else {
-                i += 1;
-            }
         }
+        moves.len = (last_legal_mv_idx + 1) as usize;
     }
 
     fn can_castle_kingside(&self, king_pos: usize, color: &Color) -> bool {
