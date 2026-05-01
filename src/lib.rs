@@ -6,3 +6,4 @@ pub mod perft;
 pub mod search;
 pub mod square;
 pub mod uci;
+pub mod zobrist;

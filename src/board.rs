@@ -1,6 +1,7 @@
 use crate::r#const::*;
 use crate::items::*;
 use crate::square::Square;
+use crate::zobrist::{CASTLING_KEYS, ENPASSANT_KEYS, SIDE_KEY, ZOBRIST_TABLE};
 
 #[inline]
 pub fn pop_lsb(bb: &mut u64) -> Option<usize> {
@@ -19,7 +20,40 @@ pub fn mask(idx: usize) -> u64 {
     1u64 << idx
 }
 
-#[derive(Clone)]
+fn compute_hash(board: &Board) -> u64 {
+    let mut hash = 0;
+
+    let zob = ZOBRIST_TABLE.get().unwrap();
+    let ep = ENPASSANT_KEYS.get().unwrap();
+    let castling = CASTLING_KEYS.get().unwrap();
+    let side = SIDE_KEY.get().unwrap();
+
+    // pieces
+    for piece in 0..12 {
+        let mut bb = board.bitboards[piece];
+
+        while let Some(sq) = pop_lsb(&mut bb) {
+            hash ^= zob[piece][sq];
+        }
+    }
+
+    // side
+    if board.side_to_move == Color::Black {
+        hash ^= *side;
+    }
+
+    // castling
+    hash ^= castling[board.castling.0 as usize];
+
+    // en passant
+    if let Some(sq) = board.en_passant {
+        let file = sq % 8;
+        hash ^= ep[file as usize];
+    }
+
+    hash
+}
+
 pub struct Board {
     bitboards: [u64; 12],
     occupancy: [u64; 3],
@@ -27,12 +61,14 @@ pub struct Board {
     castling: CastlingRights,
     side_to_move: Color,
     en_passant: Option<u8>,
+    zobrist_key: u64,
+    history: History,
+    last_irreversible_mv_idx: usize,
 }
 
 impl Board {
     pub fn new() -> Self {
         let bitboards = [0u64; 12];
-
         let occupancy: [u64; 3] = [0; 3];
         let mailbox: [PieceInfo; 64] = [0u8; 64];
 
@@ -43,13 +79,16 @@ impl Board {
             side_to_move: Color::White,
             castling: CastlingRights::new(),
             en_passant: None,
+            zobrist_key: 0,
+            history: History::new(),
+            last_irreversible_mv_idx: 0,
         };
 
         board
     }
 
     pub fn start_pos() -> Self {
-        let occupancy: [u64; 3] = [0; 3];
+        let mut board = Self::new();
 
         let mut bitboards = [0u64; 12];
 
@@ -69,17 +108,8 @@ impl Board {
         bitboards[Piece::to_idx(Piece::BLACK | Piece::QUEEN)] = 0x0800000000000000;
         bitboards[Piece::to_idx(Piece::BLACK | Piece::KING)] = 0x1000000000000000;
 
-        let mailbox = [Piece::NONE; 64];
-
-        let mut board = Self {
-            bitboards,
-            occupancy,
-            mailbox,
-            side_to_move: Color::White,
-            castling: CastlingRights::new(),
-            en_passant: None,
-        };
-
+        board.bitboards = bitboards;
+        board.zobrist_key = compute_hash(&board);
         board.build_mailbox();
         board.build_occupancy();
 
@@ -151,6 +181,9 @@ impl Board {
             board.en_passant = Some(sq as u8);
         }
 
+        board.build_occupancy();
+        board.build_mailbox();
+        board.zobrist_key = compute_hash(&board);
         board.build_mailbox();
         board.build_occupancy();
 
@@ -177,7 +210,11 @@ impl Board {
         let captured = self.piece_on(captured_sq);
 
         // Constructing undo
+        self.history.push(self.zobrist_key);
         let undo = Undo::new(captured, self.castling, self.en_passant);
+
+        // Update zobrist key (must be done before making the move)
+        self.update_zobrist_key(mov, &undo);
 
         // Handling captures
         if captured != Piece::NONE {
@@ -264,7 +301,7 @@ impl Board {
         undo
     }
 
-    pub fn undo_move(&mut self, mov: &Move, undo: &Undo) {
+    pub fn unmake_move(&mut self, mov: &Move, undo: &Undo) {
         let from = mov.from();
         let to = mov.to();
         let flag = mov.flag();
@@ -326,6 +363,9 @@ impl Board {
         // restore state
         self.en_passant = undo.prev_en_passant_sq;
         self.castling = undo.prev_castling_rights;
+        self.zobrist_key = self.history.pop();
+
+        // self.update_zobrist_key(mov, undo);
 
         self.side_to_move = self.side_to_move.opponent();
     }
@@ -504,6 +544,109 @@ impl Board {
                 }
             }
         }
+    }
+
+    fn update_zobrist_key(&mut self, mv: &Move, undo: &Undo) {
+        let zob = ZOBRIST_TABLE.get().unwrap();
+        let ep = ENPASSANT_KEYS.get().unwrap();
+        let castling = CASTLING_KEYS.get().unwrap();
+        let side = SIDE_KEY.get().unwrap();
+
+        let from = mv.from();
+        let to = mv.to();
+        let flag = mv.flag();
+
+        let piece = self.piece_on(from);
+        let piece_idx = Piece::to_idx(piece);
+
+        // remove old en passant sq
+        if let Some(sq) = undo.prev_en_passant_sq {
+            self.zobrist_key ^= ep[sq as usize % 8];
+        }
+
+        // remove piece from mov.from
+        self.zobrist_key ^= zob[piece_idx][from];
+
+        // handle capture
+        if flag.is_capture() {
+            if flag == MoveFlag::EN_PASSANT {
+                let cap_sq = if Piece::get_color(piece) == Piece::WHITE {
+                    to - 8
+                } else {
+                    to + 8
+                };
+
+                let captured = self.piece_on(cap_sq);
+                self.zobrist_key ^= zob[Piece::to_idx(captured)][cap_sq];
+            } else {
+                let captured = self.piece_on(to);
+                self.zobrist_key ^= zob[Piece::to_idx(captured)][to];
+            }
+        }
+
+        // handle castling
+        if flag.is_castle() {
+            match to {
+                // white king side
+                6 => {
+                    self.zobrist_key ^= zob[Piece::to_idx(Piece::WHITE | Piece::ROOK)][7];
+                    self.zobrist_key ^= zob[Piece::to_idx(Piece::WHITE | Piece::ROOK)][5];
+                }
+
+                // white queen side
+                2 => {
+                    self.zobrist_key ^= zob[Piece::to_idx(Piece::WHITE | Piece::ROOK)][0];
+                    self.zobrist_key ^= zob[Piece::to_idx(Piece::WHITE | Piece::ROOK)][3];
+                }
+
+                // black king side
+                62 => {
+                    self.zobrist_key ^= zob[Piece::to_idx(Piece::BLACK | Piece::ROOK)][63];
+                    self.zobrist_key ^= zob[Piece::to_idx(Piece::BLACK | Piece::ROOK)][61];
+                }
+
+                // black queen side
+                58 => {
+                    self.zobrist_key ^= zob[Piece::to_idx(Piece::BLACK | Piece::ROOK)][56];
+                    self.zobrist_key ^= zob[Piece::to_idx(Piece::BLACK | Piece::ROOK)][59];
+                }
+                _ => {}
+            }
+        }
+
+        // handling promotion
+        if flag.is_promo() {
+            let promo_piece_type = match flag.0 & MoveFlag::PIECE_BIT {
+                MoveFlag::KNIGHT => Piece::KNIGHT,
+                MoveFlag::BISHOP => Piece::BISHOP,
+                MoveFlag::ROOK => Piece::ROOK,
+                MoveFlag::QUEEN => Piece::QUEEN,
+                _ => unreachable!(),
+            };
+
+            let promoted = Piece::get_color(piece) | promo_piece_type;
+
+            self.zobrist_key ^= zob[Piece::to_idx(promoted)][to];
+        } else {
+            // Normal move
+            self.zobrist_key ^= zob[piece_idx][to];
+        }
+
+        // update castling rights
+        let old_rights = undo.prev_castling_rights.0;
+        self.zobrist_key ^= castling[old_rights as usize];
+
+        let new_rights = self.castling.0;
+
+        self.zobrist_key ^= castling[new_rights as usize];
+
+        // handling new en passant sq
+        if let Some(sq) = self.en_passant {
+            self.zobrist_key ^= ep[sq as usize % 8];
+        }
+
+        // handling change of side
+        self.zobrist_key ^= *side;
     }
 
     pub fn side_to_move(&self) -> Color {
@@ -822,7 +965,7 @@ impl Board {
                 legal.push(*mv);
             }
 
-            self.undo_move(&mv, &undo);
+            self.unmake_move(&mv, &undo);
         }
 
         legal

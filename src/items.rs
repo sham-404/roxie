@@ -259,6 +259,34 @@ impl Undo {
     }
 }
 
+pub struct History {
+    stack: [u64; 1024],
+    len: usize,
+}
+
+impl History {
+    pub fn new() -> Self {
+        Self {
+            stack: [0; 1024],
+            len: 0,
+        }
+    }
+
+    #[inline(always)]
+    pub fn push(&mut self, key: u64) {
+        debug_assert!(self.len < 1024);
+        self.stack[self.len] = key;
+        self.len += 1;
+    }
+
+    #[inline(always)]
+    pub fn pop(&mut self) -> u64 {
+        debug_assert!(self.len > 0);
+        self.len -= 1;
+        self.stack[self.len]
+    }
+}
+
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Color {
@@ -318,29 +346,5 @@ impl CastlingRights {
     #[inline(always)]
     pub fn add(&mut self, mask: u8) {
         self.0 |= mask;
-    }
-}
-
-//// Helpers
-
-pub struct Rng(u64);
-
-impl Rng {
-    pub fn new(seed: u64) -> Self {
-        Self(seed)
-    }
-
-    pub fn next(&mut self) -> u64 {
-        // xorshift64*
-        let mut x = self.0;
-        x ^= x >> 12;
-        x ^= x << 25;
-        x ^= x >> 27;
-        self.0 = x;
-        x.wrapping_mul(0x2545F4914F6CDD1D)
-    }
-
-    pub fn gen_range(&mut self, n: usize) -> usize {
-        (self.next() as usize) % n
     }
 }
