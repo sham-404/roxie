@@ -187,6 +187,8 @@ pub struct Move(pub u16);
 // flag     to      from  -> encoding format
 
 impl Move {
+    pub const NULL: Move = Move(0);
+
     pub fn new(from: usize, to: usize, flag: MoveFlag) -> Self {
         let m = (from as u16) | ((to as u16) << 6) | ((flag.0 as u16) << 12);
         Move(m)
@@ -230,9 +232,9 @@ impl Move {
     }
 
     pub fn from_uci(mv_str: &str, board: &mut Board) -> Move {
-        let moves = board.gen_moves();
+        let move_list = board.gen_moves();
 
-        for mv in moves {
+        for mv in move_list.moves {
             if mv.to_coord() == mv_str {
                 return mv;
             }
@@ -251,13 +253,56 @@ pub struct Undo {
 }
 
 impl Undo {
-    pub fn new(captured: PieceInfo, castling: CastlingRights, ensq: Option<u8>, last_irreversible: usize) -> Self {
+    pub fn new(
+        captured: PieceInfo,
+        castling: CastlingRights,
+        ensq: Option<u8>,
+        last_irreversible: usize,
+    ) -> Self {
         Self {
             captured,
             prev_en_passant_sq: ensq,
             prev_castling_rights: castling,
             prev_last_irreversible: last_irreversible,
         }
+    }
+}
+
+const MAX_MOVES: usize = 256;
+pub struct MoveList {
+    pub moves: [Move; MAX_MOVES],
+    pub len: usize,
+}
+
+impl MoveList {
+    #[inline(always)]
+    pub fn new() -> Self {
+        Self {
+            moves: [Move::NULL; MAX_MOVES],
+            len: 0,
+        }
+    }
+
+    #[inline(always)]
+    pub fn get(&self, idx: usize) -> Move {
+        self.moves[idx]
+    }
+
+    #[inline(always)]
+    pub fn push(&mut self, mv: Move) {
+        debug_assert!(self.len < MAX_MOVES);
+        self.moves[self.len] = mv;
+        self.len += 1;
+    }
+
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    #[inline(always)]
+    pub fn as_slice(&self) -> &[Move] {
+        &self.moves[..self.len]
     }
 }
 

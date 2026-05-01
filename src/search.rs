@@ -8,9 +8,9 @@ pub fn find_best_move(board: &mut Board, depth: u16) -> Option<Move> {
     let mut best_move: Option<Move> = None;
     let mut best_score = i32::MIN;
 
-    let moves = board.gen_moves();
+    let move_list = board.gen_moves();
 
-    for mv in moves {
+    for mv in move_list.moves {
         let undo = board.make_move(&mv);
         let cur_score = -negamax(board, depth - 1);
         board.unmake_move(&mv, &undo);
@@ -43,13 +43,13 @@ fn negamax(board: &mut Board, depth: u16) -> i32 {
     }
 
     let mut max_eval = i32::MIN;
-    let moves = board.gen_moves();
+    let move_list = board.gen_moves();
 
-    if moves.is_empty() {
+    if move_list.moves.is_empty() {
         return if board.in_check() { -30000 } else { 0 };
     }
 
-    for mv in moves {
+    for mv in move_list.moves {
         let undo = board.make_move(&mv);
         let eval = -negamax(board, depth - 1);
         board.unmake_move(&mv, &undo);

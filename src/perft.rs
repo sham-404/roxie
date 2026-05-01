@@ -5,15 +5,15 @@ pub fn perft(board: &mut Board, depth: u32) -> u64 {
         return 1;
     }
 
-    let moves = board.gen_moves();
+    let move_list = board.gen_moves();
 
     if depth == 1 {
-        return moves.len() as u64;
+        return move_list.len() as u64;
     }
 
     let mut nodes = 0;
 
-    for mov in moves {
+    for mov in move_list.moves {
         let undo = board.make_move(&mov);
         nodes += perft(board, depth - 1);
         board.unmake_move(&mov, &undo);

@@ -211,7 +211,12 @@ impl Board {
 
         // Constructing undo
         self.history.push(self.zobrist_key);
-        let undo = Undo::new(captured, self.castling, self.en_passant, self.last_irreversible);
+        let undo = Undo::new(
+            captured,
+            self.castling,
+            self.en_passant,
+            self.last_irreversible,
+        );
 
         // update last_irreversible
         if captured != Piece::NONE || cur_piece == Piece::PAWN {
@@ -493,7 +498,7 @@ impl Board {
                 return true;
             }
         }
-        
+
         false
     }
 
@@ -709,8 +714,8 @@ impl Board {
 
 ////////// Move generations
 impl Board {
-    pub fn gen_moves(&mut self) -> Vec<Move> {
-        let mut moves: Vec<Move> = Vec::new();
+    pub fn gen_moves(&mut self) -> MoveList {
+        let mut moves = MoveList::new();
 
         self.gen_king_moves(&mut moves);
         self.gen_knight_moves(&mut moves);
@@ -747,10 +752,11 @@ impl Board {
 
         self.gen_castling_moves(&mut moves);
 
-        self.filter_illegal(moves)
+        self.filter_illegal(&mut moves);
+        moves
     }
 
-    pub fn gen_king_moves(&self, moves: &mut Vec<Move>) {
+    pub fn gen_king_moves(&self, moves: &mut MoveList) {
         let color = if self.side_to_move == Color::White {
             Piece::WHITE
         } else {
@@ -779,7 +785,7 @@ impl Board {
         }
     }
 
-    pub fn gen_knight_moves(&self, moves: &mut Vec<Move>) {
+    pub fn gen_knight_moves(&self, moves: &mut MoveList) {
         let color = if self.side_to_move == Color::White {
             Piece::WHITE
         } else {
@@ -808,7 +814,7 @@ impl Board {
         }
     }
 
-    pub fn gen_pawn_moves(&self, moves: &mut Vec<Move>) {
+    pub fn gen_pawn_moves(&self, moves: &mut MoveList) {
         let (pawn, start_pos, end_pos, attacks, dir) = match self.side_to_move {
             Color::White => (
                 Piece::WHITE | Piece::PAWN,
@@ -900,7 +906,7 @@ impl Board {
         }
     }
 
-    pub fn gen_sliding_moves(&self, moves: &mut Vec<Move>, mut bb: u64, directions: &[(i32, i32)]) {
+    pub fn gen_sliding_moves(&self, moves: &mut MoveList, mut bb: u64, directions: &[(i32, i32)]) {
         let own_occ = self.occ(&self.side_to_move);
         let enemy_occ = self.occ(&self.side_to_move.opponent());
 
@@ -937,7 +943,7 @@ impl Board {
         }
     }
 
-    fn gen_castling_moves(&self, moves: &mut Vec<Move>) {
+    fn gen_castling_moves(&self, moves: &mut MoveList) {
         let (king_piece, color, ks_rights, qs_rights) = match self.side_to_move {
             Color::White => (
                 Piece::WHITE | Piece::KING,
@@ -965,9 +971,7 @@ impl Board {
         }
     }
 
-    fn filter_illegal(&mut self, moves: Vec<Move>) -> Vec<Move> {
-        let mut legal: Vec<Move> = Vec::new();
-
+    pub fn filter_illegal(&mut self, list: &mut MoveList) {
         let color = if self.side_to_move == Color::White {
             Piece::WHITE
         } else {
@@ -975,23 +979,31 @@ impl Board {
         };
 
         let king = color | Piece::KING;
+        let stm = self.side_to_move;
 
-        let color = self.side_to_move;
+        let mut i = 0;
 
-        for mv in &moves {
+        while i < list.len {
+            let mv = list.moves[i];
+
             let undo = self.make_move(&mv);
 
             let mut king_bb = self.bb(king);
             let king_pos = pop_lsb(&mut king_bb).expect("There is no King!!!");
 
-            if !self.is_square_atacked(king_pos, &color) {
-                legal.push(*mv);
-            }
+            let illegal = self.is_square_atacked(king_pos, &stm);
 
             self.unmake_move(&mv, &undo);
-        }
 
-        legal
+            if illegal {
+                // Remove move by swapping with last
+                list.len -= 1;
+                list.moves[i] = list.moves[list.len];
+                // don't increment i (we need to check swapped move)
+            } else {
+                i += 1;
+            }
+        }
     }
 
     fn can_castle_kingside(&self, king_pos: usize, color: &Color) -> bool {
