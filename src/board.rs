@@ -61,7 +61,7 @@ pub struct Board {
     castling: CastlingRights,
     side_to_move: Color,
     en_passant: Option<u8>,
-    pub zobrist_key: u64,
+    zobrist_key: u64,
     history: History,
     last_irreversible: usize,
 }
