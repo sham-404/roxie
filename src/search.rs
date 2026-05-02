@@ -52,7 +52,6 @@ fn negamax(board: &mut Board, depth: u16, mut alpha: i32, beta: i32) -> i32 {
         return evaluate(board) * color_fac;
     }
 
-
     let move_list = board.gen_moves();
     let moves = move_list.as_slice();
 

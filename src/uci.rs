@@ -53,8 +53,9 @@ fn handle_go<'a>(commands: &mut SplitWhitespace<'a>, board: &mut Board) {
     if let Some(cmd) = commands.next() {
         match cmd {
             "perft" => {
-                let depth: u32 = commands.next().unwrap_or("5").parse().unwrap();
-                perft_divide(board, depth);
+                if let Ok(depth) = commands.next().unwrap().parse::<u32>() {
+                    perft_divide(board, depth);
+                }
             }
 
             "depth" => {
@@ -67,7 +68,7 @@ fn handle_go<'a>(commands: &mut SplitWhitespace<'a>, board: &mut Board) {
                 };
                 uci_print!("bestmove {}", coord);
             }
-            _ => {}
+            _ => {} // need to implement infinite search
         }
     } else {
         let (mov, _) = find_best_move(board, 1);

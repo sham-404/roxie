@@ -37,11 +37,11 @@ pub fn perft_divide(board: &mut Board, depth: u32) -> u64 {
 
         board.unmake_move(mov, &undo);
 
-        println!("{:?}: {}", mov.to_coord(), nodes);
+        println!("{}: {}", mov.to_coord(), nodes);
         total_nodes += nodes;
     }
 
-    println!("Total nodes: {}", total_nodes);
+    println!("\nTotal nodes: {}\n", total_nodes);
 
     total_nodes
 }
