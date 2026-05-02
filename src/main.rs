@@ -21,7 +21,16 @@ mod tests {
     fn best_move() {
         init_zobrist();
         let mut board = Board::load_fen(FEN);
-        _ = find_best_move(&mut board, 5);
+
+        let start = Instant::now();
+
+        let (_, nodes) = find_best_move(&mut board, 5);
+
+        let duration = start.elapsed();
+        let secs = duration.as_secs_f64();
+        let nps = (nodes as f64 / secs) as u64;
+
+        println!("search(5): nodes={} time={:.3}s nps={}", nodes, secs, nps);
     }
 
     #[test]
