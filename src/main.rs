@@ -7,19 +7,15 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use roxie::{
-        board::{Board},
-        perft::perft,
-        search::find_best_move,
-        zobrist::init_zobrist,
-    };
-    const FEN: &str = "r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1 ";
+    use roxie::{board::Board, perft::perft, search::find_best_move, zobrist::init_zobrist};
+    const FEN: &str = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ";
 
-    static DEPTH_1: u64 = 6;
-    static DEPTH_2: u64 = 264;
-    static DEPTH_3: u64 = 9467;
-    static DEPTH_4: u64 = 422333;
-    static DEPTH_5: u64 = 15833292;
+    static DEPTH_1: u64 = 48;
+    static DEPTH_2: u64 = 2039;
+    static DEPTH_3: u64 = 97862;
+    static DEPTH_4: u64 = 4085603;
+    static DEPTH_5: u64 = 193690690;
+    static DEPTH_6: u64 = 8031647685;
 
     #[test]
     fn best_move() {
@@ -56,10 +52,41 @@ mod tests {
         assert_eq!(perft(&mut board, 4), DEPTH_4);
     }
 
+    use std::time::Instant;
+
     #[test]
     fn perft_5() {
         init_zobrist();
         let mut board = Board::load_fen(FEN);
-        assert_eq!(perft(&mut board, 5), DEPTH_5);
+
+        let start = Instant::now();
+
+        let nodes = perft(&mut board, 5);
+
+        let duration = start.elapsed();
+        let secs = duration.as_secs_f64();
+        let nps = (nodes as f64 / secs) as u64;
+
+        println!("perft(5): nodes={} time={:.3}s nps={}", nodes, secs, nps);
+
+        assert_eq!(nodes, DEPTH_5);
+    }
+
+    #[test]
+    fn perft_6() {
+        init_zobrist();
+        let mut board = Board::load_fen(FEN);
+
+        let start = Instant::now();
+
+        let nodes = perft(&mut board, 6);
+
+        let duration = start.elapsed();
+        let secs = duration.as_secs_f64();
+        let nps = (nodes as f64 / secs) as u64;
+
+        println!("perft(6): nodes={} time={:.3}s nps={}", nodes, secs, nps);
+
+        assert_eq!(nodes, DEPTH_6);
     }
 }
