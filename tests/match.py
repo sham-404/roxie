@@ -29,41 +29,46 @@ def run_match(engine1, engine2, games, tc, depth, outdir, save):
 
     base_name = f"{ts}_{name1}_vs_{name2}"
 
-    # Construct the command
-    # Using absolute paths for engines to avoid issues
+    # Absolute paths
     e1_path = os.path.abspath(engine1)
     e2_path = os.path.abspath(engine2)
     pgn_path = os.path.abspath(os.path.join(SCRIPT_DIR, "chess_moves.pgn"))
 
+    # 📁 Ensure PGN directory exists BEFORE running
+    pgns_dir = resolve_outdir("pgns")
+    os.makedirs(pgns_dir, exist_ok=True)
+    pgn_file = os.path.join(pgns_dir, f"{base_name}.pgn")
+
     cmd = [
         "cutechess-cli",
-        "-engine",
-        f"cmd={e1_path}",
-        f"name={name1}",
-        "-engine",
-        f"cmd={e2_path}",
-        f"name={name2}",
-        "-each",
-        "proto=uci",
+        "-engine", f"cmd={e1_path}", f"name={name1}",
+        "-engine", f"cmd={e2_path}", f"name={name2}",
+        "-each", "proto=uci",
     ]
 
+    # 🎯 Track mode
     if depth is not None:
         cmd += ["tc=inf", f"depth={depth}"]
+        mode = "depth"
+        mode_value = depth
     else:
         cmd += [f"tc={tc}"]
+        mode = "time"
+        mode_value = tc
 
-    cmd += ["-openings", f"file={pgn_path}", "format=pgn", "order=random", "plies=8"]
-    cmd += ["-games", str(games), "-repeat"]
+    cmd += [
+        "-openings", f"file={pgn_path}", "format=pgn", "order=random", "plies=10",
+        "-games", str(games), "-repeat",
+        "-pgnout", pgn_file
+    ]
 
     print("Running:\n", " ".join(cmd), "\n")
 
-    # Use Popen to stream output and capture it at the same time
     full_output = []
     process = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
     )
 
-    # Stream to terminal and save to list
     for line in process.stdout:
         print(line, end="", flush=True)
         full_output.append(line)
@@ -75,9 +80,7 @@ def run_match(engine1, engine2, games, tc, depth, outdir, save):
 
     if save and summary:
         results_dir = resolve_outdir(outdir)
-        pgns_dir = resolve_outdir("pgns")
         os.makedirs(results_dir, exist_ok=True)
-        os.makedirs(pgns_dir, exist_ok=True)
 
         json_file = os.path.join(results_dir, f"{base_name}.json")
 
@@ -86,6 +89,11 @@ def run_match(engine1, engine2, games, tc, depth, outdir, save):
             "engine2": name2,
             "timestamp": ts,
             "games": summary["total"],
+            "mode": mode,
+            "mode_value": mode_value,
+            "opening_file": pgn_path,
+            "opening_plies": 10,
+            "pgn_file": pgn_file,
             "result": {
                 "engine1_wins": summary["wins"],
                 "engine1_losses": summary["losses"],
@@ -98,6 +106,7 @@ def run_match(engine1, engine2, games, tc, depth, outdir, save):
             json.dump(data, f, indent=4)
 
         print(f"\nJSON saved to: {json_file}")
+        print(f"PGN saved to: {pgn_file}")
         return json_file
 
     return None

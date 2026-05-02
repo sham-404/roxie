@@ -1,18 +1,23 @@
-use roxie::{uci::uci_loop, zobrist::init_zobrist};
+use roxie::{evaluation::init_pesto_table, uci::uci_loop, zobrist::init_zobrist};
 
 fn main() {
     init_zobrist();
+    init_pesto_table();
     uci_loop();
 }
 
 #[cfg(test)]
 mod tests {
-    use roxie::{board::Board, perft::perft, search::find_best_move, zobrist::init_zobrist};
+    use roxie::{
+        board::Board, evaluation::init_pesto_table, perft::perft, search::find_best_move,
+        zobrist::init_zobrist,
+    };
     use std::time::Instant;
 
     #[test]
     fn analysis() {
         init_zobrist();
+        init_pesto_table();
 
         let mut board: Board;
         // startpos perft evaluation

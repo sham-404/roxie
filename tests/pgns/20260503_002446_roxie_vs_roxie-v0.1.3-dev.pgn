@@ -1,0 +1,237 @@
+[Event "?"]
+[Site "?"]
+[Date "2026.05.03"]
+[Round "1"]
+[White "roxie"]
+[Black "roxie-v0.1.3-dev"]
+[Result "1/2-1/2"]
+[ECO "A05"]
+[GameDuration "00:00:02"]
+[GameEndTime "2026-05-03T00:24:48.458 IST"]
+[GameStartTime "2026-05-03T00:24:46.426 IST"]
+[Opening "Reti"]
+[PlyCount "47"]
+[TimeControl "inf"]
+[Variation "King's Indian attack"]
+
+1. Nf3 {book} Nf6 {book} 2. g3 {book} g6 {book} 3. Bg2 {book} Bg7 {book}
+4. b3 {book} O-O {book} 5. Bb2 {book} d6 {book} 6. Ng5 Kh8 7. Nc3 h6 8. Nxf7+
+Rxf7 9. Nb5 Kh7 10. Kf1 Kg8 11. Nxa7 Rxa7 12. Bd4 b6 13. Qe1 Nh5 14. Bxg7 Kxg7
+15. Bd5 Bh3+ 16. Kg1 Rf8 17. Be4 Nf6 18. Bd3 g5 19. Bb5 Kg6 20. Bd3+ Kh5 21. Bc4
+Kg6 22. Bd3+ Kh5 23. Bc4 Kg6 24. Bd3+ {Draw by 3-fold repetition} 1/2-1/2
+
+[Event "?"]
+[Site "?"]
+[Date "2026.05.03"]
+[Round "1"]
+[White "roxie-v0.1.3-dev"]
+[Black "roxie"]
+[Result "0-1"]
+[ECO "A05"]
+[GameDuration "00:00:01"]
+[GameEndTime "2026-05-03T00:24:49.908 IST"]
+[GameStartTime "2026-05-03T00:24:48.461 IST"]
+[Opening "Reti"]
+[PlyCount "44"]
+[TimeControl "inf"]
+[Variation "King's Indian attack"]
+
+1. Nf3 {book} Nf6 {book} 2. g3 {book} g6 {book} 3. Bg2 {book} Bg7 {book}
+4. b3 {book} O-O {book} 5. Bb2 {book} d6 {book} 6. Ng1 Ng4 7. c3 Nd7 8. Bh3 Nde5
+9. f3 Nxh2 10. Bxc8 Nhxf3+ 11. Nxf3 Nxf3+ 12. Kf1 Rxc8 13. exf3 Be5 14. Ke1
+Bxg3+ 15. Kf1 Bf4 16. c4 Qd7 17. Ke1 Qf5 18. Ke2 Rfd8 19. Kf2 Qg5 20. Ke1 Qg2
+21. Rf1 Bg3+ 22. Rf2 Qxf2# {Black mates} 0-1
+
+[Event "?"]
+[Site "?"]
+[Date "2026.05.03"]
+[Round "1"]
+[White "roxie"]
+[Black "roxie-v0.1.3-dev"]
+[Result "1-0"]
+[ECO "D26"]
+[GameDuration "00:00:04"]
+[GameEndTime "2026-05-03T00:24:54.560 IST"]
+[GameStartTime "2026-05-03T00:24:49.910 IST"]
+[Opening "Queen's Gambit accepted"]
+[PlyCount "135"]
+[TimeControl "inf"]
+[Variation "4...e6"]
+
+1. d4 {book} d5 {book} 2. c4 {book} dxc4 {book} 3. Nf3 {book} Nf6 {book}
+4. e3 {book} e6 {book} 5. Bxc4 {book} Be7 {book} 6. Ne5 Kf8 7. Nc3 Bb4 8. Qd3
+Ke7 9. Kd2 Kf8 10. Rd1 Ke7 11. Rb1 Kf8 12. Kc2 Ke7 13. Nb5 a6 14. Qb3 Ke8
+15. Qxb4 axb5 16. Bxb5+ c6 17. Bc4 Ne4 18. Qe1 Ke7 19. f3 Nd6 20. Qh4+ Ke8
+21. Qxd8+ Kxd8 22. Bb3 Kc7 23. Bd2 Kb6 24. Bb4 Kc7 25. Bxd6+ Kxd6 26. Nxf7+ Kc7
+27. Nxh8 Kb6 28. Nf7 Ka5 29. Nd6 Na6 30. Nxb7+ Bxb7 31. Kc3 Kb6 32. Bc2 Nc7
+33. Kb3 Nd5 34. Re1 Nf6 35. Rbc1 Ka5 36. Bd3 Kb6 37. Rc4 Kc7 38. Ra4 Rxa4
+39. Kxa4 Kb6 40. Kb3 Ba6 41. Bc2 Ka5 42. Rc1 Bb5 43. Ka3 Ka6 44. Bb3 Kb6
+45. Bxe6 Ka6 46. Bf5 Kb6 47. Kb3 Ka6 48. Bc2 Ka5 49. Bf5 g6 50. Be6 Ka6 51. a4
+Bd3 52. Rxc6+ Kb7 53. Rc1 Ka6 54. Rc3 Be2 55. Ka3 Ka5 56. Rc6 Nd5 57. Bxd5 g5
+58. b3 g4 59. g3 h6 60. h3 h5 61. e4 h4 62. f4 gxh3 63. g4 h2 64. e5 h1=N 65. f5
+Nf2 66. Bc4 Nd1 67. d5 Nb2 68. b4# {White mates} 1-0
+
+[Event "?"]
+[Site "?"]
+[Date "2026.05.03"]
+[Round "1"]
+[White "roxie-v0.1.3-dev"]
+[Black "roxie"]
+[Result "1/2-1/2"]
+[ECO "D26"]
+[GameDuration "00:00:04"]
+[GameEndTime "2026-05-03T00:24:59.514 IST"]
+[GameStartTime "2026-05-03T00:24:54.562 IST"]
+[Opening "Queen's Gambit accepted"]
+[PlyCount "105"]
+[TimeControl "inf"]
+[Variation "4...e6"]
+
+1. d4 {book} d5 {book} 2. c4 {book} dxc4 {book} 3. Nf3 {book} Nf6 {book}
+4. e3 {book} e6 {book} 5. Bxc4 {book} Be7 {book} 6. Kf1 Kf8 7. Ke1 Ng4 8. Kf1
+Nc6 9. Ke1 Na5 10. Bd3 Nc6 11. Kf1 Qd6 12. Ke1 Nb4 13. a3 Nxd3+ 14. Qxd3 Bf6
+15. h3 Qc6 16. Bd2 Nh6 17. e4 Qb6 18. b3 Be7 19. Kd1 Bd6 20. e5 Be7 21. Ke1 Nf5
+22. Kd1 Bd7 23. Ke1 Bc6 24. Kd1 Qb5 25. Ne1 Qxd3 26. Nxd3 Bxg2 27. Re1 Nxd4
+28. Be3 Nxb3 29. Ra2 Bxh3 30. Kc2 Na5 31. Bc5 Bxc5 32. Nxc5 Bf5+ 33. Kc1 Nc6
+34. Nc3 Na5 35. Kd1 Rc8 36. Kc1 Ke7 37. Kd1 b6 38. N5a4 Nb3 39. Ke2 Rhd8 40. Kf1
+Nc5 41. Nxc5 bxc5 42. a4 Kf8 43. Kg1 Rd4 44. Kf1 Rc4 45. Nb5 Bh3+ 46. Kg1 a6
+47. Kh2 Bf5 48. Na7 Rh4+ 49. Kg1 Rg4+ 50. Kh1 Rh4+ 51. Kg1 Rg4+ 52. Kh1 Rh4+
+53. Kg1 {Draw by 3-fold repetition} 1/2-1/2
+
+[Event "?"]
+[Site "?"]
+[Date "2026.05.03"]
+[Round "1"]
+[White "roxie"]
+[Black "roxie-v0.1.3-dev"]
+[Result "1-0"]
+[ECO "B94"]
+[GameDuration "00:00:01"]
+[GameEndTime "2026-05-03T00:25:01.035 IST"]
+[GameStartTime "2026-05-03T00:24:59.516 IST"]
+[Opening "Sicilian"]
+[PlyCount "45"]
+[TimeControl "inf"]
+[Variation "Najdorf, 6.Bg5"]
+
+1. e4 {book} c5 {book} 2. Nf3 {book} d6 {book} 3. d4 {book} cxd4 {book}
+4. Nxd4 {book} Nf6 {book} 5. Nc3 {book} a6 {book} 6. Bg5 Kd7 7. Bxf6 exf6 8. Kd2
+Kc7 9. Nd5+ Kd7 10. Ke3 Ke8 11. Qe2 Nc6 12. Nxc6 bxc6 13. Kf3 cxd5 14. exd5+ Kd7
+15. Kg3 a5 16. Qe4 g6 17. Bc4 Kc7 18. Bb5 Kb6 19. Bc6 Ra6 20. Rhc1 Kc5 21. Qe3+
+Kb4 22. a3+ Kc4 23. b3# {White mates} 1-0
+
+[Event "?"]
+[Site "?"]
+[Date "2026.05.03"]
+[Round "1"]
+[White "roxie-v0.1.3-dev"]
+[Black "roxie"]
+[Result "1/2-1/2"]
+[ECO "B90"]
+[GameDuration "00:00:03"]
+[GameEndTime "2026-05-03T00:25:04.201 IST"]
+[GameStartTime "2026-05-03T00:25:01.037 IST"]
+[Opening "Sicilian"]
+[PlyCount "72"]
+[TimeControl "inf"]
+[Variation "Najdorf"]
+
+1. e4 {book} c5 {book} 2. Nf3 {book} d6 {book} 3. d4 {book} cxd4 {book}
+4. Nxd4 {book} Nf6 {book} 5. Nc3 {book} a6 {book} 6. Kd2 Qa5 7. f3 Qg5+ 8. Ke1
+Qh5 9. Nce2 Bd7 10. Kd2 Qe5 11. c3 Nc6 12. Ke1 Nxd4 13. Nxd4 Qh5 14. Ne2 Bc6
+15. Kd2 Qg5+ 16. Ke1 Qh4+ 17. g3 Qh5 18. Kf2 Bb5 19. Kg2 Kd7 20. Ng1 Bxf1+
+21. Kxf1 Kc7 22. g4 Qe5 23. Ke1 Nxg4 24. Qd3 Nxh2 25. f4 Qh5 26. Qc4+ Kd7
+27. Qa4+ Kd8 28. a3 Nf3+ 29. Kd1 Qxh1 30. Qa5+ Ke8 31. Kc2 Qxg1 32. e5 Qg6+
+33. Kb3 Qe6+ 34. Kc2 Qg6+ 35. Kb3 Qe6+ 36. Kc2 Qg6+ {Draw by 3-fold repetition}
+1/2-1/2
+
+[Event "?"]
+[Site "?"]
+[Date "2026.05.03"]
+[Round "1"]
+[White "roxie"]
+[Black "roxie-v0.1.3-dev"]
+[Result "1/2-1/2"]
+[ECO "B23"]
+[GameDuration "00:00:01"]
+[GameEndTime "2026-05-03T00:25:05.800 IST"]
+[GameStartTime "2026-05-03T00:25:04.203 IST"]
+[Opening "Sicilian"]
+[PlyCount "50"]
+[TimeControl "inf"]
+[Variation "Grand Prix attack"]
+
+1. e4 {book} c5 {book} 2. Nc3 {book} Nc6 {book} 3. f4 {book} g6 {book}
+4. Nf3 {book} Bg7 {book} 5. Bb5 {book} Nd4 {book} 6. Nxd4 a6 7. Ne6 fxe6 8. Ba4
+b5 9. Bb3 c4 10. Bxc4 bxc4 11. f5 exf5 12. exf5 e6 13. fxg6 hxg6 14. Kf2 Ke7
+15. Nd5+ exd5 16. Qg4 Kf7 17. Kg3 Be5+ 18. Kf2 Nf6 19. Qe2 Ne4+ 20. Ke3 Qg5+
+21. Kf3 Qf5+ 22. Ke3 Bf4+ 23. Kf3 Be5+ 24. Ke3 Bf4+ 25. Kf3
+Be5+ {Draw by 3-fold repetition} 1/2-1/2
+
+[Event "?"]
+[Site "?"]
+[Date "2026.05.03"]
+[Round "1"]
+[White "roxie-v0.1.3-dev"]
+[Black "roxie"]
+[Result "1/2-1/2"]
+[ECO "B23"]
+[GameDuration "00:00:01"]
+[GameEndTime "2026-05-03T00:25:07.663 IST"]
+[GameStartTime "2026-05-03T00:25:05.802 IST"]
+[Opening "Sicilian"]
+[PlyCount "55"]
+[TimeControl "inf"]
+[Variation "Grand Prix attack"]
+
+1. e4 {book} c5 {book} 2. Nc3 {book} Nc6 {book} 3. f4 {book} g6 {book}
+4. Nf3 {book} Bg7 {book} 5. Bb5 {book} Nd4 {book} 6. Nxd4 Bxd4 7. Nb1 Nf6 8. c3
+Qb6 9. Be2 Nxe4 10. cxd4 Qf6 11. f5 Qxd4 12. Rf1 gxf5 13. Na3 Nd6 14. g4 Qe5
+15. gxf5 Qxh2 16. d3 O-O 17. Kd2 Qh6+ 18. Ke1 Qh4+ 19. Kd2 Qb4+ 20. Ke3 Qd4+
+21. Kf3 Nxf5 22. Kg2 Qe5 23. Rxf5 Qxf5 24. Kg1 Qe5 25. Kf1 Qf5+ 26. Kg1 Qe5
+27. Kf1 Qf5+ 28. Kg1 {Draw by 3-fold repetition} 1/2-1/2
+
+[Event "?"]
+[Site "?"]
+[Date "2026.05.03"]
+[Round "1"]
+[White "roxie"]
+[Black "roxie-v0.1.3-dev"]
+[Result "1/2-1/2"]
+[ECO "B31"]
+[GameDuration "00:00:01"]
+[GameEndTime "2026-05-03T00:25:09.610 IST"]
+[GameStartTime "2026-05-03T00:25:07.664 IST"]
+[Opening "Sicilian"]
+[PlyCount "56"]
+[TimeControl "inf"]
+[Variation "Nimzowitsch-Rossolimo attack (with ...g6, without ...d6)"]
+
+1. e4 {book} c5 {book} 2. Nf3 {book} Nc6 {book} 3. Bb5 {book} g6 {book}
+4. d3 {book} Bg7 {book} 5. Bxc6 {book} bxc6 {book} 6. Ke2 d6 7. e5 Bxe5 8. Nxe5
+dxe5 9. Kf3 Kf8 10. Nc3 Nf6 11. Bh6+ Ke8 12. Qe1 Ng4 13. Bg5 Nf6 14. Bxf6 exf6
+15. Qe4 Kd7 16. Qc4 Qf8 17. Rhc1 Kd6 18. Ne4+ Kc7 19. Qc3 Qh6 20. Qa5+ Kb8
+21. Nd2 Kb7 22. Qxc5 Qxd2 23. Qe7+ Ka6 24. Qa3+ Kb5 25. Qb3+ Ka5 26. Qa3+ Kb5
+27. Qb3+ Ka5 28. Qa3+ Kb5 {Draw by 3-fold repetition} 1/2-1/2
+
+[Event "?"]
+[Site "?"]
+[Date "2026.05.03"]
+[Round "1"]
+[White "roxie-v0.1.3-dev"]
+[Black "roxie"]
+[Result "1/2-1/2"]
+[ECO "B31"]
+[GameDuration "00:00:00"]
+[GameEndTime "2026-05-03T00:25:10.382 IST"]
+[GameStartTime "2026-05-03T00:25:09.612 IST"]
+[Opening "Sicilian"]
+[PlyCount "34"]
+[TimeControl "inf"]
+[Variation "Nimzowitsch-Rossolimo attack (with ...g6, without ...d6)"]
+
+1. e4 {book} c5 {book} 2. Nf3 {book} Nc6 {book} 3. Bb5 {book} g6 {book}
+4. d3 {book} Bg7 {book} 5. Bxc6 {book} bxc6 {book} 6. Kf1 Kf8 7. Ke1 Nh6 8. Bxh6
+Bxh6 9. Kf1 Rb8 10. b3 Bg7 11. c3 Bf6 12. Ke1 Ba6 13. Kf1 Qc7 14. Ke1 Bb5
+15. Kf1 Ba6 16. Ke1 Bb5 17. Kf1 Ba6 {Draw by 3-fold repetition} 1/2-1/2
+

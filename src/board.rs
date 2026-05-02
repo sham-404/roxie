@@ -677,10 +677,17 @@ impl Board {
         self.zobrist_key ^= *side;
     }
 
+    #[inline(always)]
     pub fn side_to_move(&self) -> Color {
         self.side_to_move
     }
 
+    #[inline(always)]
+    pub fn mailbox(&self) -> [u8; 64] {
+        self.mailbox
+    }
+
+    #[inline(always)]
     pub fn occ(&self, color: &Color) -> u64 {
         match color {
             Color::White => self.occupancy[WHITE],
@@ -688,6 +695,7 @@ impl Board {
         }
     }
 
+    #[inline(always)]
     pub fn all_occ(&self) -> u64 {
         self.occupancy[BOTH]
     }
