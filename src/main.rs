@@ -24,13 +24,14 @@ mod tests {
 
         let start = Instant::now();
 
-        let (_, nodes) = find_best_move(&mut board, 5);
+        let depth = 6;
+        let (_, nodes) = find_best_move(&mut board, depth);
 
         let duration = start.elapsed();
         let secs = duration.as_secs_f64();
         let nps = (nodes as f64 / secs) as u64;
 
-        println!("search(5): nodes={} time={:.3}s nps={}", nodes, secs, nps);
+        println!("search({}): nodes={} time={:.3}s nps={}",depth, nodes, secs, nps);
     }
 
     #[test]
