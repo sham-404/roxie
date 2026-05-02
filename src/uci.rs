@@ -3,7 +3,7 @@ use std::{
     str::SplitWhitespace,
 };
 
-use crate::{board::Board, items::Move, search::find_best_move};
+use crate::{board::Board, items::Move, perft::perft_divide, search::find_best_move};
 
 #[macro_export]
 macro_rules! uci_print {
@@ -39,20 +39,43 @@ pub fn uci_loop() {
 
                 "position" => handle_position(&mut words, &mut board),
 
-                "go" => {
-                    let (mov, _) = find_best_move(&mut board, 3);
-                    let coord = match mov {
-                        Some(mv) => mv.to_coord(),
-                        None => String::from("0000"),
-                    };
-                    uci_print!("bestmove {}", coord);
-                }
+                "go" => handle_go(&mut words, &mut board),
 
                 "quit" => break,
 
                 _ => {}
             }
         }
+    }
+}
+
+fn handle_go<'a>(commands: &mut SplitWhitespace<'a>, board: &mut Board) {
+    if let Some(cmd) = commands.next() {
+        match cmd {
+            "perft" => {
+                let depth: u32 = commands.next().unwrap_or("5").parse().unwrap();
+                perft_divide(board, depth);
+            }
+
+            "depth" => {
+                let depth: u16 = commands.next().unwrap_or("1").parse().unwrap();
+
+                let (mov, _) = find_best_move(board, depth);
+                let coord = match mov {
+                    Some(mv) => mv.to_coord(),
+                    None => String::from("0000"),
+                };
+                uci_print!("bestmove {}", coord);
+            }
+            _ => {}
+        }
+    } else {
+        let (mov, _) = find_best_move(board, 1);
+        let coord = match mov {
+            Some(mv) => mv.to_coord(),
+            None => String::from("0000"),
+        };
+        uci_print!("bestmove {}", coord);
     }
 }
 

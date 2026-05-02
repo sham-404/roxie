@@ -24,7 +24,7 @@ mod tests {
 
         let start = Instant::now();
 
-        let depth = 6;
+        let depth = 5;
         let (_, nodes) = find_best_move(&mut board, depth);
 
         let duration = start.elapsed();
@@ -98,5 +98,21 @@ mod tests {
         println!("perft(6): nodes={} time={:.3}s nps={}", nodes, secs, nps);
 
         assert_eq!(nodes, DEPTH_6);
+    }
+
+    #[test]
+    fn start_pos() {
+        init_zobrist();
+        let mut board = Board::start_pos();
+
+        let start = Instant::now();
+
+        let nodes = perft(&mut board, 5);
+
+        let duration = start.elapsed();
+        let secs = duration.as_secs_f64();
+        let nps = (nodes as f64 / secs) as u64;
+
+        println!("perft(5): nodes={} time={:.3}s nps={}", nodes, secs, nps);
     }
 }
