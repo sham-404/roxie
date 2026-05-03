@@ -1,7 +1,7 @@
 use std::sync::OnceLock;
 
 use crate::{
-    board::Board,
+    board::{Board, pop_lsb},
     r#const::{BLACK, WHITE},
     items::Piece,
 };
@@ -178,7 +178,7 @@ const EG_PESTO_TABLE: [[i32; 64]; 6] = [
 const GAME_PHASE_VAL: [i32; 12] = [0, 2, 2, 4, 9, 0, 0, 2, 2, 4, 9, 0];
 
 static EG_TABLE: OnceLock<[[i32; 64]; 12]> = OnceLock::new();
-static MG_TABLE: OnceLock<[[i32; 64]; 12]> = OnceLock::new();
+pub static MG_TABLE: OnceLock<[[i32; 64]; 12]> = OnceLock::new();
 
 #[inline(always)]
 fn mirror(sq: usize) -> usize {
@@ -211,21 +211,23 @@ pub fn init_pesto_table() {
 
 fn pesto_score(board: &Board) -> i32 {
     let mut mg = [0i32; 2];
-    let mut eg = [0i32; 3];
+    let mut eg = [0i32; 2];
 
     let mut game_phase = 0;
     let mg_table = MG_TABLE.get().unwrap();
     let eg_table = EG_TABLE.get().unwrap();
 
-    for (sq, &piece) in board.mailbox().iter().enumerate() {
-        if piece != Piece::NONE {
-            let p_idx = Piece::to_idx(piece);
-            let col_idx = Piece::get_color_idx(piece);
+    let mut all_occ = board.all_occ();
 
-            mg[col_idx] += mg_table[p_idx][sq];
-            eg[col_idx] += eg_table[p_idx][sq];
-            game_phase = GAME_PHASE_VAL[p_idx];
-        }
+    while let Some(sq) = pop_lsb(&mut all_occ) {
+        let piece = board.piece_on(sq);
+
+        let p_idx = Piece::to_idx(piece);
+        let col_idx = Piece::get_color_idx(piece);
+
+        mg[col_idx] += mg_table[p_idx][sq];
+        eg[col_idx] += eg_table[p_idx][sq];
+        game_phase += GAME_PHASE_VAL[p_idx];
     }
 
     let mg_score = mg[WHITE] - mg[BLACK];

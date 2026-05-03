@@ -23,16 +23,16 @@ pub fn find_best_move(board: &mut Board, depth: u16) -> (Option<Move>, u64) {
     let mut best_move = None;
     let mut best_score = -INF;
 
-    let move_list = board.gen_moves();
+    let mut move_list = board.gen_moves();
 
-    for mv in move_list.as_slice() {
+    for mv in move_list.with_ordering() {
         let undo = board.make_move(&mv);
         let cur_score = -negamax(board, depth - 1, -INF, INF);
         board.unmake_move(&mv, &undo);
 
         if cur_score > best_score {
             best_score = cur_score;
-            best_move = Some(*mv);
+            best_move = Some(mv);
         }
     }
 
@@ -52,10 +52,9 @@ fn negamax(board: &mut Board, depth: u16, mut alpha: i32, beta: i32) -> i32 {
         return evaluate(board) * color_fac;
     }
 
-    let move_list = board.gen_moves();
-    let moves = move_list.as_slice();
+    let mut move_list = board.gen_moves();
 
-    if moves.is_empty() {
+    if move_list.len() == 0 {
         if board.in_check() {
             return -INF + depth as i32;
         } else {
@@ -64,7 +63,7 @@ fn negamax(board: &mut Board, depth: u16, mut alpha: i32, beta: i32) -> i32 {
     }
     let mut max_eval = -INF;
 
-    for mv in moves {
+    for mv in move_list.with_ordering() {
         let undo = board.make_move(&mv);
         let eval = -negamax(board, depth - 1, -beta, -alpha);
         board.unmake_move(&mv, &undo);

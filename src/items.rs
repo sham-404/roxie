@@ -58,6 +58,7 @@ impl Piece {
         // This maps:
         // White (P, N, B, R, Q, K) -> 0, 1, 2, 3, 4, 5
         // Black (P, N, B, R, Q, K) -> 6, 7, 8, 9, 10, 11
+        debug_assert!((p & 0b111) != 0);
         let type_idx = (p & 0b111) as usize - 1;
         let color_idx = if (p & 16) != 0 { 6 } else { 0 };
         type_idx + color_idx
@@ -178,6 +179,17 @@ impl MoveFlag {
     pub fn is_castle(self) -> bool {
         self.0 & 0b1110 == 0b0010
     }
+
+    #[inline(always)]
+    pub fn get_promo_value(self) -> u16 {
+        match self.0 & Self::PIECE_BIT {
+            Self::KNIGHT => 320,
+            Self::BISHOP => 330,
+            Self::ROOK => 500,
+            Self::QUEEN => 900,
+            _ => 0,
+        }
+    }
 }
 
 use crate::r#const::SQ_TO_COORD;
@@ -268,10 +280,34 @@ impl Undo {
     }
 }
 
+pub struct MoveIter<'a> {
+    list: &'a mut MoveList,
+    current: usize,
+}
+
+impl<'a> Iterator for MoveIter<'a> {
+    type Item = Move;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current < self.list.len {
+            let mv = self.list.pick_move(self.current);
+            self.current += 1;
+            Some(mv)
+        } else {
+            None
+        }
+    }
+}
+
+// Add this to your MoveList impl
+impl MoveList {
+}
+
 const MAX_MOVES: usize = 256;
 #[derive(Debug)]
 pub struct MoveList {
     pub moves: [Move; MAX_MOVES],
+    pub score: [u16; MAX_MOVES],
     pub len: usize,
 }
 
@@ -280,6 +316,7 @@ impl MoveList {
     pub fn new() -> Self {
         Self {
             moves: [Move::NULL; MAX_MOVES],
+            score: [0u16; MAX_MOVES],
             len: 0,
         }
     }
@@ -290,10 +327,36 @@ impl MoveList {
     }
 
     #[inline(always)]
-    pub fn push(&mut self, mv: Move) {
+    pub fn push(&mut self, mv: Move, score: u16) {
         debug_assert!(self.len < MAX_MOVES);
         self.moves[self.len] = mv;
+        self.score[self.len] = score;
         self.len += 1;
+    }
+
+    pub fn pick_move(&mut self, start_idx: usize) -> Move {
+        let mut best_score = self.score[start_idx];
+        let mut best_idx = start_idx;
+
+        for i in (start_idx + 1)..self.len {
+            if self.score[i] > best_score {
+                best_score = self.score[i];
+                best_idx = i;
+            }
+        }
+
+        self.moves.swap(start_idx, best_idx);
+        self.score.swap(start_idx, best_idx);
+
+        self.moves[start_idx]
+    }
+
+    #[inline(always)]
+    pub fn with_ordering(&mut self) -> MoveIter<'_> {
+        MoveIter {
+            list: self,
+            current: 0,
+        }
     }
 
     #[inline(always)]

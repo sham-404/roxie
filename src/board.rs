@@ -1,4 +1,5 @@
 use crate::r#const::*;
+use crate::evaluation::MG_TABLE;
 use crate::items::*;
 use crate::square::Square;
 use crate::zobrist::{CASTLING_KEYS, ENPASSANT_KEYS, SIDE_KEY, ZOBRIST_TABLE};
@@ -683,11 +684,6 @@ impl Board {
     }
 
     #[inline(always)]
-    pub fn mailbox(&self) -> [u8; 64] {
-        self.mailbox
-    }
-
-    #[inline(always)]
     pub fn occ(&self, color: &Color) -> u64 {
         match color {
             Color::White => self.occupancy[WHITE],
@@ -702,10 +698,10 @@ impl Board {
 
     #[inline(always)]
     pub fn bb(&self, piece: PieceInfo) -> u64 {
-        if piece == Piece::NONE {
-            return 0;
-        }
-
+        debug_assert!(
+            piece != Piece::NONE,
+            "Attempted to get a bitboard of Piece::NONE"
+        );
         self.bitboards[Piece::to_idx(piece)]
     }
 
@@ -788,7 +784,8 @@ impl Board {
                     MoveFlag::QUIET
                 };
 
-                moves.push(Move::new(from, to, flag));
+                let mv = Move::new(from, to, flag);
+                moves.push(mv, self.score_move(mv));
             }
         }
     }
@@ -817,7 +814,8 @@ impl Board {
                     MoveFlag::QUIET
                 };
 
-                moves.push(Move::new(from, to, flag));
+                let mv = Move::new(from, to, flag);
+                moves.push(mv, self.score_move(mv));
             }
         }
     }
@@ -863,20 +861,27 @@ impl Board {
             let from = (to as i8 - dir) as usize;
 
             // Handling Quiet Promotions
-            if (1u64 << to) & end_pos != 0 {
-                moves.push(Move::new(from, to, MoveFlag::PROMO_KNIGHT));
-                moves.push(Move::new(from, to, MoveFlag::PROMO_ROOK));
-                moves.push(Move::new(from, to, MoveFlag::PROMO_QUEEN));
-                moves.push(Move::new(from, to, MoveFlag::PROMO_BISHOP));
+            if mask(to) & end_pos != 0 {
+                let m_queen = Move::new(from, to, MoveFlag::PROMO_QUEEN);
+                let m_knight = Move::new(from, to, MoveFlag::PROMO_KNIGHT);
+                let m_rook = Move::new(from, to, MoveFlag::PROMO_ROOK);
+                let m_bishop = Move::new(from, to, MoveFlag::PROMO_BISHOP);
+
+                moves.push(m_queen, self.score_move(m_queen) + 900);
+                moves.push(m_knight, self.score_move(m_knight) + 300);
+                moves.push(m_rook, self.score_move(m_rook) + 500);
+                moves.push(m_bishop, self.score_move(m_bishop) + 330);
             } else {
-                moves.push(Move::new(from, to, MoveFlag::QUIET));
+                let mv = Move::new(from, to, MoveFlag::QUIET);
+                moves.push(mv, self.score_move(mv));
             }
         }
 
         // Double push
         while let Some(to) = pop_lsb(&mut double) {
             let from = (to as i8 - (2 * dir)) as usize;
-            moves.push(Move::new(from, to, MoveFlag::DOUBLE_PUSH));
+            let mv = Move::new(from, to, MoveFlag::DOUBLE_PUSH);
+            moves.push(mv, self.score_move(mv));
         }
 
         // Captures
@@ -896,19 +901,28 @@ impl Board {
                 // Handling en_passant
                 if let Some(sq) = self.en_passant {
                     if sq as usize == to {
-                        moves.push(Move::new(from, to, MoveFlag::EN_PASSANT));
+                        let mv = Move::new(from, to, MoveFlag::EN_PASSANT);
+                        moves.push(mv, self.score_move(mv));
                         continue;
                     }
                 }
 
                 if (1u64 << to) & end_pos != 0 {
                     // Handling Capture Promotions
-                    moves.push(Move::new(from, to, MoveFlag::PROMO_CAP_KNIGHT));
-                    moves.push(Move::new(from, to, MoveFlag::PROMO_CAP_ROOK));
-                    moves.push(Move::new(from, to, MoveFlag::PROMO_CAP_QUEEN));
-                    moves.push(Move::new(from, to, MoveFlag::PROMO_CAP_BISHOP));
+
+                    let m_q = Move::new(from, to, MoveFlag::PROMO_CAP_QUEEN);
+                    let m_n = Move::new(from, to, MoveFlag::PROMO_CAP_KNIGHT);
+                    let m_r = Move::new(from, to, MoveFlag::PROMO_CAP_ROOK);
+                    let m_b = Move::new(from, to, MoveFlag::PROMO_CAP_BISHOP);
+
+                    // Score: Base for Capture-Promo (20k) + MVV-LVA + Promo Piece Value
+                    moves.push(m_q, (20000 + self.score_move(m_q) + 900) as u16);
+                    moves.push(m_n, (20000 + self.score_move(m_n) + 320) as u16);
+                    moves.push(m_r, (20000 + self.score_move(m_r) + 500) as u16);
+                    moves.push(m_b, (20000 + self.score_move(m_b) + 330) as u16);
                 } else {
-                    moves.push(Move::new(from, to, MoveFlag::CAPTURE));
+                    let mv = Move::new(from, to, MoveFlag::CAPTURE);
+                    moves.push(mv, self.score_move(mv));
                 }
             }
         }
@@ -938,7 +952,8 @@ impl Board {
                         MoveFlag::QUIET
                     };
 
-                    moves.push(Move::new(from_idx, next.index(), flag));
+                    let mv = Move::new(from_idx, next.index(), flag);
+                    moves.push(mv, self.score_move(mv));
 
                     // stop after capture
                     if to_bb & enemy_occ != 0 {
@@ -971,11 +986,13 @@ impl Board {
         let king_pos = pop_lsb(&mut king_bb).expect("There is no King!!!");
 
         if ks_rights && self.can_castle_kingside(king_pos, &color) {
-            moves.push(Move::new(king_pos, king_pos + 2, MoveFlag::KING_CASTLE));
+            let mv = Move::new(king_pos, king_pos + 2, MoveFlag::KING_CASTLE);
+            moves.push(mv, self.score_move(mv));
         }
 
         if qs_rights && self.can_castle_queenside(king_pos, &color) {
-            moves.push(Move::new(king_pos, king_pos - 2, MoveFlag::QUEEN_CASTLE));
+            let mv = Move::new(king_pos, king_pos - 2, MoveFlag::QUEEN_CASTLE);
+            moves.push(mv, self.score_move(mv));
         }
     }
 
@@ -1051,6 +1068,65 @@ impl Board {
             && self.piece_on(king_pos - 4) == rook
             && !self.is_square_atacked(king_pos - 1, &color)
             && !self.is_square_atacked(king_pos - 2, &color)
+    }
+
+    pub fn score_move(&self, mv: Move) -> u16 {
+        let flag = mv.flag();
+        let from = mv.from();
+        let to = mv.to();
+
+        if flag.is_capture() {
+            let attacker = self.piece_on(from);
+            let victim = self.piece_on(to);
+
+            if victim == Piece::NONE {
+                debug_assert!(flag == MoveFlag::EN_PASSANT);
+                // the move is an En passant
+                return 10900;
+            }
+
+            // MVV-LVA logic
+            let v_val = self.get_value(victim);
+            let a_val = self.get_value(attacker);
+            let mut score = 10000 + ((v_val * 10) - a_val) as u16;
+
+            if flag.is_promo() {
+                score += 20000 + flag.get_promo_value();
+            }
+
+            return score;
+        }
+
+        if flag.is_promo() {
+            return 9000 + flag.get_promo_value();
+        }
+
+        if flag.is_castle() {
+            return 1000;
+        }
+
+        let attacker = self.piece_on(from);
+        let p_idx = Piece::to_idx(attacker);
+        if let Some(mg_table) = MG_TABLE.get() {
+            let p_score = mg_table[p_idx][to] - mg_table[p_idx][from];
+            return (5000 + p_score).max(0) as u16;
+        }
+
+        0
+    }
+
+    fn get_value(&self, piece: PieceInfo) -> i32 {
+        let idx = Piece::to_idx(piece) % 6;
+        // Piece indices: 0:P, 1:N, 2:B, 3:R, 4:Q, 5:K
+        // Using your SCORE array (K=0 in scoring context usually)
+        match idx {
+            0 => 100,
+            1 => 320,
+            2 => 330,
+            3 => 500,
+            4 => 900,
+            _ => 0,
+        }
     }
 }
 
