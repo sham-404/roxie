@@ -1,4 +1,9 @@
-use crate::{board::Board, evaluation::evaluate, items::Move};
+use crate::{
+    board::Board,
+    evaluation::evaluate,
+    items::Move,
+    transposition_table::{TTEntry, TTFlag, TranspositionTable},
+};
 
 use std::cell::Cell;
 
@@ -16,6 +21,7 @@ fn inc_nodes() {
 pub fn find_best_move(board: &mut Board, depth: u16) -> (Option<Move>, (u64, i32)) {
     NODES.with(|n| n.set(0)); // reset
 
+    let mut tt = TranspositionTable::new(16);
     let mut best_move = None;
     let mut best_score = -INF;
 
@@ -23,7 +29,7 @@ pub fn find_best_move(board: &mut Board, depth: u16) -> (Option<Move>, (u64, i32
 
     for mv in move_list.with_ordering() {
         let undo = board.make_move(&mv);
-        let cur_score = -negamax(board, depth - 1, -INF, INF);
+        let cur_score = -negamax(board, depth - 1, -INF, INF, &mut tt);
         board.unmake_move(&mv, &undo);
 
         if cur_score > best_score {
@@ -36,8 +42,30 @@ pub fn find_best_move(board: &mut Board, depth: u16) -> (Option<Move>, (u64, i32
     (best_move, (nodes, best_score))
 }
 
-pub fn negamax(board: &mut Board, depth: u16, mut alpha: i32, beta: i32) -> i32 {
+pub fn negamax(
+    board: &mut Board,
+    depth: u16,
+    mut alpha: i32,
+    mut beta: i32,
+    tt: &mut TranspositionTable,
+) -> i32 {
     inc_nodes();
+
+    let key = board.get_zob_key();
+
+    if let Some(entry) = tt.probe(key) {
+        if entry.depth >= depth as i32 {
+            match entry.flag {
+                TTFlag::Exact => return entry.score,
+                TTFlag::LowerBound => alpha = alpha.max(entry.score),
+                TTFlag::UpperBound => beta = beta.min(entry.score),
+            }
+
+            if alpha >= beta {
+                return entry.score;
+            }
+        }
+    }
 
     if board.is_threefold() || board.is_50_rule() {
         return 0;
@@ -48,6 +76,7 @@ pub fn negamax(board: &mut Board, depth: u16, mut alpha: i32, beta: i32) -> i32 
     }
 
     let mut move_list = board.gen_moves();
+    let original_alpha = alpha;
 
     if move_list.len() == 0 {
         if board.in_check() {
@@ -60,7 +89,7 @@ pub fn negamax(board: &mut Board, depth: u16, mut alpha: i32, beta: i32) -> i32 
 
     for mv in move_list.with_ordering() {
         let undo = board.make_move(&mv);
-        let eval = -negamax(board, depth - 1, -beta, -alpha);
+        let eval = -negamax(board, depth - 1, -beta, -alpha, tt);
         board.unmake_move(&mv, &undo);
 
         if eval > max_eval {
@@ -76,6 +105,22 @@ pub fn negamax(board: &mut Board, depth: u16, mut alpha: i32, beta: i32) -> i32 
             break;
         }
     }
+
+    let flag = if max_eval <= original_alpha {
+        TTFlag::UpperBound
+    } else if max_eval >= beta {
+        TTFlag::LowerBound
+    } else {
+        TTFlag::Exact
+    };
+
+    tt.store(TTEntry {
+        key,
+        depth: depth as i32,
+        score: max_eval,
+        flag,
+        best_move: Move::NULL,
+    });
 
     max_eval
 }

@@ -612,6 +612,11 @@ impl Board {
         self.side_to_move
     }
 
+    #[inline]
+    pub fn get_zob_key(&self) -> u64 {
+        self.zobrist_key
+    }
+
     #[inline(always)]
     pub fn occ(&self, color: &Color) -> u64 {
         match color {

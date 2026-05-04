@@ -76,4 +76,24 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn search() {
+        init_zobrist();
+        init_pesto_table();
+        let mut board =
+            Board::load_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ");
+
+        let start = Instant::now();
+        let (_, (nodes, _)) = find_best_move(&mut board, 5);
+        let duration = start.elapsed();
+
+        let secs = duration.as_secs_f64();
+        let nps = (nodes as f64 / secs) as u64;
+
+        println!(
+            "search depth 5 (kiwipete): nodes={} time={:.5}s nps={}",
+            nodes, secs, nps
+        );
+    }
 }
