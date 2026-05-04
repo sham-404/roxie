@@ -2,6 +2,8 @@ pub const WHITE: usize = 0;
 pub const BLACK: usize = 1;
 pub const BOTH: usize = 2;
 
+pub const COLOR_FAC: [i32; 2] = [1, -1];
+
 pub const WK: u8 = 0b0001;
 pub const WQ: u8 = 0b0010;
 pub const BK: u8 = 0b0100;

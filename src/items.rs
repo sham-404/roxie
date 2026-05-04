@@ -24,17 +24,17 @@ impl Piece {
     const TYPE_MASK: u8 = 0b00111;
     const COLOR_MASK: u8 = 0b11000;
 
-    #[inline(always)]
+    #[inline]
     pub fn get_type(p: PieceInfo) -> u8 {
         p & Self::TYPE_MASK
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn get_color(p: PieceInfo) -> u8 {
         p & Self::COLOR_MASK
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn get_color_idx(p: PieceInfo) -> usize {
         if p & Self::COLOR_MASK == Piece::WHITE {
             WHITE
@@ -43,7 +43,7 @@ impl Piece {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn from_idx(idx: usize) -> PieceInfo {
         // idx 0-5 -> White Pawn to King
         // idx 6-11 -> Black Pawn to King
@@ -53,7 +53,7 @@ impl Piece {
     }
 
     // Indexes the pieces from 1 t0 11 for bitboards
-    #[inline(always)]
+    #[inline]
     pub const fn to_idx(p: PieceInfo) -> usize {
         // This maps:
         // White (P, N, B, R, Q, K) -> 0, 1, 2, 3, 4, 5
@@ -64,7 +64,7 @@ impl Piece {
         type_idx + color_idx
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn enemy(color: PieceInfo) -> PieceInfo {
         debug_assert!(
             color == color & Self::COLOR_MASK,
@@ -165,22 +165,22 @@ impl MoveFlag {
     pub const PROMO_CAP_ROOK: MoveFlag = MoveFlag(0b1110);
     pub const PROMO_CAP_QUEEN: MoveFlag = MoveFlag(0b1111);
 
-    #[inline(always)]
+    #[inline]
     pub fn is_capture(self) -> bool {
         (self.0 & Self::CAPTURE_BIT) != 0
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn is_promo(self) -> bool {
         (self.0 & Self::PROMO_BIT) != 0
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn is_castle(self) -> bool {
         self.0 & 0b1110 == 0b0010
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn get_promo_value(self) -> u16 {
         match self.0 & Self::PIECE_BIT {
             Self::KNIGHT => 320,
@@ -206,17 +206,17 @@ impl Move {
         Move(m)
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn from(self) -> usize {
         (self.0 & 0x3F) as usize
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn to(self) -> usize {
         ((self.0 >> 6) & 0x3F) as usize
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn flag(self) -> MoveFlag {
         MoveFlag(((self.0 >> 12) & 0xF) as FlagInfo)
     }
@@ -279,7 +279,6 @@ impl Undo {
             prev_castling_rights: castling,
             prev_last_irreversible: last_irreversible,
             prev_halfmove_clock: halfmove_clock,
-
         }
     }
 }
@@ -304,8 +303,7 @@ impl<'a> Iterator for MoveIter<'a> {
 }
 
 // Add this to your MoveList impl
-impl MoveList {
-}
+impl MoveList {}
 
 const MAX_MOVES: usize = 256;
 #[derive(Debug)]
@@ -316,7 +314,7 @@ pub struct MoveList {
 }
 
 impl MoveList {
-    #[inline(always)]
+    #[inline]
     pub fn new() -> Self {
         Self {
             moves: [Move::NULL; MAX_MOVES],
@@ -325,12 +323,12 @@ impl MoveList {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn get(&self, idx: usize) -> Move {
         self.moves[idx]
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn push(&mut self, mv: Move, score: u16) {
         debug_assert!(self.len < MAX_MOVES);
         self.moves[self.len] = mv;
@@ -355,7 +353,7 @@ impl MoveList {
         self.moves[start_idx]
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn with_ordering(&mut self) -> MoveIter<'_> {
         MoveIter {
             list: self,
@@ -363,7 +361,7 @@ impl MoveList {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn len(&self) -> usize {
         self.len
     }
@@ -372,7 +370,7 @@ impl MoveList {
         self.len = 0;
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn as_slice(&self) -> &[Move] {
         &self.moves[..self.len]
     }
@@ -391,24 +389,24 @@ impl History {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn len(&self) -> usize {
         self.len
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn get(&self, idx: usize) -> u64 {
         self.stack[idx]
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn push(&mut self, key: u64) {
         debug_assert!(self.len < 1024);
         self.stack[self.len] = key;
         self.len += 1;
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn pop(&mut self) -> u64 {
         debug_assert!(self.len > 0);
         self.len -= 1;
@@ -424,11 +422,19 @@ pub enum Color {
 }
 
 impl Color {
-    #[inline(always)]
+    #[inline]
     pub fn opponent(&self) -> Self {
         match self {
             Color::White => Color::Black,
             Color::Black => Color::White,
+        }
+    }
+
+    #[inline]
+    pub fn fac(&self) -> i32 {
+        match self {
+            Color::White => 1,
+            Color::Black => -1,
         }
     }
 }
@@ -445,34 +451,34 @@ impl CastlingRights {
         Self(0)
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn white_kingside(self) -> bool {
         self.0 & WK != 0
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn white_queenside(self) -> bool {
         self.0 & WQ != 0
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn black_kingside(self) -> bool {
         self.0 & BK != 0
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn black_queenside(self) -> bool {
         self.0 & BQ != 0
     }
 
     // remove rights
-    #[inline(always)]
+    #[inline]
     pub fn remove(&mut self, mask: u8) {
         self.0 &= !mask;
     }
 
     // add rights
-    #[inline(always)]
+    #[inline]
     pub fn add(&mut self, mask: u8) {
         self.0 |= mask;
     }

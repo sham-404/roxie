@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use crate::{
     board::{Board, pop_lsb},
     r#const::{BLACK, WHITE},
-    items::{Color, Piece},
+    items::{Piece},
 };
 
 // const SCORE: [i32; 5] = [100, 320, 330, 500, 900];
@@ -245,11 +245,5 @@ pub fn evaluate(board: &Board) -> i32 {
 
     score += pesto_score(board);
 
-    let color_fac = if board.side_to_move() == Color::White {
-        1
-    } else {
-        -1
-    };
-
-    score * color_fac
+    score * board.side_to_move().fac()
 }
