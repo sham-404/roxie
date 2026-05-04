@@ -189,7 +189,6 @@ impl Board {
         match half_move {
             Some(count) => board.halfmove_clock = count.parse::<usize>().unwrap_or(0),
             None => board.halfmove_clock = 0,
-            
         }
 
         board.build_occupancy();
@@ -204,10 +203,16 @@ impl Board {
     pub fn make_move(&mut self, mov: &Move) -> Undo {
         debug_assert!(self.occupancy[BOTH] & (1u64 << mov.from()) != 0);
 
+        let zob = ZOBRIST_TABLE.get().unwrap();
+        let ep_keys = ENPASSANT_KEYS.get().unwrap();
+        let castling_keys = CASTLING_KEYS.get().unwrap();
+        let side_key = SIDE_KEY.get().unwrap();
+
         let from = mov.from();
         let to = mov.to();
         let flag = mov.flag();
         let cur_piece = self.piece_on(from);
+        let piece_idx = Piece::to_idx(cur_piece);
 
         // Detecting captures
         let mut captured_sq = to;
@@ -230,6 +235,12 @@ impl Board {
             self.halfmove_clock,
         );
 
+        // Update zobrist: remove piece from 'from' and remove old EP
+        self.zobrist_key ^= zob[piece_idx][from];
+        if let Some(sq) = self.en_passant {
+            self.zobrist_key ^= ep_keys[sq as usize % 8];
+        }
+
         // update last_irreversible and halfmove_clock
         if captured != Piece::NONE || cur_piece == Piece::PAWN {
             self.last_irreversible = self.history.len();
@@ -238,90 +249,93 @@ impl Board {
             self.halfmove_clock += 1;
         }
 
-        // Update zobrist key (must be done before making the move)
-        self.update_zobrist_key(mov, &undo);
-
         // Handling captures
         if captured != Piece::NONE {
+            let cap_idx = Piece::to_idx(captured);
+            self.zobrist_key ^= zob[cap_idx][captured_sq]; // Update zobrist for capture
             self.remove_piece(captured, captured_sq);
         }
 
         // Moving the piece on the board
         self.move_piece_quiet(from, to);
 
-        // Handling Special Moves (for piece state)
-        // Promotions
+        // Handling Special Moves
         if flag.is_promo() {
-            // Removing the pawn, which is in the promotion square
             self.remove_piece(cur_piece, to);
-
+            // Note: piece is already XORed out of 'from', so we just XOR the promo piece into 'to'
             let promo_type = flag.0 & MoveFlag::PIECE_BIT;
             let color_bit = if self.side_to_move == Color::White {
                 Piece::WHITE
             } else {
                 Piece::BLACK
             };
-
             let promo_pieces = [Piece::KNIGHT, Piece::BISHOP, Piece::ROOK, Piece::QUEEN];
             let promo_piece = color_bit | promo_pieces[promo_type as usize];
 
-            // Adding the promotion piece
+            self.zobrist_key ^= zob[Piece::to_idx(promo_piece)][to]; // Update zobrist for promo
             self.add_piece(promo_piece, to);
+        } else {
+            self.zobrist_key ^= zob[piece_idx][to]; // Update zobrist for normal move
         }
 
         // castling
         if flag.is_castle() {
             let is_black = (cur_piece & Piece::BLACK) != 0;
             let king_pos = if is_black { BK_START_POS } else { WK_START_POS };
+            let r_pce = if is_black {
+                Piece::BLACK | Piece::ROOK
+            } else {
+                Piece::WHITE | Piece::ROOK
+            };
+            let r_idx = Piece::to_idx(r_pce);
 
             if flag == MoveFlag::KING_CASTLE {
+                self.zobrist_key ^= zob[r_idx][king_pos + 3] ^ zob[r_idx][king_pos + 1];
                 self.move_piece_quiet(king_pos + 3, king_pos + 1);
             } else {
+                self.zobrist_key ^= zob[r_idx][king_pos - 4] ^ zob[r_idx][king_pos - 1];
                 self.move_piece_quiet(king_pos - 4, king_pos - 1);
             }
         }
 
-        /////// Handling Special moves (for board state)
         // updating en_passant square
         self.en_passant = if flag == MoveFlag::DOUBLE_PUSH {
-            Some(((from + to) / 2) as u8)
+            let ep_sq = (from + to) / 2;
+            self.zobrist_key ^= ep_keys[ep_sq as usize % 8]; // Update zobrist for new EP
+            Some(ep_sq as u8)
         } else {
             None
         };
 
         //// Handling castling rights
-        // White king moves
+        self.zobrist_key ^= castling_keys[self.castling.0 as usize]; // Remove old rights hash
+
         if from == WK_START_POS {
             self.castling.remove(WK | WQ);
         }
-
-        // Black king moves
         if from == BK_START_POS {
             self.castling.remove(BK | BQ);
         }
-
-        // If white kingside rook moved, or captured
         if from == WK_START_POS + 3 || to == WK_START_POS + 3 {
             self.castling.remove(WK);
         }
-
-        // If white queenside rook moved, or captured
         if from == WK_START_POS - 4 || to == WK_START_POS - 4 {
             self.castling.remove(WQ);
         }
-
-        // If black kingside rook moved, or captured
         if from == BK_START_POS + 3 || to == BK_START_POS + 3 {
             self.castling.remove(BK);
         }
-
-        // If black queenside rook moved, or captured
         if from == BK_START_POS - 4 || to == BK_START_POS - 4 {
             self.castling.remove(BQ);
         }
 
+        self.zobrist_key ^= castling_keys[self.castling.0 as usize]; // Add new rights hash
+
         // Post move activities
         self.side_to_move = self.side_to_move.opponent();
+        self.zobrist_key ^= *side_key; // Update zobrist for side
+
+        debug_assert_eq!(self.zobrist_key, compute_hash(self), "Zobrist mismatch");
 
         undo
     }
@@ -591,109 +605,6 @@ impl Board {
                 }
             }
         }
-    }
-
-    fn update_zobrist_key(&mut self, mv: &Move, undo: &Undo) {
-        let zob = ZOBRIST_TABLE.get().unwrap();
-        let ep = ENPASSANT_KEYS.get().unwrap();
-        let castling = CASTLING_KEYS.get().unwrap();
-        let side = SIDE_KEY.get().unwrap();
-
-        let from = mv.from();
-        let to = mv.to();
-        let flag = mv.flag();
-
-        let piece = self.piece_on(from);
-        let piece_idx = Piece::to_idx(piece);
-
-        // remove old en passant sq
-        if let Some(sq) = undo.prev_en_passant_sq {
-            self.zobrist_key ^= ep[sq as usize % 8];
-        }
-
-        // remove piece from mov.from
-        self.zobrist_key ^= zob[piece_idx][from];
-
-        // handle capture
-        if flag.is_capture() {
-            if flag == MoveFlag::EN_PASSANT {
-                let cap_sq = if Piece::get_color(piece) == Piece::WHITE {
-                    to - 8
-                } else {
-                    to + 8
-                };
-
-                let captured = self.piece_on(cap_sq);
-                self.zobrist_key ^= zob[Piece::to_idx(captured)][cap_sq];
-            } else {
-                let captured = self.piece_on(to);
-                self.zobrist_key ^= zob[Piece::to_idx(captured)][to];
-            }
-        }
-
-        // handle castling
-        if flag.is_castle() {
-            match to {
-                // white king side
-                6 => {
-                    self.zobrist_key ^= zob[Piece::to_idx(Piece::WHITE | Piece::ROOK)][7];
-                    self.zobrist_key ^= zob[Piece::to_idx(Piece::WHITE | Piece::ROOK)][5];
-                }
-
-                // white queen side
-                2 => {
-                    self.zobrist_key ^= zob[Piece::to_idx(Piece::WHITE | Piece::ROOK)][0];
-                    self.zobrist_key ^= zob[Piece::to_idx(Piece::WHITE | Piece::ROOK)][3];
-                }
-
-                // black king side
-                62 => {
-                    self.zobrist_key ^= zob[Piece::to_idx(Piece::BLACK | Piece::ROOK)][63];
-                    self.zobrist_key ^= zob[Piece::to_idx(Piece::BLACK | Piece::ROOK)][61];
-                }
-
-                // black queen side
-                58 => {
-                    self.zobrist_key ^= zob[Piece::to_idx(Piece::BLACK | Piece::ROOK)][56];
-                    self.zobrist_key ^= zob[Piece::to_idx(Piece::BLACK | Piece::ROOK)][59];
-                }
-                _ => {}
-            }
-        }
-
-        // handling promotion
-        if flag.is_promo() {
-            let promo_piece_type = match flag.0 & MoveFlag::PIECE_BIT {
-                MoveFlag::KNIGHT => Piece::KNIGHT,
-                MoveFlag::BISHOP => Piece::BISHOP,
-                MoveFlag::ROOK => Piece::ROOK,
-                MoveFlag::QUEEN => Piece::QUEEN,
-                _ => unreachable!(),
-            };
-
-            let promoted = Piece::get_color(piece) | promo_piece_type;
-
-            self.zobrist_key ^= zob[Piece::to_idx(promoted)][to];
-        } else {
-            // Normal move
-            self.zobrist_key ^= zob[piece_idx][to];
-        }
-
-        // update castling rights
-        let old_rights = undo.prev_castling_rights.0;
-        self.zobrist_key ^= castling[old_rights as usize];
-
-        let new_rights = self.castling.0;
-
-        self.zobrist_key ^= castling[new_rights as usize];
-
-        // handling new en passant sq
-        if let Some(sq) = self.en_passant {
-            self.zobrist_key ^= ep[sq as usize % 8];
-        }
-
-        // handling change of side
-        self.zobrist_key ^= *side;
     }
 
     #[inline(always)]
