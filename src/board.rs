@@ -493,10 +493,9 @@ impl Board {
         for i in (self.last_irreversible..self.history.len()).rev() {
             if self.history.get(i) == cur {
                 count += 1;
-            }
-
-            if count >= 3 {
-                return true;
+                if count >= 3 {
+                    return true;
+                }
             }
         }
 

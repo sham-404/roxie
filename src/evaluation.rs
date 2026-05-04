@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use crate::{
     board::{Board, pop_lsb},
     r#const::{BLACK, WHITE},
-    items::Piece,
+    items::{Color, Piece},
 };
 
 // const SCORE: [i32; 5] = [100, 320, 330, 500, 900];
@@ -175,7 +175,7 @@ const EG_PESTO_TABLE: [[i32; 64]; 6] = [
     EG_KING_TABLE,
 ];
 
-const GAME_PHASE_VAL: [i32; 12] = [0, 2, 2, 4, 9, 0, 0, 2, 2, 4, 9, 0];
+const GAME_PHASE_VAL: [i32; 12] = [0, 1, 1, 2, 4, 0, 0, 1, 1, 2, 4, 0];
 
 static EG_TABLE: OnceLock<[[i32; 64]; 12]> = OnceLock::new();
 pub static MG_TABLE: OnceLock<[[i32; 64]; 12]> = OnceLock::new();
@@ -201,8 +201,9 @@ pub fn init_pesto_table() {
         let mut table = [[0i32; 64]; 12];
         for p_idx in 0..6 {
             for sq in 0..64 {
-                table[p_idx][sq] = MG_VALUE[p_idx] + MG_PESTO_TABLE[p_idx][sq];
-                table[p_idx + 6][sq] = MG_VALUE[p_idx] + MG_PESTO_TABLE[p_idx][mirror(sq)];
+                // mirroring for white because the PeSTO table constants are in blacks perspective
+                table[p_idx][sq] = MG_VALUE[p_idx] + MG_PESTO_TABLE[p_idx][mirror(sq)];
+                table[p_idx + 6][sq] = MG_VALUE[p_idx] + MG_PESTO_TABLE[p_idx][sq];
             }
         }
         table
@@ -233,10 +234,10 @@ fn pesto_score(board: &Board) -> i32 {
     let mg_score = mg[WHITE] - mg[BLACK];
     let eg_score = eg[WHITE] - eg[BLACK];
 
-    let mg_phase = game_phase.min(50); // Max as 50 is made coz of early promotions
-    let eg_phase = 50 - mg_phase;
+    let mg_phase = game_phase.min(24); // Max as 24 is made coz of early promotions
+    let eg_phase = 24 - mg_phase;
 
-    (mg_score * mg_phase + eg_score * eg_phase) / 50
+    (mg_score * mg_phase + eg_score * eg_phase) / 24
 }
 
 pub fn evaluate(board: &Board) -> i32 {
@@ -244,7 +245,13 @@ pub fn evaluate(board: &Board) -> i32 {
 
     score += pesto_score(board);
 
-    score
+    let color_fac = if board.side_to_move() == Color::White {
+        1
+    } else {
+        -1
+    };
+
+    score * color_fac
 }
 
 // fn material_score(board: &Board) -> i32 {

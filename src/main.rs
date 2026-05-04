@@ -64,7 +64,7 @@ mod tests {
                 "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ",
             );
             let start = Instant::now();
-            let (_, nodes) = find_best_move(&mut board, 5);
+            let (_, (nodes, _)) = find_best_move(&mut board, 5);
             let duration = start.elapsed();
 
             let secs = duration.as_secs_f64();
