@@ -65,6 +65,7 @@ pub struct Board {
     zobrist_key: u64,
     history: History,
     last_irreversible: usize,
+    halfmove_clock: usize,
 }
 
 impl Board {
@@ -83,6 +84,7 @@ impl Board {
             zobrist_key: 0,
             history: History::new(),
             last_irreversible: 0,
+            halfmove_clock: 0,
         };
 
         board
@@ -109,6 +111,7 @@ impl Board {
         bitboards[Piece::to_idx(Piece::BLACK | Piece::QUEEN)] = 0x0800000000000000;
         bitboards[Piece::to_idx(Piece::BLACK | Piece::KING)] = 0x1000000000000000;
 
+        board.halfmove_clock = 0;
         board.bitboards = bitboards;
         board.zobrist_key = compute_hash(&board);
         board.build_mailbox();
@@ -131,6 +134,7 @@ impl Board {
         let side_part = parts.next().expect("Invalid FEN");
         let castling_part = parts.next().expect("Invalid FEN");
         let ep_part = parts.next().expect("Invalid FEN");
+        let half_move = parts.next();
 
         let mut rank: i32 = 7;
         let mut file: i32 = 0;
@@ -182,6 +186,12 @@ impl Board {
             board.en_passant = Some(sq as u8);
         }
 
+        match half_move {
+            Some(count) => board.halfmove_clock = count.parse::<usize>().unwrap_or(0),
+            None => board.halfmove_clock = 0,
+            
+        }
+
         board.build_occupancy();
         board.build_mailbox();
         board.zobrist_key = compute_hash(&board);
@@ -217,11 +227,15 @@ impl Board {
             self.castling,
             self.en_passant,
             self.last_irreversible,
+            self.halfmove_clock,
         );
 
-        // update last_irreversible
+        // update last_irreversible and halfmove_clock
         if captured != Piece::NONE || cur_piece == Piece::PAWN {
             self.last_irreversible = self.history.len();
+            self.halfmove_clock = 0;
+        } else {
+            self.halfmove_clock += 1;
         }
 
         // Update zobrist key (must be done before making the move)
@@ -375,6 +389,7 @@ impl Board {
         self.en_passant = undo.prev_en_passant_sq;
         self.castling = undo.prev_castling_rights;
         self.last_irreversible = undo.prev_last_irreversible;
+        self.halfmove_clock = undo.prev_halfmove_clock;
         self.zobrist_key = self.history.pop();
 
         // self.update_zobrist_key(mov, undo);
@@ -500,6 +515,10 @@ impl Board {
         }
 
         false
+    }
+
+    pub fn is_50_rule(&self) -> bool {
+        self.halfmove_clock >= 100
     }
 
     #[inline]

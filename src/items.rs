@@ -262,6 +262,7 @@ pub struct Undo {
     pub prev_en_passant_sq: Option<u8>,
     pub prev_castling_rights: CastlingRights,
     pub prev_last_irreversible: usize,
+    pub prev_halfmove_clock: usize,
 }
 
 impl Undo {
@@ -270,12 +271,15 @@ impl Undo {
         castling: CastlingRights,
         ensq: Option<u8>,
         last_irreversible: usize,
+        halfmove_clock: usize,
     ) -> Self {
         Self {
             captured,
             prev_en_passant_sq: ensq,
             prev_castling_rights: castling,
             prev_last_irreversible: last_irreversible,
+            prev_halfmove_clock: halfmove_clock,
+
         }
     }
 }

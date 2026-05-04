@@ -1,8 +1,4 @@
-use crate::{
-    board::Board,
-    evaluation::evaluate,
-    items::{Move},
-};
+use crate::{board::Board, evaluation::evaluate, items::Move};
 
 use std::cell::Cell;
 
@@ -43,7 +39,7 @@ pub fn find_best_move(board: &mut Board, depth: u16) -> (Option<Move>, (u64, i32
 pub fn negamax(board: &mut Board, depth: u16, mut alpha: i32, beta: i32) -> i32 {
     inc_nodes();
 
-    if board.is_threefold() {
+    if board.is_threefold() || board.is_50_rule() {
         return 0;
     }
 
