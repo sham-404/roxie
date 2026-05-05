@@ -65,22 +65,18 @@ fn handle_go<'a>(commands: &mut SplitWhitespace<'a>, board: &mut Board) {
                 let depth: u16 = commands.next().unwrap_or("1").parse().unwrap();
 
                 let mut tt = TranspositionTable::new(16);
-                let (mov, _) = find_best_move(board, depth, &mut tt);
-                let coord = match mov {
-                    Some(mv) => mv.to_coord(),
-                    None => String::from("0000"),
-                };
+                let data = find_best_move(board, depth, &mut tt);
+
+                let coord = data.best_move.to_coord();
+
                 uci_print!("bestmove {}", coord);
             }
             _ => {} // need to implement infinite search
         }
     } else {
         let mut tt = TranspositionTable::new(16);
-        let (mov, _) = find_best_move(board, 1, &mut tt);
-        let coord = match mov {
-            Some(mv) => mv.to_coord(),
-            None => String::from("0000"),
-        };
+        let data = find_best_move(board, 1, &mut tt);
+        let coord = data.best_move.to_coord();
         uci_print!("bestmove {}", coord);
     }
 }

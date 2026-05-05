@@ -222,6 +222,10 @@ impl Move {
     }
 
     pub fn to_coord(&self) -> String {
+        if *self == Move::NULL {
+            return String::from("0000");
+        }
+
         let from = self.from();
         let to = self.to();
         let flag = self.flag();
@@ -302,9 +306,6 @@ impl<'a> Iterator for MoveIter<'a> {
     }
 }
 
-// Add this to your MoveList impl
-impl MoveList {}
-
 const MAX_MOVES: usize = 256;
 #[derive(Debug)]
 pub struct MoveList {
@@ -354,7 +355,17 @@ impl MoveList {
     }
 
     #[inline]
-    pub fn with_ordering(&mut self) -> MoveIter<'_> {
+    pub fn with_ordering(&mut self, tt_move: Move) -> MoveIter<'_> {
+        if tt_move != Move::NULL {
+            for i in 0..self.len {
+                if self.moves[i] == tt_move {
+                    // Give it a score higher than any possible capture/promotion
+                    self.score[i] = 65535;
+                    break;
+                }
+            }
+        }
+
         MoveIter {
             list: self,
             current: 0,

@@ -9,8 +9,12 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use roxie::{
-        board::Board, evaluation::init_pesto_table, perft::perft, search::find_best_move,
-        transposition_table::TranspositionTable, zobrist::init_zobrist,
+        board::Board,
+        evaluation::init_pesto_table,
+        perft::perft,
+        search::{find_best_move, search_ids},
+        transposition_table::TranspositionTable,
+        zobrist::init_zobrist,
     };
     use std::time::Instant;
 
@@ -65,15 +69,15 @@ mod tests {
             );
             let mut tt = TranspositionTable::new(16);
             let start = Instant::now();
-            let (_, (nodes, _)) = find_best_move(&mut board, 5, &mut tt);
+            let data = find_best_move(&mut board, 5, &mut tt);
             let duration = start.elapsed();
 
             let secs = duration.as_secs_f64();
-            let nps = (nodes as f64 / secs) as u64;
+            let nps = (data.nodes as f64 / secs) as u64;
 
             println!(
                 "search depth 5 (kiwipete): nodes={} time={:.5}s nps={}",
-                nodes, secs, nps
+                data.nodes, secs, nps
             );
         }
     }
@@ -82,21 +86,21 @@ mod tests {
     fn search() {
         init_zobrist();
         init_pesto_table();
-        let mut board =
-            Board::load_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ");
+        let mut board = Board::start_pos();
+            // Board::load_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ");
 
-        let mut tt = TranspositionTable::new(1);
-        let (_, (_, _)) = find_best_move(&mut board, 5, &mut tt);
+        let depth = 7;
+        let mut tt = TranspositionTable::new(16);
         let start = Instant::now();
-        let (_, (nodes, _)) = find_best_move(&mut board, 5, &mut tt);
+        let data = search_ids(&mut board, depth, &mut tt);
         let duration = start.elapsed();
 
         let secs = duration.as_secs_f64();
-        let nps = (nodes as f64 / secs) as u64;
+        let nps = (data.nodes as f64 / secs) as u64;
 
         println!(
-            "search depth 5 (kiwipete): nodes searched={} time={:.5}s nps={}",
-            nodes, secs, nps
+            "search depth {} (startpos): nodes searched={} time={:.5}s nps={}",
+            depth, data.nodes, secs, nps
         );
     }
 }
