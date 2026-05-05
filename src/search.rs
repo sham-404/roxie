@@ -178,11 +178,33 @@ pub fn negamax(
     let mut max_eval = -INF;
     let mut best_move_this_node = Move::NULL;
 
-    for mv in move_list.with_ordering(tt_move) {
+    for (i, mv) in move_list.with_ordering(tt_move).enumerate() {
+        let mut eval;
         let undo = board.make_move(&mv);
-        let info = negamax(board, depth - 1, -beta, -alpha, ply + 1, tt);
 
-        let eval = -info.best_score;
+        // Last Move Reduction (LMR)
+        // Only reduce if: not in check, not a capture, not a promotion, and i > 3
+        if i > 3
+            && depth >= 3
+            && !board.in_check()
+            && !mv.flag().is_capture()
+            && !mv.flag().is_promo()
+        {
+            // searching at reduced depth
+            let info = negamax(board, depth - 2, -alpha - 1, -alpha, ply + 1, tt);
+            eval = -info.best_score;
+
+            // researching if the reduced depth search is actually useful
+            if eval > alpha {
+                let info = negamax(board, depth - 1, -beta, -alpha, ply + 1, tt);
+                eval = -info.best_score;
+            }
+        } else {
+            // Normal search for first few moves and tactical moves
+            let info = negamax(board, depth - 1, -beta, -alpha, ply + 1, tt);
+            eval = -info.best_score;
+        }
+
         board.unmake_move(&mv, &undo);
 
         if eval > max_eval {
