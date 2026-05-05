@@ -3,7 +3,10 @@ use std::{
     str::SplitWhitespace,
 };
 
-use crate::{board::Board, items::Move, perft::perft_divide, search::find_best_move};
+use crate::{
+    board::Board, items::Move, perft::perft_divide, search::find_best_move,
+    transposition_table::TranspositionTable,
+};
 
 #[macro_export]
 macro_rules! uci_print {
@@ -61,7 +64,8 @@ fn handle_go<'a>(commands: &mut SplitWhitespace<'a>, board: &mut Board) {
             "depth" => {
                 let depth: u16 = commands.next().unwrap_or("1").parse().unwrap();
 
-                let (mov, _) = find_best_move(board, depth);
+                let mut tt = TranspositionTable::new(16);
+                let (mov, _) = find_best_move(board, depth, &mut tt);
                 let coord = match mov {
                     Some(mv) => mv.to_coord(),
                     None => String::from("0000"),
@@ -71,7 +75,8 @@ fn handle_go<'a>(commands: &mut SplitWhitespace<'a>, board: &mut Board) {
             _ => {} // need to implement infinite search
         }
     } else {
-        let (mov, _) = find_best_move(board, 1);
+        let mut tt = TranspositionTable::new(16);
+        let (mov, _) = find_best_move(board, 1, &mut tt);
         let coord = match mov {
             Some(mv) => mv.to_coord(),
             None => String::from("0000"),

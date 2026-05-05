@@ -18,10 +18,9 @@ fn inc_nodes() {
     NODES.with(|n| n.set(n.get() + 1));
 }
 
-pub fn find_best_move(board: &mut Board, depth: u16) -> (Option<Move>, (u64, i32)) {
+pub fn find_best_move(board: &mut Board, depth: u16, mut tt: &mut TranspositionTable) -> (Option<Move>, (u64, i32)) {
     NODES.with(|n| n.set(0)); // reset
 
-    let mut tt = TranspositionTable::new(16);
     let mut best_move = None;
     let mut best_score = -INF;
 

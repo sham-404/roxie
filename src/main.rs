@@ -10,7 +10,7 @@ fn main() {
 mod tests {
     use roxie::{
         board::Board, evaluation::init_pesto_table, perft::perft, search::find_best_move,
-        zobrist::init_zobrist,
+        transposition_table::TranspositionTable, zobrist::init_zobrist,
     };
     use std::time::Instant;
 
@@ -63,8 +63,9 @@ mod tests {
             board = Board::load_fen(
                 "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ",
             );
+            let mut tt = TranspositionTable::new(16);
             let start = Instant::now();
-            let (_, (nodes, _)) = find_best_move(&mut board, 5);
+            let (_, (nodes, _)) = find_best_move(&mut board, 5, &mut tt);
             let duration = start.elapsed();
 
             let secs = duration.as_secs_f64();
@@ -84,15 +85,17 @@ mod tests {
         let mut board =
             Board::load_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ");
 
+        let mut tt = TranspositionTable::new(1);
+        let (_, (_, _)) = find_best_move(&mut board, 5, &mut tt);
         let start = Instant::now();
-        let (_, (nodes, _)) = find_best_move(&mut board, 5);
+        let (_, (nodes, _)) = find_best_move(&mut board, 5, &mut tt);
         let duration = start.elapsed();
 
         let secs = duration.as_secs_f64();
         let nps = (nodes as f64 / secs) as u64;
 
         println!(
-            "search depth 5 (kiwipete): nodes={} time={:.5}s nps={}",
+            "search depth 5 (kiwipete): nodes searched={} time={:.5}s nps={}",
             nodes, secs, nps
         );
     }
