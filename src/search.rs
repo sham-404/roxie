@@ -156,9 +156,10 @@ pub fn negamax(
     }
 
     // NULL move pruning
-    if depth >= 3 && !board.in_check() {
+    if depth > 4 && !board.in_check() && board.is_endgame() {
+        let r = 2 + depth / 6;
         let old_epsq = board.make_null_move();
-        let info = negamax(board, depth - 1 - 2, -beta, -beta + 1, ply + 1, tt);
+        let info = negamax(board, depth - 1 - r, -beta, -beta + 1, ply + 1, tt);
         board.unmake_null_move(old_epsq);
 
         let score = -info.best_score;
@@ -178,20 +179,31 @@ pub fn negamax(
     let mut max_eval = -INF;
     let mut best_move_this_node = Move::NULL;
 
-    for (i, mv) in move_list.with_ordering(tt_move).enumerate() {
+    for (mv_idx, mv) in move_list.with_ordering(tt_move).enumerate() {
         let mut eval;
+        let in_check = board.in_check();
         let undo = board.make_move(&mv);
 
         // Last Move Reduction (LMR)
         // Only reduce if: not in check, not a capture, not a promotion, and i > 3
-        if i > 3
-            && depth >= 3
-            && !board.in_check()
-            && !mv.flag().is_capture()
-            && !mv.flag().is_promo()
+        if mv_idx > 3 && depth > 4 && !in_check && !mv.flag().is_capture() && !mv.flag().is_promo()
         {
+            let mut reduction: u16 = 1 + (mv_idx as u16 / 4) + (depth / 6);
+            if depth <= 5 {
+                reduction = 1;
+            }
+
+            reduction = reduction.min(depth - 1);
+
             // searching at reduced depth
-            let info = negamax(board, depth - 2, -alpha - 1, -alpha, ply + 1, tt);
+            let info = negamax(
+                board,
+                depth - 1 - reduction,
+                -alpha - 1,
+                -alpha,
+                ply + 1,
+                tt,
+            );
             eval = -info.best_score;
 
             // researching if the reduced depth search is actually useful

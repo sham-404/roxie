@@ -1,5 +1,5 @@
 use crate::r#const::*;
-use crate::evaluation::MG_TABLE;
+use crate::evaluation::{GAME_PHASE_VAL, MG_TABLE};
 use crate::items::*;
 use crate::square::Square;
 use crate::zobrist::{CASTLING_KEYS, ENPASSANT_KEYS, SIDE_KEY, ZOBRIST_TABLE};
@@ -665,6 +665,23 @@ impl Board {
     #[inline]
     pub fn get_zob_key(&self) -> u64 {
         self.zobrist_key
+    }
+
+    pub fn is_endgame(&self) -> bool {
+        let mut all_occ = self.all_occ();
+        let mut game_phase = 0;
+
+        while let Some(sq) = pop_lsb(&mut all_occ) {
+            let piece = self.piece_on(sq);
+            let p_idx = Piece::to_idx(piece);
+            game_phase += GAME_PHASE_VAL[p_idx];
+
+            if game_phase > 8 {
+                return false;
+            }
+        }
+
+        true
     }
 
     #[inline(always)]

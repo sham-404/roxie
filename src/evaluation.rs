@@ -175,7 +175,7 @@ const EG_PESTO_TABLE: [[i32; 64]; 6] = [
     EG_KING_TABLE,
 ];
 
-const GAME_PHASE_VAL: [i32; 12] = [0, 1, 1, 2, 4, 0, 0, 1, 1, 2, 4, 0];
+pub const GAME_PHASE_VAL: [i32; 12] = [0, 1, 1, 2, 4, 0, 0, 1, 1, 2, 4, 0];
 
 static EG_TABLE: OnceLock<[[i32; 64]; 12]> = OnceLock::new();
 pub static MG_TABLE: OnceLock<[[i32; 64]; 12]> = OnceLock::new();

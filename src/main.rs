@@ -67,7 +67,7 @@ mod tests {
             board = Board::load_fen(
                 "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ",
             );
-            let mut tt = TranspositionTable::new(16);
+            let mut tt = TranspositionTable::new(8);
             let start = Instant::now();
             let data = find_best_move(&mut board, 5, &mut tt);
             let duration = start.elapsed();
