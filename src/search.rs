@@ -155,6 +155,26 @@ pub fn negamax(
         };
     }
 
+    // NULL move pruning
+    if depth >= 3 && !board.in_check() {
+        let old_epsq = board.make_null_move();
+        let info = negamax(board, depth - 1 - 2, -beta, -beta + 1, ply + 1, tt);
+        board.unmake_null_move(old_epsq);
+
+        let score = -info.best_score;
+
+        if score >= beta {
+            // Not returning mate scores from NMP as it can lead to false mates
+            let return_score = if score >= INF - 1000 { beta } else { score };
+
+            return SearchInfo {
+                best_move: Move::NULL,
+                best_score: return_score,
+                nodes: NODES.with(|n| n.get()),
+            };
+        }
+    }
+
     let mut max_eval = -INF;
     let mut best_move_this_node = Move::NULL;
 

@@ -539,6 +539,56 @@ impl Board {
     pub fn piece_on(&self, sq: usize) -> PieceInfo {
         return self.mailbox[sq];
     }
+
+    pub fn make_null_move(&mut self) -> Option<u8> {
+        let side_key = *SIDE_KEY.get().unwrap();
+        let ep_keys = ENPASSANT_KEYS.get().unwrap();
+
+        // 1. Flip the side (This matches your if board.side_to_move == Color::Black check)
+        // We XOR the key regardless of current color to "toggle" it
+        self.zobrist_key ^= side_key;
+
+        // 2. Clear En Passant from the hash
+        if let Some(sq) = self.en_passant {
+            let file = sq % 8;
+            self.zobrist_key ^= ep_keys[file as usize];
+        }
+
+        // 3. Update the board state
+        // Store the old EP square so you can restore it in unmake!
+        let old_epsq = self.en_passant;
+        self.en_passant = None;
+        self.side_to_move = self.side_to_move.opponent();
+
+        debug_assert_eq!(
+            self.zobrist_key,
+            compute_hash(self),
+            "make_null_move: Zobrist mismatch"
+        );
+        old_epsq
+    }
+
+    pub fn unmake_null_move(&mut self, old_epsq: Option<u8>) {
+        let side_key = *SIDE_KEY.get().unwrap();
+        let ep_keys = ENPASSANT_KEYS.get().unwrap();
+
+        // 1. Flip side back
+        self.side_to_move = self.side_to_move.opponent();
+        self.zobrist_key ^= side_key;
+
+        // 2. Restore En Passant
+        self.en_passant = old_epsq;
+        if let Some(sq) = self.en_passant {
+            let file = sq % 8;
+            self.zobrist_key ^= ep_keys[file as usize];
+        }
+
+        debug_assert_eq!(
+            self.zobrist_key,
+            compute_hash(self),
+            "unmake_null_move: Zobrist mismatch"
+        );
+    }
 }
 
 ///////// Helpers
