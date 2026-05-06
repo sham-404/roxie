@@ -10,7 +10,15 @@ use std::time::Instant;
 
 const INF: i32 = 10000000;
 
-pub fn search_ids(board: &mut Board, depth: u16, tt: &mut TranspositionTable) -> SearchInfo {
+pub fn search_ids<F>(
+    board: &mut Board,
+    depth: u16,
+    tt: &mut TranspositionTable,
+    mut on_iteration: F,
+) -> SearchInfo
+where
+    F: FnMut(&SearchInfo),
+{
     let mut info = SearchInfo {
         start_time: Instant::now(),
         best_move: Move::NULL,
@@ -49,7 +57,7 @@ pub fn search_ids(board: &mut Board, depth: u16, tt: &mut TranspositionTable) ->
         info.score = best_score;
         info.best_move = best_move;
 
-        info.print();
+        on_iteration(&info);
     }
 
     info

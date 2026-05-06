@@ -9,12 +9,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use roxie::{
-        board::Board,
-        evaluation::init_pesto_table,
-        perft::perft,
-        search::{search_ids},
-        tt::TranspositionTable,
-        zobrist::init_zobrist,
+        board::Board, evaluation::init_pesto_table, perft::perft, search::search_ids,
+        tt::TranspositionTable, zobrist::init_zobrist,
     };
     use std::time::Instant;
 
@@ -69,7 +65,7 @@ mod tests {
             );
             let mut tt = TranspositionTable::new(8);
             let start = Instant::now();
-            let data = search_ids(&mut board, 5, &mut tt);
+            let data = search_ids(&mut board, 5, &mut tt, |_| {});
             let duration = start.elapsed();
 
             let secs = duration.as_secs_f64();
@@ -87,12 +83,12 @@ mod tests {
         init_zobrist();
         init_pesto_table();
         let mut board = Board::start_pos();
-            // Board::load_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ");
+        // Board::load_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ");
 
         let depth = 7;
         let mut tt = TranspositionTable::new(16);
         let start = Instant::now();
-        let data = search_ids(&mut board, depth, &mut tt);
+        let data = search_ids(&mut board, depth, &mut tt, |_| {});
         let duration = start.elapsed();
 
         let secs = duration.as_secs_f64();
