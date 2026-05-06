@@ -13,7 +13,7 @@ mod tests {
         evaluation::init_pesto_table,
         perft::perft,
         search::{search_ids},
-        transposition_table::TranspositionTable,
+        tt::TranspositionTable,
         zobrist::init_zobrist,
     };
     use std::time::Instant;
