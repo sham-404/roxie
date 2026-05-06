@@ -118,7 +118,7 @@ fn negamax(
 
     // NULL move pruning
     let eval = evaluate(board);
-    if depth >= 4 && !board.in_check() && !board.is_endgame() && eval >= beta {
+    if depth > 4 && !board.in_check() && !board.is_endgame() && eval >= beta {
         let r = 2 + depth / 6;
         let old_epsq = board.make_null_move();
         let score = -negamax(board, depth - 1 - r, -beta, -beta + 1, ply + 1, tt, info);
@@ -140,7 +140,7 @@ fn negamax(
 
         // Last Move Reduction (LMR)
         // Only reduce if: not in check, not a capture, not a promotion, and i > 3
-        if mv_idx > 3 && depth >= 4 && !in_check && !mv.flag().is_capture() && !mv.flag().is_promo()
+        if mv_idx > 3 && depth > 4 && !in_check && !mv.flag().is_capture() && !mv.flag().is_promo()
         {
             let mut reduction: u16 = 1 + (mv_idx as u16 / 4) + (depth / 6);
             if depth <= 5 {
