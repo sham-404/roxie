@@ -2,7 +2,7 @@ use crate::{
     board::Board,
     evaluation::evaluate,
     items::Move,
-    transposition_table::{TTEntry, TTFlag, TranspositionTable},
+    tt::{TTEntry, TTFlag, TranspositionTable},
     uci_print,
 };
 

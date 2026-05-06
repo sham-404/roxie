@@ -5,6 +5,6 @@ pub mod items;
 pub mod perft;
 pub mod search;
 pub mod square;
-pub mod transposition_table;
+pub mod tt;
 pub mod uci;
 pub mod zobrist;

@@ -4,8 +4,7 @@ use std::{
 };
 
 use crate::{
-    board::Board, items::Move, perft::perft_divide, search::search_ids,
-    transposition_table::TranspositionTable,
+    board::Board, items::Move, perft::perft_divide, search::search_ids, tt::TranspositionTable,
 };
 
 #[macro_export]
