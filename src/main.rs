@@ -12,7 +12,7 @@ mod tests {
         board::Board,
         evaluation::init_pesto_table,
         perft::perft,
-        search::{find_best_move, search_ids},
+        search::{search_ids},
         transposition_table::TranspositionTable,
         zobrist::init_zobrist,
     };
@@ -69,7 +69,7 @@ mod tests {
             );
             let mut tt = TranspositionTable::new(8);
             let start = Instant::now();
-            let data = find_best_move(&mut board, 5, &mut tt);
+            let data = search_ids(&mut board, 5, &mut tt);
             let duration = start.elapsed();
 
             let secs = duration.as_secs_f64();

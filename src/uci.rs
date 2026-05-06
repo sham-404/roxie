@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    board::Board, items::Move, perft::perft_divide, search::find_best_move,
+    board::Board, items::Move, perft::perft_divide, search::search_ids,
     transposition_table::TranspositionTable,
 };
 
@@ -65,7 +65,7 @@ fn handle_go<'a>(commands: &mut SplitWhitespace<'a>, board: &mut Board) {
                 let depth: u16 = commands.next().unwrap_or("1").parse().unwrap();
 
                 let mut tt = TranspositionTable::new(16);
-                let data = find_best_move(board, depth, &mut tt);
+                let data = search_ids(board, depth, &mut tt);
 
                 let coord = data.best_move.to_coord();
 
@@ -75,7 +75,7 @@ fn handle_go<'a>(commands: &mut SplitWhitespace<'a>, board: &mut Board) {
         }
     } else {
         let mut tt = TranspositionTable::new(16);
-        let data = find_best_move(board, 1, &mut tt);
+        let data = search_ids(board, 1, &mut tt);
         let coord = data.best_move.to_coord();
         uci_print!("bestmove {}", coord);
     }

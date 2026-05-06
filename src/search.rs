@@ -3,94 +3,72 @@ use crate::{
     evaluation::evaluate,
     items::Move,
     transposition_table::{TTEntry, TTFlag, TranspositionTable},
+    uci_print,
 };
 
-use std::cell::Cell;
+use std::time::Instant;
 
 const INF: i32 = 10000000;
 
-thread_local! {
-    static NODES: Cell<u64> = Cell::new(0);
-}
-
-#[inline(always)]
-fn inc_nodes() {
-    NODES.with(|n| n.set(n.get() + 1));
-}
-
 pub fn search_ids(board: &mut Board, depth: u16, tt: &mut TranspositionTable) -> SearchInfo {
-    NODES.with(|n| n.set(0)); // reset
-
     let mut info = SearchInfo {
+        start_time: Instant::now(),
         best_move: Move::NULL,
-        best_score: 0,
+        depth: 0,
+        score: 0,
         nodes: 0,
     };
 
     for d in 1..=depth {
-        info = find_best_move(board, d, tt);
+        let mut best_move = Move::NULL;
+        let mut best_score = -INF;
+
+        let mut move_list = board.gen_moves();
+
+        let mut tt_move = Move::NULL;
+        if let Some(entry) = tt.probe(board.get_zob_key()) {
+            tt_move = entry.best_move;
+        }
+
+        for mv in move_list.with_ordering(tt_move) {
+            let undo = board.make_move(&mv);
+            let score = -negamax(board, d - 1, -INF, INF, 1, tt, &mut info);
+            board.unmake_move(&mv, &undo);
+
+            if score > best_score {
+                best_score = score;
+                best_move = mv;
+            }
+        }
+
+        if best_move == Move::NULL && move_list.len() > 0 {
+            best_move = move_list.get(0);
+        }
+
+        info.depth = d;
+        info.score = best_score;
+        info.best_move = best_move;
+
+        info.print();
     }
 
     info
 }
 
-pub fn find_best_move(
-    board: &mut Board,
-    depth: u16,
-    mut tt: &mut TranspositionTable,
-) -> SearchInfo {
-    let mut best_move = Move::NULL;
-    let mut best_score = -INF;
-
-    let mut move_list = board.gen_moves();
-
-    let mut tt_move = Move::NULL;
-    if let Some(entry) = tt.probe(board.get_zob_key()) {
-        tt_move = entry.best_move;
-    }
-
-    for mv in move_list.with_ordering(tt_move) {
-        let undo = board.make_move(&mv);
-        let info = negamax(board, depth - 1, -INF, INF, 1, &mut tt);
-        let cur_score = -info.best_score;
-        board.unmake_move(&mv, &undo);
-
-        if cur_score > best_score {
-            best_score = cur_score;
-            best_move = mv;
-        }
-    }
-
-    let nodes = NODES.with(|n| n.get());
-
-    if best_move == Move::NULL && move_list.len() > 0 {
-        best_move = move_list.get(0);
-    }
-
-    SearchInfo {
-        best_move,
-        best_score,
-        nodes,
-    }
-}
-
-pub fn negamax(
+fn negamax(
     board: &mut Board,
     depth: u16,
     mut alpha: i32,
     mut beta: i32,
     ply: i32,
     tt: &mut TranspositionTable,
-) -> SearchInfo {
-    inc_nodes();
+    info: &mut SearchInfo,
+) -> i32 {
+    info.nodes += 1;
 
     // Checking draws
     if board.is_threefold() || board.is_50_rule() {
-        return SearchInfo {
-            best_move: Move::NULL,
-            best_score: 0,
-            nodes: NODES.with(|n| n.get()),
-        };
+        return 0;
     }
 
     // Probing the TT
@@ -113,33 +91,21 @@ pub fn negamax(
         if entry.depth >= depth as i32 {
             match entry.flag {
                 TTFlag::Exact => {
-                    return SearchInfo {
-                        best_move: entry.best_move,
-                        best_score: score,
-                        nodes: NODES.with(|n| n.get()),
-                    };
+                    return score;
                 }
                 TTFlag::LowerBound => alpha = alpha.max(score),
                 TTFlag::UpperBound => beta = beta.min(score),
             }
 
             if alpha >= beta {
-                return SearchInfo {
-                    best_move: entry.best_move,
-                    best_score: score,
-                    nodes: NODES.with(|n| n.get()),
-                };
+                return score;
             }
         }
     }
 
     // base case handling
     if depth == 0 {
-        return SearchInfo {
-            best_move: Move::NULL,
-            best_score: evaluate(board),
-            nodes: NODES.with(|n| n.get()),
-        };
+        return evaluate(board);
     }
 
     let mut move_list = board.gen_moves();
@@ -147,32 +113,20 @@ pub fn negamax(
 
     // checking mates
     if move_list.len() == 0 {
-        let score = if board.in_check() { -INF + ply } else { 0 };
-        return SearchInfo {
-            best_move: Move::NULL,
-            best_score: score,
-            nodes: NODES.with(|n| n.get()),
-        };
+        return if board.in_check() { -INF + ply } else { 0 };
     }
 
     // NULL move pruning
-    if depth > 4 && !board.in_check() && board.is_endgame() {
+    let eval = evaluate(board);
+    if depth >= 4 && !board.in_check() && !board.is_endgame() && eval >= beta {
         let r = 2 + depth / 6;
         let old_epsq = board.make_null_move();
-        let info = negamax(board, depth - 1 - r, -beta, -beta + 1, ply + 1, tt);
+        let score = -negamax(board, depth - 1 - r, -beta, -beta + 1, ply + 1, tt, info);
         board.unmake_null_move(old_epsq);
-
-        let score = -info.best_score;
 
         if score >= beta {
             // Not returning mate scores from NMP as it can lead to false mates
-            let return_score = if score >= INF - 1000 { beta } else { score };
-
-            return SearchInfo {
-                best_move: Move::NULL,
-                best_score: return_score,
-                nodes: NODES.with(|n| n.get()),
-            };
+            return if score >= INF - 1000 { beta } else { score };
         }
     }
 
@@ -186,7 +140,7 @@ pub fn negamax(
 
         // Last Move Reduction (LMR)
         // Only reduce if: not in check, not a capture, not a promotion, and i > 3
-        if mv_idx > 3 && depth > 4 && !in_check && !mv.flag().is_capture() && !mv.flag().is_promo()
+        if mv_idx > 3 && depth >= 4 && !in_check && !mv.flag().is_capture() && !mv.flag().is_promo()
         {
             let mut reduction: u16 = 1 + (mv_idx as u16 / 4) + (depth / 6);
             if depth <= 5 {
@@ -196,25 +150,24 @@ pub fn negamax(
             reduction = reduction.min(depth - 1);
 
             // searching at reduced depth
-            let info = negamax(
+            eval = -negamax(
                 board,
                 depth - 1 - reduction,
                 -alpha - 1,
                 -alpha,
                 ply + 1,
                 tt,
+                info,
             );
-            eval = -info.best_score;
 
             // researching if the reduced depth search is actually useful
             if eval > alpha {
-                let info = negamax(board, depth - 1, -beta, -alpha, ply + 1, tt);
-                eval = -info.best_score;
+                eval = -negamax(board, depth - 1, -beta, -alpha, ply + 1, tt, info);
             }
         } else {
             // Normal search for first few moves and tactical moves
-            let info = negamax(board, depth - 1, -beta, -alpha, ply + 1, tt);
-            eval = -info.best_score;
+            let score = negamax(board, depth - 1, -beta, -alpha, ply + 1, tt, info);
+            eval = -score;
         }
 
         board.unmake_move(&mv, &undo);
@@ -259,15 +212,31 @@ pub fn negamax(
         best_move: best_move_this_node,
     });
 
-    return SearchInfo {
-        best_move: best_move_this_node,
-        best_score: max_eval,
-        nodes: NODES.with(|n| n.get()),
-    };
+    max_eval
+}
+pub struct SearchInfo {
+    pub start_time: Instant,
+    pub depth: u16,
+    pub score: i32,
+    pub best_move: Move,
+    pub nodes: u64,
 }
 
-pub struct SearchInfo {
-    pub best_move: Move,
-    pub best_score: i32,
-    pub nodes: u64,
+impl SearchInfo {
+    pub fn print(&self) {
+        uci_print!(
+            "info depth {} score cp {} nodes {} nps {} time {} pv {}",
+            self.depth,
+            self.score,
+            self.nodes,
+            self.nps(),
+            self.start_time.elapsed().as_millis(),
+            self.best_move.to_coord(),
+        );
+    }
+
+    fn nps(&self) -> u64 {
+        let ms = self.start_time.elapsed().as_millis().max(1);
+        self.nodes * 1000 / ms as u64
+    }
 }
