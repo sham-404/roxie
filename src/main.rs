@@ -9,8 +9,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use roxie::{
-        board::Board, evaluation::init_pesto_table, perft::perft, search::search_ids,
-        tt::TranspositionTable, zobrist::init_zobrist,
+        board::Board, engine::Engine, evaluation::init_pesto_table, perft::perft, zobrist::init_zobrist
     };
     use std::time::Instant;
 
@@ -19,20 +18,20 @@ mod tests {
         init_zobrist();
         init_pesto_table();
 
-        let mut board: Board;
+        let mut engine: Engine = Engine::new();
         // startpos perft evaluation
         {
-            board = Board::start_pos();
+            engine.board = Board::start_pos();
 
             let start = Instant::now();
-            let nodes = perft(&mut board, 5);
+            let nodes = perft(&mut engine.board, 5);
             let duration = start.elapsed();
 
             let secs = duration.as_secs_f64();
             let nps = (nodes as f64 / secs) as u64;
 
             println!(
-                "pertf depth 5 (startpos): nodes={} time={:.5}s nps={}",
+                "perft depth 5 (startpos): nodes={} time={:.5}s nps={}",
                 nodes, secs, nps
             );
             assert_eq!(nodes, 4_865_609);
@@ -40,19 +39,19 @@ mod tests {
 
         // kiwipete perft evaluation
         {
-            board = Board::load_fen(
+            engine.board = Board::load_fen(
                 "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ",
             );
 
             let start = Instant::now();
-            let nodes = perft(&mut board, 5);
+            let nodes = perft(&mut engine.board, 5);
             let duration = start.elapsed();
 
             let secs = duration.as_secs_f64();
             let nps = (nodes as f64 / secs) as u64;
 
             println!(
-                "pertf depth 5 (kiwipete): nodes={} time={:.5}s nps={}",
+                "perft depth 5 (kiwipete): nodes={} time={:.5}s nps={}",
                 nodes, secs, nps
             );
             assert_eq!(nodes, 193_690_690);
@@ -60,12 +59,11 @@ mod tests {
 
         // kiwipete search analysis
         {
-            board = Board::load_fen(
+            engine.board = Board::load_fen(
                 "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ",
             );
-            let mut tt = TranspositionTable::new(8);
             let start = Instant::now();
-            let data = search_ids(&mut board, 5, &mut tt, |_| {});
+            let data = engine.search_ids(5, |_| {});
             let duration = start.elapsed();
 
             let secs = duration.as_secs_f64();
@@ -82,13 +80,13 @@ mod tests {
     fn search() {
         init_zobrist();
         init_pesto_table();
-        let mut board = Board::start_pos();
+        let mut engine = Engine::new();
+        engine.board = Board::start_pos();
         // Board::load_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ");
 
         let depth = 7;
-        let mut tt = TranspositionTable::new(16);
         let start = Instant::now();
-        let data = search_ids(&mut board, depth, &mut tt, |_| {});
+        let data = engine.search_ids(depth, |_| {});
         let duration = start.elapsed();
 
         let secs = duration.as_secs_f64();

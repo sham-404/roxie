@@ -3,9 +3,7 @@ use std::{
     str::SplitWhitespace,
 };
 
-use crate::{
-    board::Board, items::Move, perft::perft_divide, search::search_ids, tt::TranspositionTable,
-};
+use crate::{board::Board, engine::Engine, items::Move, perft::perft_divide};
 
 #[macro_export]
 macro_rules! uci_print {
@@ -19,7 +17,7 @@ macro_rules! uci_print {
 
 pub fn uci_loop() {
     let stdin = io::stdin();
-    let mut board = Board::new();
+    let mut engine = Engine::new();
 
     for line in stdin.lock().lines() {
         let line = line.unwrap();
@@ -37,11 +35,11 @@ pub fn uci_loop() {
                     uci_print!("readyok");
                 }
 
-                "ucinewgame" => board = Board::new(),
+                "ucinewgame" => engine.board = Board::new(),
 
-                "position" => handle_position(&mut words, &mut board),
+                "position" => handle_position(&mut words, &mut engine),
 
-                "go" => handle_go(&mut words, &mut board),
+                "go" => handle_go(&mut words, &mut engine),
 
                 "quit" => break,
 
@@ -51,20 +49,19 @@ pub fn uci_loop() {
     }
 }
 
-fn handle_go<'a>(commands: &mut SplitWhitespace<'a>, board: &mut Board) {
+fn handle_go<'a>(commands: &mut SplitWhitespace<'a>, engine: &mut Engine) {
     if let Some(cmd) = commands.next() {
         match cmd {
             "perft" => {
                 if let Ok(depth) = commands.next().unwrap().parse::<u32>() {
-                    perft_divide(board, depth);
+                    perft_divide(&mut engine.board, depth);
                 }
             }
 
             "depth" => {
                 let depth: u16 = commands.next().unwrap_or("1").parse().unwrap();
 
-                let mut tt = TranspositionTable::new(16);
-                let data = search_ids(board, depth, &mut tt, |info| {
+                let data = engine.search_ids(depth, |info| {
                     info.print();
                 });
 
@@ -75,8 +72,7 @@ fn handle_go<'a>(commands: &mut SplitWhitespace<'a>, board: &mut Board) {
             _ => {} // need to implement infinite search
         }
     } else {
-        let mut tt = TranspositionTable::new(16);
-        let data = search_ids(board, 1, &mut tt, |info| {
+        let data = engine.search_ids(1, |info| {
             info.print();
         });
         let coord = data.best_move.to_coord();
@@ -84,16 +80,16 @@ fn handle_go<'a>(commands: &mut SplitWhitespace<'a>, board: &mut Board) {
     }
 }
 
-fn handle_position<'a>(commands: &mut SplitWhitespace<'a>, board: &mut Board) {
+fn handle_position<'a>(commands: &mut SplitWhitespace<'a>, engine: &mut Engine) {
     if let Some(cmd) = commands.next() {
         match cmd {
             "startpos" => {
-                *board = Board::start_pos();
+                engine.board = Board::start_pos();
 
                 if let Some("moves") = commands.next() {
                     for mv_str in commands {
-                        let mv = Move::from_uci(mv_str, board);
-                        board.make_move(&mv);
+                        let mv = Move::from_uci(mv_str, &mut engine.board);
+                        engine.board.make_move(&mv);
                     }
                 }
             }
@@ -102,12 +98,12 @@ fn handle_position<'a>(commands: &mut SplitWhitespace<'a>, board: &mut Board) {
                 let fen_parts: Vec<&str> = commands.by_ref().take(6).collect();
                 let fen = fen_parts.join(" ");
 
-                *board = Board::load_fen(&fen);
+                engine.board = Board::load_fen(&fen);
 
                 if let Some("moves") = commands.next() {
                     for mv_str in commands {
-                        let mv = Move::from_uci(mv_str, board);
-                        board.make_move(&mv);
+                        let mv = Move::from_uci(mv_str, &mut engine.board);
+                        engine.board.make_move(&mv);
                     }
                 }
             }

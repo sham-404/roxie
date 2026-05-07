@@ -1,8 +1,8 @@
 use crate::{
-    board::Board,
+    engine::Engine,
     evaluation::evaluate,
     items::Move,
-    tt::{TTEntry, TTFlag, TranspositionTable},
+    tt::{TTEntry, TTFlag},
     uci_print,
 };
 
@@ -10,217 +10,218 @@ use std::time::Instant;
 
 const INF: i32 = 10000000;
 
-pub fn search_ids<F>(
-    board: &mut Board,
-    depth: u16,
-    tt: &mut TranspositionTable,
-    mut on_iteration: F,
-) -> SearchInfo
-where
-    F: FnMut(&SearchInfo),
-{
-    let mut info = SearchInfo {
-        start_time: Instant::now(),
-        best_move: Move::NULL,
-        depth: 0,
-        score: 0,
-        nodes: 0,
-    };
+impl Engine {
+    pub fn search_ids<F>(
+        &mut self,
+        depth: u16,
+        mut on_iteration: F,
+    ) -> SearchInfo
+    where
+        F: FnMut(&SearchInfo),
+    {
+        let mut info = SearchInfo {
+            start_time: Instant::now(),
+            best_move: Move::NULL,
+            depth: 0,
+            score: 0,
+            nodes: 0,
+        };
 
-    for d in 1..=depth {
-        let mut best_move = Move::NULL;
-        let mut best_score = -INF;
+        for d in 1..=depth {
+            let mut best_move = Move::NULL;
+            let mut best_score = -INF;
 
-        let mut move_list = board.gen_moves();
+            let mut move_list = self.board.gen_moves();
 
-        let mut tt_move = Move::NULL;
-        if let Some(entry) = tt.probe(board.get_zob_key()) {
-            tt_move = entry.best_move;
-        }
-
-        for mv in move_list.with_ordering(tt_move) {
-            let undo = board.make_move(&mv);
-            let score = -negamax(board, d - 1, -INF, INF, 1, tt, &mut info);
-            board.unmake_move(&mv, &undo);
-
-            if score > best_score {
-                best_score = score;
-                best_move = mv;
+            let mut tt_move = Move::NULL;
+            if let Some(entry) = self.tt.probe(self.board.get_zob_key()) {
+                tt_move = entry.best_move;
             }
+
+            for mv in move_list.with_ordering(tt_move) {
+                let undo = self.board.make_move(&mv);
+                let score = -self.negamax(d - 1, -INF, INF, 1, &mut info);
+                self.board.unmake_move(&mv, &undo);
+
+                if score > best_score {
+                    best_score = score;
+                    best_move = mv;
+                }
+            }
+
+            if best_move == Move::NULL && move_list.len() > 0 {
+                best_move = move_list.get(0);
+            }
+
+            info.depth = d;
+            info.score = best_score;
+            info.best_move = best_move;
+
+            on_iteration(&info);
         }
 
-        if best_move == Move::NULL && move_list.len() > 0 {
-            best_move = move_list.get(0);
-        }
-
-        info.depth = d;
-        info.score = best_score;
-        info.best_move = best_move;
-
-        on_iteration(&info);
+        info
     }
 
-    info
-}
+    fn negamax(
+        &mut self,
+        depth: u16,
+        mut alpha: i32,
+        mut beta: i32,
+        ply: i32,
+        info: &mut SearchInfo,
+    ) -> i32 {
+        info.nodes += 1;
 
-fn negamax(
-    board: &mut Board,
-    depth: u16,
-    mut alpha: i32,
-    mut beta: i32,
-    ply: i32,
-    tt: &mut TranspositionTable,
-    info: &mut SearchInfo,
-) -> i32 {
-    info.nodes += 1;
-
-    // Checking draws
-    if board.is_threefold() || board.is_50_rule() {
-        return 0;
-    }
-
-    // Probing the TT
-    let key = board.get_zob_key();
-    let mut tt_move = Move::NULL;
-
-    if let Some(entry) = tt.probe(key) {
-        tt_move = entry.best_move;
-        let mut score = entry.score;
-
-        // De-adjust mate score
-        if entry.score > INF - 1000 {
-            score -= ply;
+        // Checking draws
+        if self.board.is_threefold() || self.board.is_50_rule() {
+            return 0;
         }
 
-        if entry.score < -INF + 1000 {
-            score += ply;
-        }
+        // Probing the TT
+        let key = self.board.get_zob_key();
+        let mut tt_move = Move::NULL;
 
-        if entry.depth >= depth as i32 {
-            match entry.flag {
-                TTFlag::Exact => {
+        if let Some(entry) = self.tt.probe(key) {
+            tt_move = entry.best_move;
+            let mut score = entry.score;
+
+            // De-adjust mate score
+            if entry.score > INF - 1000 {
+                score -= ply;
+            }
+
+            if entry.score < -INF + 1000 {
+                score += ply;
+            }
+
+            if entry.depth >= depth as i32 {
+                match entry.flag {
+                    TTFlag::Exact => {
+                        return score;
+                    }
+                    TTFlag::LowerBound => alpha = alpha.max(score),
+                    TTFlag::UpperBound => beta = beta.min(score),
+                }
+
+                if alpha >= beta {
                     return score;
                 }
-                TTFlag::LowerBound => alpha = alpha.max(score),
-                TTFlag::UpperBound => beta = beta.min(score),
-            }
-
-            if alpha >= beta {
-                return score;
             }
         }
-    }
 
-    // base case handling
-    if depth == 0 {
-        return evaluate(board);
-    }
-
-    let mut move_list = board.gen_moves();
-    let original_alpha = alpha;
-
-    // checking mates
-    if move_list.len() == 0 {
-        return if board.in_check() { -INF + ply } else { 0 };
-    }
-
-    // NULL move pruning
-    let eval = evaluate(board);
-    if depth > 4 && !board.in_check() && !board.is_endgame() && eval >= beta {
-        let r = 2 + depth / 6;
-        let old_epsq = board.make_null_move();
-        let score = -negamax(board, depth - 1 - r, -beta, -beta + 1, ply + 1, tt, info);
-        board.unmake_null_move(old_epsq);
-
-        if score >= beta {
-            // Not returning mate scores from NMP as it can lead to false mates
-            return if score >= INF - 1000 { beta } else { score };
+        // base case handling
+        if depth == 0 {
+            return evaluate(&self.board);
         }
-    }
 
-    let mut max_eval = -INF;
-    let mut best_move_this_node = Move::NULL;
+        let mut move_list = self.board.gen_moves();
+        let original_alpha = alpha;
 
-    for (mv_idx, mv) in move_list.with_ordering(tt_move).enumerate() {
-        let mut eval;
-        let in_check = board.in_check();
-        let undo = board.make_move(&mv);
+        // checking mates
+        if move_list.len() == 0 {
+            return if self.board.in_check() { -INF + ply } else { 0 };
+        }
 
-        // Last Move Reduction (LMR)
-        // Only reduce if: not in check, not a capture, not a promotion, and i > 3
-        if mv_idx > 3 && depth > 4 && !in_check && !mv.flag().is_capture() && !mv.flag().is_promo()
-        {
-            let mut reduction: u16 = 1 + (mv_idx as u16 / 4) + (depth / 6);
-            if depth <= 5 {
-                reduction = 1;
+        // NULL move pruning
+        let eval = evaluate(&self.board);
+        if depth > 4 && !self.board.in_check() && !self.board.is_endgame() && eval >= beta {
+            let r = 2 + depth / 6;
+            let old_epsq = self.board.make_null_move();
+            let score = -self.negamax(depth - 1 - r, -beta, -beta + 1, ply + 1, info);
+            self.board.unmake_null_move(old_epsq);
+
+            if score >= beta {
+                // Not returning mate scores from NMP as it can lead to false mates
+                return if score >= INF - 1000 { beta } else { score };
+            }
+        }
+
+        let mut max_eval = -INF;
+        let mut best_move_this_node = Move::NULL;
+
+        for (mv_idx, mv) in move_list.with_ordering(tt_move).enumerate() {
+            let mut eval;
+            let in_check = self.board.in_check();
+            let undo = self.board.make_move(&mv);
+
+            // Last Move Reduction (LMR)
+            // Only reduce if: not in check, not a capture, not a promotion, and i > 3
+            if mv_idx > 3
+                && depth > 4
+                && !in_check
+                && !mv.flag().is_capture()
+                && !mv.flag().is_promo()
+            {
+                let mut reduction: u16 = 1 + (mv_idx as u16 / 4) + (depth / 6);
+                if depth <= 5 {
+                    reduction = 1;
+                }
+
+                reduction = reduction.min(depth - 1);
+
+                // searching at reduced depth
+                eval = -self.negamax(
+                    depth - 1 - reduction,
+                    -alpha - 1,
+                    -alpha,
+                    ply + 1,
+                    info,
+                );
+
+                // researching if the reduced depth search is actually useful
+                if eval > alpha {
+                    eval = -self.negamax(depth - 1, -beta, -alpha, ply + 1, info);
+                }
+            } else {
+                // Normal search for first few moves and tactical moves
+                eval = -self.negamax(depth - 1, -beta, -alpha, ply + 1, info);
             }
 
-            reduction = reduction.min(depth - 1);
+            self.board.unmake_move(&mv, &undo);
 
-            // searching at reduced depth
-            eval = -negamax(
-                board,
-                depth - 1 - reduction,
-                -alpha - 1,
-                -alpha,
-                ply + 1,
-                tt,
-                info,
-            );
+            if eval > max_eval {
+                max_eval = eval;
+                best_move_this_node = mv;
+            }
 
-            // researching if the reduced depth search is actually useful
             if eval > alpha {
-                eval = -negamax(board, depth - 1, -beta, -alpha, ply + 1, tt, info);
+                alpha = eval;
             }
+
+            // pruning
+            if alpha >= beta {
+                break;
+            }
+        }
+
+        let flag = if max_eval <= original_alpha {
+            TTFlag::UpperBound
+        } else if max_eval >= beta {
+            TTFlag::LowerBound
         } else {
-            // Normal search for first few moves and tactical moves
-            let score = negamax(board, depth - 1, -beta, -alpha, ply + 1, tt, info);
-            eval = -score;
+            TTFlag::Exact
+        };
+
+        // Adjusting for mate score
+        let mut score_to_store = max_eval;
+        if score_to_store > INF - 1000 {
+            score_to_store += ply;
+        }
+        if score_to_store < -INF + 1000 {
+            score_to_store -= ply;
         }
 
-        board.unmake_move(&mv, &undo);
+        self.tt.store(TTEntry {
+            key,
+            depth: depth as i32,
+            score: score_to_store,
+            flag,
+            best_move: best_move_this_node,
+        });
 
-        if eval > max_eval {
-            max_eval = eval;
-            best_move_this_node = mv;
-        }
-
-        if eval > alpha {
-            alpha = eval;
-        }
-
-        // pruning
-        if alpha >= beta {
-            break;
-        }
+        max_eval
     }
-
-    let flag = if max_eval <= original_alpha {
-        TTFlag::UpperBound
-    } else if max_eval >= beta {
-        TTFlag::LowerBound
-    } else {
-        TTFlag::Exact
-    };
-
-    // Adjusting for mate score
-    let mut score_to_store = max_eval;
-    if score_to_store > INF - 1000 {
-        score_to_store += ply;
-    }
-    if score_to_store < -INF + 1000 {
-        score_to_store -= ply;
-    }
-
-    tt.store(TTEntry {
-        key,
-        depth: depth as i32,
-        score: score_to_store,
-        flag,
-        best_move: best_move_this_node,
-    });
-
-    max_eval
 }
 pub struct SearchInfo {
     pub start_time: Instant,

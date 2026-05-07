@@ -1,5 +1,6 @@
 pub mod board;
 pub mod r#const;
+pub mod engine;
 pub mod evaluation;
 pub mod items;
 pub mod perft;
