@@ -63,7 +63,7 @@ mod tests {
                 "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ",
             );
             let start = Instant::now();
-            let data = engine.search_ids(5, |_| {});
+            let data = engine.search_ids(5, None, |_| {});
             let duration = start.elapsed();
 
             let secs = duration.as_secs_f64();
@@ -86,7 +86,7 @@ mod tests {
 
         let depth = 7;
         let start = Instant::now();
-        let data = engine.search_ids(depth, |_| {});
+        let data = engine.search_ids(depth, None, |_| {});
         let duration = start.elapsed();
 
         let secs = duration.as_secs_f64();

@@ -1,9 +1,12 @@
 use std::{
     io::{self, BufRead},
     str::SplitWhitespace,
+    time::Duration,
 };
 
 use crate::{board::Board, engine::Engine, items::Move, perft::perft_divide};
+
+const MAX_DEPTH: u16 = 50;
 
 #[macro_export]
 macro_rules! uci_print {
@@ -35,7 +38,7 @@ pub fn uci_loop() {
                     uci_print!("readyok");
                 }
 
-                "ucinewgame" => engine.board = Board::new(),
+                "ucinewgame" => engine = Engine::new(),
 
                 "position" => handle_position(&mut words, &mut engine),
 
@@ -58,10 +61,23 @@ fn handle_go<'a>(commands: &mut SplitWhitespace<'a>, engine: &mut Engine) {
                 }
             }
 
+            "movetime" => {
+                let time_limit: u64 = commands.next().unwrap_or("1").parse().unwrap();
+
+                let data =
+                    engine.search_ids(MAX_DEPTH, Some(Duration::from_millis(time_limit)), |info| {
+                        info.print();
+                    });
+
+                let coord = data.best_move.to_coord();
+
+                uci_print!("bestmove {}", coord);
+            }
+
             "depth" => {
                 let depth: u16 = commands.next().unwrap_or("1").parse().unwrap();
 
-                let data = engine.search_ids(depth, |info| {
+                let data = engine.search_ids(depth, None, |info| {
                     info.print();
                 });
 
@@ -72,7 +88,7 @@ fn handle_go<'a>(commands: &mut SplitWhitespace<'a>, engine: &mut Engine) {
             _ => {} // need to implement infinite search
         }
     } else {
-        let data = engine.search_ids(1, |info| {
+        let data = engine.search_ids(1, None, |info| {
             info.print();
         });
         let coord = data.best_move.to_coord();

@@ -6,12 +6,17 @@ use crate::{
     uci_print,
 };
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 const INF: i32 = 10000000;
 
 impl Engine {
-    pub fn search_ids<F>(&mut self, depth: u16, mut on_iteration: F) -> SearchInfo
+    pub fn search_ids<F>(
+        &mut self,
+        depth: u16,
+        time_limit: Option<Duration>,
+        mut on_iteration: F,
+    ) -> SearchInfo
     where
         F: FnMut(&SearchInfo),
     {
@@ -20,9 +25,12 @@ impl Engine {
             best_move: Move::NULL,
             depth: 0,
             score: 0,
+            time_limit,
             nodes: 0,
+            abort: false,
         };
 
+        let mut last_complete_info = info.clone();
         for d in 1..=depth {
             let mut best_move = Move::NULL;
             let mut best_score = -INF;
@@ -39,10 +47,19 @@ impl Engine {
                 let score = -self.negamax(d - 1, -INF, INF, 1, &mut info);
                 self.board.unmake_move(&mv, &undo);
 
+                if info.abort {
+                    break;
+                }
+
                 if score > best_score {
                     best_score = score;
                     best_move = mv;
                 }
+            }
+
+            // if aborted, dont update the result
+            if info.abort {
+                break;
             }
 
             if best_move == Move::NULL && move_list.len() > 0 {
@@ -53,10 +70,11 @@ impl Engine {
             info.score = best_score;
             info.best_move = best_move;
 
+            last_complete_info = info.clone();
             on_iteration(&info);
         }
 
-        info
+        last_complete_info
     }
 
     fn negamax(
@@ -67,6 +85,12 @@ impl Engine {
         ply: i32,
         info: &mut SearchInfo,
     ) -> i32 {
+        info.check_limits();
+
+        if info.abort {
+            return 0;
+        }
+
         info.nodes += 1;
 
         // Checking draws
@@ -166,13 +190,15 @@ impl Engine {
             score_to_store -= ply;
         }
 
-        self.tt.store(TTEntry {
-            key,
-            depth: depth as i32,
-            score: score_to_store,
-            flag,
-            best_move: best_move_this_node,
-        });
+        if !info.abort {
+            self.tt.store(TTEntry {
+                key,
+                depth: depth as i32,
+                score: score_to_store,
+                flag,
+                best_move: best_move_this_node,
+            });
+        }
 
         max_eval
     }
@@ -243,12 +269,15 @@ impl Engine {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct SearchInfo {
     pub start_time: Instant,
     pub depth: u16,
     pub score: i32,
     pub best_move: Move,
     pub nodes: u64,
+    pub time_limit: Option<Duration>,
+    pub abort: bool,
 }
 
 impl SearchInfo {
@@ -267,5 +296,15 @@ impl SearchInfo {
     fn nps(&self) -> u64 {
         let ms = self.start_time.elapsed().as_millis().max(1);
         self.nodes * 1000 / ms as u64
+    }
+
+    fn check_limits(&mut self) {
+        if self.nodes & 2047 == 0 {
+            if let Some(limit) = self.time_limit {
+                if self.start_time.elapsed() >= limit {
+                    self.abort = true;
+                }
+            }
+        }
     }
 }
