@@ -11,11 +11,7 @@ use std::time::Instant;
 const INF: i32 = 10000000;
 
 impl Engine {
-    pub fn search_ids<F>(
-        &mut self,
-        depth: u16,
-        mut on_iteration: F,
-    ) -> SearchInfo
+    pub fn search_ids<F>(&mut self, depth: u16, mut on_iteration: F) -> SearchInfo
     where
         F: FnMut(&SearchInfo),
     {
@@ -124,59 +120,17 @@ impl Engine {
         }
 
         // NULL move pruning
-        let eval = evaluate(&self.board);
-        if depth > 4 && !self.board.in_check() && !self.board.is_endgame() && eval >= beta {
-            let r = 2 + depth / 6;
-            let old_epsq = self.board.make_null_move();
-            let score = -self.negamax(depth - 1 - r, -beta, -beta + 1, ply + 1, info);
-            self.board.unmake_null_move(old_epsq);
-
-            if score >= beta {
-                // Not returning mate scores from NMP as it can lead to false mates
-                return if score >= INF - 1000 { beta } else { score };
-            }
+        if let Some(cutoff_score) = self.nmp_search(depth, beta, ply, info) {
+            return cutoff_score;
         }
 
         let mut max_eval = -INF;
         let mut best_move_this_node = Move::NULL;
 
         for (mv_idx, mv) in move_list.with_ordering(tt_move).enumerate() {
-            let mut eval;
-            let in_check = self.board.in_check();
             let undo = self.board.make_move(&mv);
-
-            // Last Move Reduction (LMR)
-            // Only reduce if: not in check, not a capture, not a promotion, and i > 3
-            if mv_idx > 3
-                && depth > 4
-                && !in_check
-                && !mv.flag().is_capture()
-                && !mv.flag().is_promo()
-            {
-                let mut reduction: u16 = 1 + (mv_idx as u16 / 4) + (depth / 6);
-                if depth <= 5 {
-                    reduction = 1;
-                }
-
-                reduction = reduction.min(depth - 1);
-
-                // searching at reduced depth
-                eval = -self.negamax(
-                    depth - 1 - reduction,
-                    -alpha - 1,
-                    -alpha,
-                    ply + 1,
-                    info,
-                );
-
-                // researching if the reduced depth search is actually useful
-                if eval > alpha {
-                    eval = -self.negamax(depth - 1, -beta, -alpha, ply + 1, info);
-                }
-            } else {
-                // Normal search for first few moves and tactical moves
-                eval = -self.negamax(depth - 1, -beta, -alpha, ply + 1, info);
-            }
+            // Late Move Reduction (LMR)
+            let eval = self.lmr_search(&mv, mv_idx, depth, alpha, beta, ply, info);
 
             self.board.unmake_move(&mv, &undo);
 
@@ -222,7 +176,73 @@ impl Engine {
 
         max_eval
     }
+
+    fn nmp_search(
+        &mut self,
+        depth: u16,
+        beta: i32,
+        ply: i32,
+        info: &mut SearchInfo,
+    ) -> Option<i32> {
+        // Conditions for NMP
+        if depth > 4
+            && !self.board.in_check()
+            && !self.board.is_endgame()
+            && evaluate(&self.board) >= beta
+        {
+            let r = 2 + depth / 6;
+            let old_epsq = self.board.make_null_move();
+
+            // Zero-window search
+            let score = -self.negamax(depth - 1 - r, -beta, -beta + 1, ply + 1, info);
+
+            self.board.unmake_null_move(old_epsq);
+
+            if score >= beta {
+                // Not returning mate scores from NMP as it can lead to false mates
+                return Some(if score >= INF - 1000 { beta } else { score });
+            }
+        }
+
+        None
+    }
+
+    fn lmr_search(
+        &mut self,
+        mv: &Move,
+        mv_idx: usize,
+        depth: u16,
+        alpha: i32,
+        beta: i32,
+        ply: i32,
+        info: &mut SearchInfo,
+    ) -> i32 {
+        let in_check = self.board.in_check();
+
+        // Check if move is eligible for LMR
+        if mv_idx > 3 && depth > 4 && !in_check && !mv.flag().is_capture() && !mv.flag().is_promo()
+        {
+            let mut reduction = 1 + (mv_idx as u16 / 4) + (depth / 6);
+            if depth <= 5 {
+                reduction = 1;
+            }
+            let reduction = reduction.min(depth - 1);
+
+            // Search at reduced depth with a null window
+            let mut eval = -self.negamax(depth - 1 - reduction, -alpha - 1, -alpha, ply + 1, info);
+
+            // If reduced search fails high, we must re-search at full depth
+            if eval > alpha {
+                eval = -self.negamax(depth - 1, -beta, -alpha, ply + 1, info);
+            }
+            eval
+        } else {
+            // Normal PVS/Negamax search
+            -self.negamax(depth - 1, -beta, -alpha, ply + 1, info)
+        }
+    }
 }
+
 pub struct SearchInfo {
     pub start_time: Instant,
     pub depth: u16,
