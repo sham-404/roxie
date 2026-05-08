@@ -1,5 +1,6 @@
 use crate::items::Move;
 
+#[repr(u8)]
 #[derive(Clone, Copy)]
 pub enum TTFlag {
     Exact,
@@ -10,7 +11,7 @@ pub enum TTFlag {
 #[derive(Clone, Copy)]
 pub struct TTEntry {
     pub key: u64,
-    pub depth: i32,
+    pub depth: u16,
     pub score: i32,
     pub flag: TTFlag,
     pub best_move: Move,
@@ -55,11 +56,7 @@ impl TranspositionTable {
         let index = key as usize & self.mask;
         let entry = &self.table[index];
 
-        if entry.key == key {
-            Some(entry)
-        } else {
-            None
-        }
+        if entry.key == key { Some(entry) } else { None }
     }
 
     pub fn store(&mut self, new_entry: TTEntry) {

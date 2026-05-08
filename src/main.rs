@@ -9,7 +9,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use roxie::{
-        board::Board, engine::Engine, evaluation::init_pesto_table, perft::perft, zobrist::init_zobrist
+        board::Board, engine::Engine, evaluation::init_pesto_table, perft::perft, search::SearchLimits, zobrist::init_zobrist
     };
     use std::time::Instant;
 
@@ -63,14 +63,14 @@ mod tests {
                 "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ",
             );
             let start = Instant::now();
-            let data = engine.search_ids(5, None, |_| {});
+            let data = engine.search_ids(&SearchLimits::with_depth(6), |_| {});
             let duration = start.elapsed();
 
             let secs = duration.as_secs_f64();
             let nps = (data.nodes as f64 / secs) as u64;
 
             println!(
-                "search depth 5 (kiwipete): nodes={} time={:.5}s nps={}",
+                "search depth 6 (kiwipete): nodes={} time={:.5}s nps={}",
                 data.nodes, secs, nps
             );
         }
@@ -86,7 +86,7 @@ mod tests {
 
         let depth = 7;
         let start = Instant::now();
-        let data = engine.search_ids(depth, None, |_| {});
+        let data = engine.search_ids(&SearchLimits::with_depth(depth), |_| {});
         let duration = start.elapsed();
 
         let secs = duration.as_secs_f64();

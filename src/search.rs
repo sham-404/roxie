@@ -1,8 +1,9 @@
 use crate::{
     engine::Engine,
     evaluation::evaluate,
-    items::Move,
+    items::{Color, Move},
     tt::{TTEntry, TTFlag},
+    uci::{GoControl, MAX_DEPTH},
     uci_print,
 };
 
@@ -11,12 +12,7 @@ use std::time::{Duration, Instant};
 const INF: i32 = 10000000;
 
 impl Engine {
-    pub fn search_ids<F>(
-        &mut self,
-        depth: u16,
-        time_limit: Option<Duration>,
-        mut on_iteration: F,
-    ) -> SearchInfo
+    pub fn search_ids<F>(&mut self, limits: &SearchLimits, mut on_iteration: F) -> SearchInfo
     where
         F: FnMut(&SearchInfo),
     {
@@ -25,13 +21,12 @@ impl Engine {
             best_move: Move::NULL,
             depth: 0,
             score: 0,
-            time_limit,
             nodes: 0,
             abort: false,
         };
 
         let mut last_complete_info = info.clone();
-        for d in 1..=depth {
+        for d in 1..=limits.depth.unwrap_or(MAX_DEPTH) {
             let mut best_move = Move::NULL;
             let mut best_score = -INF;
 
@@ -44,7 +39,7 @@ impl Engine {
 
             for mv in move_list.with_ordering(tt_move) {
                 let undo = self.board.make_move(&mv);
-                let score = -self.negamax(d - 1, -INF, INF, 1, &mut info);
+                let score = -self.negamax(d - 1, -INF, INF, 1, &limits, &mut info);
                 self.board.unmake_move(&mv, &undo);
 
                 if info.abort {
@@ -71,7 +66,15 @@ impl Engine {
             info.best_move = best_move;
 
             last_complete_info = info.clone();
+
             on_iteration(&info);
+
+            // if it reached the solf limit, searching further is probably useless
+            if let Some(time) = limits.soft_time {
+                if time <= info.start_time.elapsed() {
+                    break;
+                }
+            }
         }
 
         last_complete_info
@@ -83,9 +86,10 @@ impl Engine {
         mut alpha: i32,
         mut beta: i32,
         ply: i32,
+        limits: &SearchLimits,
         info: &mut SearchInfo,
     ) -> i32 {
-        info.check_limits();
+        info.check_limits(limits);
 
         if info.abort {
             return 0;
@@ -115,7 +119,7 @@ impl Engine {
                 score += ply;
             }
 
-            if entry.depth >= depth as i32 {
+            if entry.depth >= depth {
                 match entry.flag {
                     TTFlag::Exact => {
                         return score;
@@ -144,7 +148,7 @@ impl Engine {
         }
 
         // NULL move pruning
-        if let Some(cutoff_score) = self.nmp_search(depth, beta, ply, info) {
+        if let Some(cutoff_score) = self.nmp_search(depth, beta, ply, limits, info) {
             return cutoff_score;
         }
 
@@ -154,7 +158,7 @@ impl Engine {
         for (mv_idx, mv) in move_list.with_ordering(tt_move).enumerate() {
             let undo = self.board.make_move(&mv);
             // Late Move Reduction (LMR)
-            let eval = self.lmr_search(&mv, mv_idx, depth, alpha, beta, ply, info);
+            let eval = self.lmr_search(&mv, mv_idx, depth, alpha, beta, ply, limits, info);
 
             self.board.unmake_move(&mv, &undo);
 
@@ -193,7 +197,7 @@ impl Engine {
         if !info.abort {
             self.tt.store(TTEntry {
                 key,
-                depth: depth as i32,
+                depth: depth,
                 score: score_to_store,
                 flag,
                 best_move: best_move_this_node,
@@ -208,6 +212,7 @@ impl Engine {
         depth: u16,
         beta: i32,
         ply: i32,
+        limits: &SearchLimits,
         info: &mut SearchInfo,
     ) -> Option<i32> {
         // Conditions for NMP
@@ -220,7 +225,7 @@ impl Engine {
             let old_epsq = self.board.make_null_move();
 
             // Zero-window search
-            let score = -self.negamax(depth - 1 - r, -beta, -beta + 1, ply + 1, info);
+            let score = -self.negamax(depth - 1 - r, -beta, -beta + 1, ply + 1, limits, info);
 
             self.board.unmake_null_move(old_epsq);
 
@@ -241,6 +246,7 @@ impl Engine {
         alpha: i32,
         beta: i32,
         ply: i32,
+        limits: &SearchLimits,
         info: &mut SearchInfo,
     ) -> i32 {
         let in_check = self.board.in_check();
@@ -255,16 +261,23 @@ impl Engine {
             let reduction = reduction.min(depth - 1);
 
             // Search at reduced depth with a null window
-            let mut eval = -self.negamax(depth - 1 - reduction, -alpha - 1, -alpha, ply + 1, info);
+            let mut eval = -self.negamax(
+                depth - 1 - reduction,
+                -alpha - 1,
+                -alpha,
+                ply + 1,
+                limits,
+                info,
+            );
 
             // If reduced search fails high, we must re-search at full depth
             if eval > alpha {
-                eval = -self.negamax(depth - 1, -beta, -alpha, ply + 1, info);
+                eval = -self.negamax(depth - 1, -beta, -alpha, ply + 1, limits, info);
             }
             eval
         } else {
             // Normal PVS/Negamax search
-            -self.negamax(depth - 1, -beta, -alpha, ply + 1, info)
+            -self.negamax(depth - 1, -beta, -alpha, ply + 1, limits, info)
         }
     }
 }
@@ -276,7 +289,6 @@ pub struct SearchInfo {
     pub score: i32,
     pub best_move: Move,
     pub nodes: u64,
-    pub time_limit: Option<Duration>,
     pub abort: bool,
 }
 
@@ -298,13 +310,86 @@ impl SearchInfo {
         self.nodes * 1000 / ms as u64
     }
 
-    fn check_limits(&mut self) {
+    fn check_limits(&mut self, limits: &SearchLimits) {
         if self.nodes & 2047 == 0 {
-            if let Some(limit) = self.time_limit {
+            if let Some(limit) = limits.hard_time {
                 if self.start_time.elapsed() >= limit {
                     self.abort = true;
                 }
             }
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct SearchLimits {
+    pub depth: Option<u16>,
+    pub hard_time: Option<Duration>,
+    pub soft_time: Option<Duration>,
+    pub infinite: bool,
+    pub start_time: Instant,
+}
+
+impl Default for SearchLimits {
+    fn default() -> Self {
+        Self {
+            soft_time: None,
+            hard_time: None,
+            depth: None,
+            infinite: false,
+            start_time: Instant::now(),
+        }
+    }
+}
+
+impl SearchLimits {
+    pub fn from_go(ctrl: &GoControl, stm: Color) -> Self {
+        let mut limits = SearchLimits::default();
+        limits.depth = ctrl.depth;
+        limits.infinite = ctrl.infinite;
+
+        if ctrl.infinite {
+            return limits;
+        }
+
+        // Fixed movetime
+        if let Some(ms) = ctrl.movetime {
+            let duration = Duration::from_millis(ms);
+
+            limits.soft_time = Some(duration);
+            limits.hard_time = Some(duration);
+
+            return limits;
+        }
+
+        // Normal clock management
+        let (time_left, increment) = match stm {
+            Color::White => (ctrl.wtime.unwrap_or(0), ctrl.winc.unwrap_or(0)),
+            Color::Black => (ctrl.btime.unwrap_or(0), ctrl.binc.unwrap_or(0)),
+        };
+
+        if time_left > 0 {
+            let moves_to_go = ctrl.movestogo.unwrap_or(30);
+
+            let allocated = time_left / moves_to_go + increment / 2;
+
+            limits.soft_time = Some(Duration::from_millis(allocated * 2 / 3));
+
+            limits.hard_time = Some(Duration::from_millis(allocated * 9 / 10));
+        }
+
+        limits
+    }
+
+    pub fn with_depth(depth: u16) -> Self {
+        let mut limits = Self::default();
+        limits.depth = Some(depth);
+        limits
+    }
+
+    pub fn with_movetime(movetime: u16) -> Self {
+        let mut limits = Self::default();
+        limits.depth = Some(movetime);
+        limits
     }
 }

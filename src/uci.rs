@@ -1,12 +1,12 @@
 use std::{
     io::{self, BufRead},
+    iter::Peekable,
     str::SplitWhitespace,
-    time::Duration,
 };
 
-use crate::{board::Board, engine::Engine, items::Move, perft::perft_divide};
+use crate::{board::Board, engine::Engine, items::Move, perft::perft_divide, search::SearchLimits};
 
-const MAX_DEPTH: u16 = 50;
+pub const MAX_DEPTH: u16 = 50;
 
 #[macro_export]
 macro_rules! uci_print {
@@ -53,47 +53,23 @@ pub fn uci_loop() {
 }
 
 fn handle_go<'a>(commands: &mut SplitWhitespace<'a>, engine: &mut Engine) {
-    if let Some(cmd) = commands.next() {
-        match cmd {
-            "perft" => {
-                if let Ok(depth) = commands.next().unwrap().parse::<u32>() {
-                    perft_divide(&mut engine.board, depth);
-                }
-            }
+    let mut args = commands.peekable();
 
-            "movetime" => {
-                let time_limit: u64 = commands.next().unwrap_or("1").parse().unwrap();
-
-                let data =
-                    engine.search_ids(MAX_DEPTH, Some(Duration::from_millis(time_limit)), |info| {
-                        info.print();
-                    });
-
-                let coord = data.best_move.to_coord();
-
-                uci_print!("bestmove {}", coord);
-            }
-
-            "depth" => {
-                let depth: u16 = commands.next().unwrap_or("1").parse().unwrap();
-
-                let data = engine.search_ids(depth, None, |info| {
-                    info.print();
-                });
-
-                let coord = data.best_move.to_coord();
-
-                uci_print!("bestmove {}", coord);
-            }
-            _ => {} // need to implement infinite search
-        }
-    } else {
-        let data = engine.search_ids(1, None, |info| {
-            info.print();
-        });
-        let coord = data.best_move.to_coord();
-        uci_print!("bestmove {}", coord);
+    if let Some(&"perft") = args.peek() {
+        args.next(); // consuming "perft"
+        let depth = args.next().and_then(|val| val.parse().ok()).unwrap_or(1);
+        perft_divide(&mut engine.board, depth);
+        return;
     }
+
+    let go_ctrl = GoControl::parse(&mut args);
+    let limits = SearchLimits::from_go(&go_ctrl, engine.board.side_to_move());
+
+    let data = engine.search_ids(&limits, |info| {
+        info.print();
+    });
+
+    uci_print!("bestmove {}", data.best_move.to_coord());
 }
 
 fn handle_position<'a>(commands: &mut SplitWhitespace<'a>, engine: &mut Engine) {
@@ -126,5 +102,37 @@ fn handle_position<'a>(commands: &mut SplitWhitespace<'a>, engine: &mut Engine) 
 
             _ => {}
         }
+    }
+}
+
+#[derive(Default, Debug)]
+pub struct GoControl {
+    pub wtime: Option<u64>,
+    pub btime: Option<u64>,
+    pub winc: Option<u64>,
+    pub binc: Option<u64>,
+    pub movestogo: Option<u64>,
+    pub depth: Option<u16>,
+    pub movetime: Option<u64>,
+    pub infinite: bool,
+}
+
+impl GoControl {
+    fn parse(commands: &mut Peekable<&mut SplitWhitespace>) -> Self {
+        let mut ctrl = Self::default();
+        while let Some(arg) = commands.next() {
+            match arg {
+                "wtime" => ctrl.wtime = commands.next().and_then(|s| s.parse().ok()),
+                "btime" => ctrl.btime = commands.next().and_then(|s| s.parse().ok()),
+                "winc" => ctrl.winc = commands.next().and_then(|s| s.parse().ok()),
+                "binc" => ctrl.binc = commands.next().and_then(|s| s.parse().ok()),
+                "movestogo" => ctrl.movestogo = commands.next().and_then(|s| s.parse().ok()),
+                "depth" => ctrl.depth = commands.next().and_then(|s| s.parse().ok()),
+                "movetime" => ctrl.movetime = commands.next().and_then(|s| s.parse().ok()),
+                "infinite" => ctrl.infinite = true,
+                _ => {}
+            }
+        }
+        ctrl
     }
 }
