@@ -373,7 +373,7 @@ impl SearchLimits {
 
             let allocated = time_left / moves_to_go + increment / 2;
 
-            limits.soft_time = Some(Duration::from_millis(allocated * 2 / 3));
+            limits.soft_time = Some(Duration::from_millis(allocated * 1 / 2));
 
             limits.hard_time = Some(Duration::from_millis(allocated * 9 / 10));
         }
@@ -387,9 +387,10 @@ impl SearchLimits {
         limits
     }
 
-    pub fn with_movetime(movetime: u16) -> Self {
+    pub fn with_movetime(movetime: u64) -> Self {
         let mut limits = Self::default();
-        limits.depth = Some(movetime);
+        limits.soft_time = Some(Duration::from_millis(movetime));
+        limits.hard_time = Some(Duration::from_millis(movetime));
         limits
     }
 }

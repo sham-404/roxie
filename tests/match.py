@@ -5,7 +5,6 @@ import datetime
 import os
 import re
 import json
-import sys
 
 # 📍 Anchor everything to script location
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -138,7 +137,7 @@ def main():
     ap.add_argument("engine2", help="path to engine 2")
     ap.add_argument("-n", "--games", type=int, default=20)
     ap.add_argument("--tc", default="0.1+0.01")
-    ap.add_argument("--depth", type=int, default=1)
+    ap.add_argument("--depth", type=int)
     ap.add_argument("-o", "--outdir", default="results")
     ap.add_argument("--save", action="store_true", help="store JSON results")
 
