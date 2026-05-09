@@ -23,12 +23,17 @@ impl Engine {
             score: 0,
             nodes: 0,
             abort: false,
+            is_mandatory: true,
         };
 
         let mut last_complete_info = info.clone();
         for d in 1..=limits.depth.unwrap_or(MAX_DEPTH) {
             let mut best_move = Move::NULL;
             let mut best_score = -INF;
+
+            // making the search of depth 1 completely mandatory
+            // as it guarentees us to return a valid move
+            info.is_mandatory = 1 == d;
 
             let mut move_list = self.board.gen_moves();
 
@@ -92,7 +97,7 @@ impl Engine {
         info.check_limits(limits);
 
         if info.abort {
-            return 0;
+            return alpha;
         }
 
         info.nodes += 1;
@@ -291,7 +296,7 @@ impl Engine {
         info.check_limits(limits);
 
         if info.abort {
-            return 0;
+            return alpha;
         }
 
         info.nodes += 1;
@@ -325,7 +330,7 @@ impl Engine {
             self.board.unmake_move(&mv, &undo);
 
             if info.abort {
-                return 0;
+                return alpha;
             }
 
             if score >= beta {
@@ -349,6 +354,7 @@ pub struct SearchInfo {
     pub best_move: Move,
     pub nodes: u64,
     pub abort: bool,
+    pub is_mandatory: bool,
 }
 
 impl SearchInfo {
@@ -370,6 +376,11 @@ impl SearchInfo {
     }
 
     fn check_limits(&mut self, limits: &SearchLimits) {
+        // not checking time limits if it is a mandatory search
+        if self.is_mandatory {
+            return;
+        }
+
         if self.nodes & 2047 == 0 {
             if let Some(limit) = limits.hard_time {
                 if self.start_time.elapsed() >= limit {
@@ -427,14 +438,32 @@ impl SearchLimits {
             Color::Black => (ctrl.btime.unwrap_or(0), ctrl.binc.unwrap_or(0)),
         };
 
-        if time_left > 0 {
+        // Subtract 50ms to account for GUI/Network communication time.
+        let safe_time_left = time_left.saturating_sub(50);
+
+        if safe_time_left > 0 {
             let moves_to_go = ctrl.movestogo.unwrap_or(30);
 
-            let allocated = time_left / moves_to_go + increment / 2;
+            // Base allocation: spread remaining safe time over expected remaining moves
+            let base_time = safe_time_left / moves_to_go;
 
-            limits.soft_time = Some(Duration::from_millis(allocated * 1 / 2));
+            // Use 3/4 of the increment (standard aggressive time management)
+            let inc_time = increment * 3 / 4;
 
-            limits.hard_time = Some(Duration::from_millis(allocated * 9 / 10));
+            let allocated = base_time + inc_time;
+
+            // Soft Limit: Stop starting new depths early (60% of allocated)
+            limits.soft_time = Some(Duration::from_millis(allocated * 6 / 10));
+
+            // Hard Limit: min 20 max 80 % of safe_time
+            let hard_limit = (allocated * 2).max(20).min(safe_time_left * 8 / 10);
+
+            limits.hard_time = Some(Duration::from_millis(hard_limit));
+        } else if time_left > 0 {
+            // EMERGENCY MODE: We have less than 50ms on the actual clock
+            // Give it 1ms soft time, and whatever is physically left on the clock (minus a tiny 5ms buffer).
+            limits.soft_time = Some(Duration::from_millis(1));
+            limits.hard_time = Some(Duration::from_millis(time_left.saturating_sub(5).max(1)));
         }
 
         limits
