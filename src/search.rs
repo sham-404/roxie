@@ -136,7 +136,7 @@ impl Engine {
 
         // base case handling
         if depth == 0 {
-            return evaluate(&self.board);
+            return self.quiescence(alpha, beta, info, limits);
         }
 
         let mut move_list = self.board.gen_moves();
@@ -279,6 +279,65 @@ impl Engine {
             // Normal PVS/Negamax search
             -self.negamax(depth - 1, -beta, -alpha, ply + 1, limits, info)
         }
+    }
+
+    fn quiescence(
+        &mut self,
+        mut alpha: i32,
+        beta: i32,
+        info: &mut SearchInfo,
+        limits: &SearchLimits,
+    ) -> i32 {
+        info.check_limits(limits);
+
+        if info.abort {
+            return 0;
+        }
+
+        info.nodes += 1;
+
+        // Stand pat
+        let stand_pat = evaluate(&self.board);
+
+        if stand_pat >= beta {
+            return beta;
+        }
+
+        if stand_pat > alpha {
+            alpha = stand_pat;
+        }
+
+        let mut move_list = self.board.gen_moves();
+
+        let mut tt_move = Move::NULL;
+        if let Some(entry) = self.tt.probe(self.board.get_zob_key()) {
+            tt_move = entry.best_move;
+        }
+
+        for mv in move_list.with_ordering(tt_move) {
+            // Only tactical moves
+            if !mv.flag().is_capture() && !mv.flag().is_promo() {
+                continue;
+            }
+
+            let undo = self.board.make_move(&mv);
+            let score = -self.quiescence(-beta, -alpha, info, limits);
+            self.board.unmake_move(&mv, &undo);
+
+            if info.abort {
+                return 0;
+            }
+
+            if score >= beta {
+                return beta;
+            }
+
+            if score > alpha {
+                alpha = score;
+            }
+        }
+
+        alpha
     }
 }
 

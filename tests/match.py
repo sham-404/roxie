@@ -58,8 +58,11 @@ def run_match(engine1, engine2, games, tc, depth, outdir, save):
     cmd += [
         "-openings", f"file={pgn_path}", "format=pgn", "order=random", "plies=10",
         "-games", str(games), "-repeat",
-        "-pgnout", pgn_file
     ]
+
+    if save is not None:
+        cmd += ["-pgnout", pgn_file]
+
 
     print("Running:\n", " ".join(cmd), "\n")
 
