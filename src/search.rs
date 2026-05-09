@@ -20,6 +20,7 @@ impl Engine {
             start_time: Instant::now(),
             best_move: Move::NULL,
             depth: 0,
+            seldepth: 0,
             score: 0,
             nodes: 0,
             abort: false,
@@ -101,6 +102,7 @@ impl Engine {
         }
 
         info.nodes += 1;
+        info.seldepth = info.seldepth.max(ply as u16);
 
         // Checking draws
         if self.board.is_threefold() || self.board.is_50_rule() {
@@ -141,7 +143,7 @@ impl Engine {
 
         // base case handling
         if depth == 0 {
-            return self.quiescence(alpha, beta, info, limits);
+            return self.quiescence(alpha, beta, ply, info, limits);
         }
 
         let mut move_list = self.board.gen_moves();
@@ -290,6 +292,7 @@ impl Engine {
         &mut self,
         mut alpha: i32,
         beta: i32,
+        ply: i32,
         info: &mut SearchInfo,
         limits: &SearchLimits,
     ) -> i32 {
@@ -300,6 +303,7 @@ impl Engine {
         }
 
         info.nodes += 1;
+        info.seldepth = info.seldepth.max(ply as u16);
 
         // Stand pat
         let stand_pat = evaluate(&self.board);
@@ -326,7 +330,7 @@ impl Engine {
             }
 
             let undo = self.board.make_move(&mv);
-            let score = -self.quiescence(-beta, -alpha, info, limits);
+            let score = -self.quiescence(-beta, -alpha, ply + 1, info, limits);
             self.board.unmake_move(&mv, &undo);
 
             if info.abort {
@@ -350,6 +354,7 @@ impl Engine {
 pub struct SearchInfo {
     pub start_time: Instant,
     pub depth: u16,
+    pub seldepth: u16,
     pub score: i32,
     pub best_move: Move,
     pub nodes: u64,
@@ -360,8 +365,9 @@ pub struct SearchInfo {
 impl SearchInfo {
     pub fn print(&self) {
         uci_print!(
-            "info depth {} score cp {} nodes {} nps {} time {} pv {}",
+            "info depth {} seldepth {} score cp {} nodes {} nps {} time {} pv {}",
             self.depth,
+            self.seldepth,
             self.score,
             self.nodes,
             self.nps(),
