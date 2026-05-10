@@ -1,7 +1,7 @@
 use crate::{
     engine::Engine,
-    evaluation::evaluate,
-    items::{Color, Move},
+    evaluation::{MG_VALUE, evaluate},
+    items::{Color, Move, MoveFlag, Piece},
     tt::{TTEntry, TTFlag},
     uci::{GoControl, MAX_DEPTH},
     uci_print,
@@ -305,16 +305,39 @@ impl Engine {
         info.nodes += 1;
         info.seldepth = info.seldepth.max(ply as u16);
 
-        // Stand pat
-        let stand_pat = evaluate(&self.board);
+        let in_check = self.board.in_check();
 
+        // Stand pat
+        let stand_pat = if !in_check {
+            evaluate(&self.board)
+        } else {
+            -INF
+        };
+
+        // beta cutoff
         if stand_pat >= beta {
             return beta;
+        }
+
+
+        // delta pruning
+        if !in_check {
+            const BIG_DELTA: i32 = 1100;
+            if stand_pat < alpha - BIG_DELTA {
+                return alpha;
+            }
         }
 
         if stand_pat > alpha {
             alpha = stand_pat;
         }
+
+        //////// NOTE: MUST BE REMOVED LATER ///////////
+        // hardcoded depth cutting
+        if ply as u16 - info.depth > 8  {
+            return alpha;
+        }
+        ////////////////////////////////////////////////
 
         let mut move_list = self.board.gen_moves();
 
@@ -325,8 +348,28 @@ impl Engine {
 
         for mv in move_list.with_ordering(tt_move) {
             // Only tactical moves
-            if !mv.flag().is_capture() && !mv.flag().is_promo() {
-                continue;
+            if !in_check { // if in check, we have to search the quiet moves too
+                if !mv.flag().is_capture() && !mv.flag().is_promo() {
+                    continue;
+                }
+            }
+
+            // soft delta pruning
+            if !in_check {
+                let mut captured_sq = mv.to();
+                if mv.flag() == MoveFlag::EN_PASSANT {
+                    captured_sq = if self.board.side_to_move() == Color::White {
+                        mv.to() - 8
+                    } else {
+                        mv.to() + 8
+                    };
+                }
+                let captured = self.board.piece_on(captured_sq);
+
+                let cap_value = MG_VALUE[Piece::to_idx(captured) % 6];
+                if (stand_pat + cap_value + 200 < alpha) && !mv.flag().is_promo() {
+                    continue;
+                }
             }
 
             let undo = self.board.make_move(&mv);

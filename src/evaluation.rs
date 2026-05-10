@@ -10,7 +10,7 @@ use crate::{
 
 // Piece score wrt index
 // 0 -> pawn, 1 -> knight, 2 -> bishop, 3 -> rook, 4 -> queen
-const MG_VALUE: [i32; 6] = [82, 337, 365, 477, 1025, 0];
+pub const MG_VALUE: [i32; 6] = [82, 337, 365, 477, 1025, 0];
 const EG_VALUE: [i32; 6] = [94, 281, 297, 512, 936, 0];
 
 #[rustfmt::skip]
