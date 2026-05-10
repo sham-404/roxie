@@ -319,7 +319,6 @@ impl Engine {
             return beta;
         }
 
-
         // delta pruning
         if !in_check {
             const BIG_DELTA: i32 = 1100;
@@ -332,14 +331,11 @@ impl Engine {
             alpha = stand_pat;
         }
 
-        //////// NOTE: MUST BE REMOVED LATER ///////////
-        // hardcoded depth cutting
-        if ply as u16 - info.depth > 8  {
-            return alpha;
-        }
-        ////////////////////////////////////////////////
-
-        let mut move_list = self.board.gen_moves();
+        let mut move_list = if in_check {
+            self.board.gen_moves()
+        } else {
+            self.board.gen_cap_moves()
+        };
 
         let mut tt_move = Move::NULL;
         if let Some(entry) = self.tt.probe(self.board.get_zob_key()) {
@@ -347,13 +343,6 @@ impl Engine {
         }
 
         for mv in move_list.with_ordering(tt_move) {
-            // Only tactical moves
-            if !in_check { // if in check, we have to search the quiet moves too
-                if !mv.flag().is_capture() && !mv.flag().is_promo() {
-                    continue;
-                }
-            }
-
             // soft delta pruning
             if !in_check {
                 let mut captured_sq = mv.to();

@@ -4,6 +4,19 @@ use crate::items::*;
 use crate::square::Square;
 use crate::zobrist::{CASTLING_KEYS, ENPASSANT_KEYS, SIDE_KEY, ZOBRIST_TABLE};
 
+const ROOK_DIRS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+const BISHOP_DIRS: [(i32, i32); 4] = [(1, 1), (1, -1), (-1, 1), (-1, -1)];
+const QUEEN_DIRS: [(i32, i32); 8] = [
+    (1, 0),
+    (-1, 0),
+    (0, 1),
+    (0, -1),
+    (1, 1),
+    (1, -1),
+    (-1, 1),
+    (-1, -1),
+];
+
 #[inline]
 pub fn pop_lsb(bb: &mut u64) -> Option<usize> {
     if *bb == 0 {
@@ -738,24 +751,112 @@ impl Board {
             self.bb(color | Piece::QUEEN),
         );
 
-        const ROOK_DIRS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
-        const BISHOP_DIRS: [(i32, i32); 4] = [(1, 1), (1, -1), (-1, 1), (-1, -1)];
-        const QUEEN_DIRS: [(i32, i32); 8] = [
-            (1, 0),
-            (-1, 0),
-            (0, 1),
-            (0, -1),
-            (1, 1),
-            (1, -1),
-            (-1, 1),
-            (-1, -1),
-        ];
-
         self.gen_sliding_moves(&mut moves, bishop_bb, &BISHOP_DIRS);
         self.gen_sliding_moves(&mut moves, rook_bb, &ROOK_DIRS);
         self.gen_sliding_moves(&mut moves, queen_bb, &QUEEN_DIRS);
 
         self.gen_castling_moves(&mut moves);
+
+        self.filter_illegal(&mut moves);
+        moves
+    }
+
+    pub fn gen_cap_moves(&mut self) -> MoveList {
+        let mut moves = MoveList::new();
+        let color = if self.side_to_move == Color::White {
+            Piece::WHITE
+        } else {
+            Piece::BLACK
+        };
+
+        //// Captures of King
+
+        let king = color | Piece::KING;
+        let mut bb = self.bb(king);
+
+        while let Some(from) = pop_lsb(&mut bb) {
+            let opp_occ = self.occ(&self.side_to_move().opponent());
+            let mut atk = KING_ATTACKS[from] & opp_occ;
+
+            while let Some(to) = pop_lsb(&mut atk) {
+                let mv = Move::new(from, to, MoveFlag::CAPTURE);
+                moves.push(mv, self.score_move(mv));
+            }
+        }
+
+        //// Captures of Knights
+
+        let knight = color | Piece::KNIGHT;
+        let mut bb = self.bb(knight);
+
+        while let Some(from) = pop_lsb(&mut bb) {
+            let opp_occ = self.occ(&self.side_to_move().opponent());
+            let mut atk = KNIGHT_ATTACKS[from] & opp_occ;
+
+            while let Some(to) = pop_lsb(&mut atk) {
+                let mv = Move::new(from, to, MoveFlag::CAPTURE);
+                moves.push(mv, self.score_move(mv));
+            }
+        }
+
+        //// Captures of Pawns
+
+        let (pawn, end_pos, attacks) = match self.side_to_move {
+            Color::White => (Piece::WHITE | Piece::PAWN, RANK8, WHITE_PAWN_ATTACKS),
+            Color::Black => (Piece::BLACK | Piece::PAWN, RANK1, BLACK_PAWN_ATTACKS),
+        };
+        let mut pawn_bb = self.bb(pawn);
+        let enemy = self.occ(&self.side_to_move.opponent());
+
+        while let Some(from) = pop_lsb(&mut pawn_bb) {
+            // To include en_passant sq, as there wont be any enemy there
+            let target = match self.en_passant {
+                Some(sq) => enemy | mask(sq as usize),
+                None => enemy,
+            };
+
+            let mut atk = attacks[from] & target;
+
+            while let Some(to) = pop_lsb(&mut atk) {
+                // Handling en_passant
+                if let Some(sq) = self.en_passant {
+                    if sq as usize == to {
+                        let mv = Move::new(from, to, MoveFlag::EN_PASSANT);
+                        moves.push(mv, self.score_move(mv));
+                        continue;
+                    }
+                }
+
+                if mask(to) & end_pos != 0 {
+                    // Handling Capture Promotions
+                    let m_q = Move::new(from, to, MoveFlag::PROMO_CAP_QUEEN);
+                    let m_n = Move::new(from, to, MoveFlag::PROMO_CAP_KNIGHT);
+                    let m_r = Move::new(from, to, MoveFlag::PROMO_CAP_ROOK);
+                    let m_b = Move::new(from, to, MoveFlag::PROMO_CAP_BISHOP);
+
+                    // Score: Base for Capture-Promo (20k) + MVV-LVA + Promo Piece Value
+                    moves.push(m_q, (20000 + self.score_move(m_q) + 900) as u16);
+                    moves.push(m_n, (20000 + self.score_move(m_n) + 320) as u16);
+                    moves.push(m_r, (20000 + self.score_move(m_r) + 500) as u16);
+                    moves.push(m_b, (20000 + self.score_move(m_b) + 330) as u16);
+                } else {
+                    let mv = Move::new(from, to, MoveFlag::CAPTURE);
+                    moves.push(mv, self.score_move(mv));
+                }
+            }
+        }
+
+        //// Captures of sliding pieces
+
+        let (bishop_bb, rook_bb, queen_bb) = (
+            self.bb(color | Piece::BISHOP),
+            self.bb(color | Piece::ROOK),
+            self.bb(color | Piece::QUEEN),
+        );
+
+        self.gen_sliding_cap_moves(&mut moves, bishop_bb, &BISHOP_DIRS);
+        self.gen_sliding_cap_moves(&mut moves, rook_bb, &ROOK_DIRS);
+        self.gen_sliding_cap_moves(&mut moves, queen_bb, &QUEEN_DIRS);
 
         self.filter_illegal(&mut moves);
         moves
@@ -892,7 +993,7 @@ impl Board {
         while let Some(from) = pop_lsb(&mut bb) {
             // To include en_passant sq, as there wont be any enemy there
             let target = match self.en_passant {
-                Some(sq) => enemy | (1u64 << sq as usize),
+                Some(sq) => enemy | mask(sq as usize),
                 None => enemy,
             };
 
@@ -908,7 +1009,7 @@ impl Board {
                     }
                 }
 
-                if (1u64 << to) & end_pos != 0 {
+                if mask(to) & end_pos != 0 {
                     // Handling Capture Promotions
 
                     let m_q = Move::new(from, to, MoveFlag::PROMO_CAP_QUEEN);
@@ -955,6 +1056,45 @@ impl Board {
 
                     let mv = Move::new(from_idx, next.index(), flag);
                     moves.push(mv, self.score_move(mv));
+
+                    // stop after capture
+                    if to_bb & enemy_occ != 0 {
+                        break;
+                    }
+
+                    sq = next;
+                }
+            }
+        }
+    }
+
+    pub fn gen_sliding_cap_moves(
+        &self,
+        moves: &mut MoveList,
+        mut bb: u64,
+        directions: &[(i32, i32)],
+    ) {
+        let own_occ = self.occ(&self.side_to_move);
+        let enemy_occ = self.occ(&self.side_to_move.opponent());
+
+        while let Some(from_idx) = pop_lsb(&mut bb) {
+            let from = Square::new(from_idx);
+
+            for &(dr, df) in directions {
+                let mut sq = from;
+
+                while let Some(next) = sq.offset(dr, df) {
+                    let to_bb = mask(next.index());
+
+                    // blocked by own piece
+                    if to_bb & own_occ != 0 {
+                        break;
+                    }
+
+                    if to_bb & enemy_occ != 0 {
+                        let mv = Move::new(from_idx, next.index(), MoveFlag::CAPTURE);
+                        moves.push(mv, self.score_move(mv));
+                    }
 
                     // stop after capture
                     if to_bb & enemy_occ != 0 {
