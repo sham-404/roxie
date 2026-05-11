@@ -516,167 +516,6 @@ impl Board {
         false
     }
 
-    fn attacks_to(&self, to_pos: usize) -> u64 {
-        let mut attackers = 0u64;
-        let all_occ = self.all_occ();
-
-        // Sliding pieces
-        let directions = [
-            ([(1, 1), (1, -1), (-1, 1), (-1, -1)], true), // diagonals
-            ([(1, 0), (-1, 0), (0, 1), (0, -1)], false),  // straight
-        ];
-        let from = Square::new(to_pos);
-
-        for (dir, is_diag) in directions {
-            for (dr, df) in dir {
-                let mut sq = from;
-
-                while let Some(next) = sq.offset(dr, df) {
-                    let to_bb = mask(next.index());
-
-                    // Some piece is blocking our way
-                    if to_bb & all_occ != 0 {
-                        let piece = self.piece_on(next.index());
-                        if piece == Piece::QUEEN
-                            || (piece == Piece::BISHOP && is_diag)
-                            || (piece == Piece::ROOK && !is_diag)
-                        {
-                            attackers |= to_bb;
-                        }
-
-                        // accumulate attackers if the blocking piece is an enemy rook,
-                        // bishop or a queen, else break the loop as we have
-                        // been blocked by our own piece, or an non sliding
-                        // enemy piece
-
-                        break;
-                    }
-                    sq = next;
-                }
-            }
-        }
-
-        //knight is attacking
-        attackers |= KNIGHT_ATTACKS[to_pos]
-            & (self.bb(Piece::WHITE | Piece::KNIGHT) | self.bb(Piece::BLACK | Piece::KNIGHT));
-
-        // King attacks
-        attackers |= KING_ATTACKS[to_pos]
-            & (self.bb(Piece::WHITE | Piece::KING) | self.bb(Piece::BLACK | Piece::KING));
-
-        // if a opp pawn is in cur color pawn's attacking sq, then
-        // the opponent pawn is attacking the current sq
-        attackers |= WHITE_PAWN_ATTACKS[to_pos] & self.bb(Piece::BLACK | Piece::PAWN);
-        attackers |= BLACK_PAWN_ATTACKS[to_pos] & self.bb(Piece::WHITE | Piece::PAWN);
-
-        attackers
-    }
-
-    // Code written using the algorithm provided in chess programming wiki
-    // link -> https://www.chessprogramming.org/SEE_-_The_Swap_Algorithm
-    pub fn see(&self, mov: &Move) -> i32 {
-        if mov.flag() == MoveFlag::EN_PASSANT {
-            return 100;
-        }
-
-        let xray_pieces = Piece::BISHOP | Piece::QUEEN | Piece::ROOK | Piece::PAWN;
-
-        let mut d = 0;
-        let mut gain = [0; 32];
-
-        let mut occ = self.all_occ();
-        let mut attadef = self.attacks_to(mov.to());
-
-        let mut from_set = mask(mov.from());
-        let mut side_to_move = self.side_to_move();
-
-        let (target, mut atk_piece) = (self.piece_on(mov.to()), self.piece_on(mov.from()));
-
-        gain[d] = self.get_see_value(target);
-
-        loop {
-            if d >= 31 {
-                break;
-            }
-            d += 1;
-
-            // speculative gain
-            gain[d] = self.get_see_value(atk_piece) - gain[d - 1];
-
-            // Pruning: if the exchange is already terrible, we can stop early
-            if i32::max(-gain[d - 1], gain[d]) < 0 {
-                break;
-            }
-
-            // Update occupancy and attacks
-            attadef ^= from_set;
-            occ ^= from_set;
-
-            side_to_move = side_to_move.opponent();
-            if xray_pieces & atk_piece != 0 {
-                attadef |= self.consider_xrays(occ, mov.to());
-            }
-            (from_set, atk_piece) = self.get_least_valuable_piece(attadef, side_to_move);
-        }
-
-        while d > 0 {
-            d -= 1;
-            gain[d] = -((-gain[d]).max(gain[d + 1]));
-        }
-
-        gain[0]
-    }
-
-    fn consider_xrays(&self, occ: u64, to_sq: usize) -> u64 {
-        let mut extra_attackers = 0u64;
-
-        // Check horizontal/vertical (Rooks/Queens)
-        let rook_attacks = self.get_sliding_attacks(occ, to_sq, false);
-        extra_attackers |= rook_attacks
-            & (self.bb(Piece::WHITE | Piece::ROOK)
-                | self.bb(Piece::WHITE | Piece::QUEEN)
-                | self.bb(Piece::BLACK | Piece::ROOK)
-                | self.bb(Piece::BLACK | Piece::QUEEN));
-
-        // Check diagonals (Bishops/Queens)
-        let bishop_attacks = self.get_sliding_attacks(occ, to_sq, true);
-        extra_attackers |= bishop_attacks
-            & (self.bb(Piece::WHITE | Piece::BISHOP)
-                | self.bb(Piece::WHITE | Piece::QUEEN)
-                | self.bb(Piece::BLACK | Piece::BISHOP)
-                | self.bb(Piece::BLACK | Piece::QUEEN));
-
-        extra_attackers
-    }
-
-    fn get_least_valuable_piece(&self, attackers: u64, side: Color) -> (u64, PieceInfo) {
-        let color_mask = if side == Color::White {
-            Piece::WHITE
-        } else {
-            Piece::BLACK
-        };
-        let my_attackers = attackers & self.occ(&side);
-
-        if my_attackers == 0 {
-            return (0, Piece::NONE);
-        }
-
-        for p_type in [
-            Piece::PAWN,
-            Piece::KNIGHT,
-            Piece::BISHOP,
-            Piece::ROOK,
-            Piece::QUEEN,
-            Piece::KING,
-        ] {
-            let subset = my_attackers & self.bb(p_type | color_mask);
-            if subset != 0 {
-                let lsb = 1u64 << subset.trailing_zeros();
-                return (lsb, p_type | color_mask); // Return type + color
-            }
-        }
-        (0, Piece::NONE)
-    }
 
     pub fn in_check(&self) -> bool {
         let color = match self.side_to_move {
@@ -1269,7 +1108,7 @@ impl Board {
         }
     }
 
-    fn get_sliding_attacks(&self, occ: u64, to_sq: usize, is_diagonal: bool) -> u64 {
+    pub fn get_sliding_attacks(&self, occ: u64, to_sq: usize, is_diagonal: bool) -> u64 {
         let mut attacks = 0u64;
         let from = Square::new(to_sq);
         let directions = if is_diagonal {
@@ -1439,23 +1278,6 @@ impl Board {
         }
 
         0
-    }
-
-    fn get_see_value(&self, piece: PieceInfo) -> i32 {
-        if piece == Piece::NONE {
-            return 0;
-        }
-
-        let idx = Piece::to_idx(piece) % 6;
-        // Piece indices: 0:P, 1:N, 2:B, 3:R, 4:Q, 5:K
-        match idx {
-            0 => 100,
-            1 => 320,
-            2 => 330,
-            3 => 500,
-            4 => 900,
-            _ => 10000,
-        }
     }
 
     fn get_value(&self, piece: PieceInfo) -> i32 {

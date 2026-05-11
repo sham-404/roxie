@@ -1,7 +1,10 @@
 use crate::{
+    board::{Board, mask},
+    r#const::{BLACK_PAWN_ATTACKS, KING_ATTACKS, KNIGHT_ATTACKS, WHITE_PAWN_ATTACKS},
     engine::Engine,
-    evaluation::{evaluate},
-    items::{Color, Move},
+    evaluation::evaluate,
+    items::{Color, Move, MoveFlag, Piece, PieceInfo},
+    square::Square,
     tt::{TTEntry, TTFlag},
     uci::{GoControl, MAX_DEPTH},
     uci_print,
@@ -356,7 +359,7 @@ impl Engine {
                 // let captured = self.board.piece_on(captured_sq);
 
                 // let cap_value = MG_VALUE[Piece::to_idx(captured) % 6];
-                if self.board.see(&mv) < 0 && !mv.flag().is_promo() {
+                if self.board.see(&mv) < -75 && !mv.flag().is_promo() {
                     continue;
                 }
             }
@@ -518,5 +521,183 @@ impl SearchLimits {
         limits.soft_time = Some(Duration::from_millis(movetime));
         limits.hard_time = Some(Duration::from_millis(movetime));
         limits
+    }
+}
+
+impl Board {
+    fn attacks_to(&self, to_pos: usize, all_occ: u64) -> u64 {
+        let mut attackers = 0u64;
+
+        // Sliding pieces
+        let directions = [
+            ([(1, 1), (1, -1), (-1, 1), (-1, -1)], true), // diagonals
+            ([(1, 0), (-1, 0), (0, 1), (0, -1)], false),  // straight
+        ];
+        let from = Square::new(to_pos);
+
+        for (dir, is_diag) in directions {
+            for (dr, df) in dir {
+                let mut sq = from;
+
+                while let Some(next) = sq.offset(dr, df) {
+                    let to_bb = mask(next.index());
+
+                    // Some piece is blocking our way
+                    if to_bb & all_occ != 0 {
+                        let piece = self.piece_on(next.index());
+                        if piece == Piece::QUEEN
+                            || (piece == Piece::BISHOP && is_diag)
+                            || (piece == Piece::ROOK && !is_diag)
+                        {
+                            attackers |= to_bb;
+                        }
+
+                        // accumulate attackers if the blocking piece is an enemy rook,
+                        // bishop or a queen, else break the loop as we have
+                        // been blocked by our own piece, or an non sliding
+                        // enemy piece
+
+                        break;
+                    }
+                    sq = next;
+                }
+            }
+        }
+
+        //knight is attacking
+        attackers |= KNIGHT_ATTACKS[to_pos]
+            & (self.bb(Piece::WHITE | Piece::KNIGHT) | self.bb(Piece::BLACK | Piece::KNIGHT));
+
+        // King attacks
+        attackers |= KING_ATTACKS[to_pos]
+            & (self.bb(Piece::WHITE | Piece::KING) | self.bb(Piece::BLACK | Piece::KING));
+
+        // if a opp pawn is in cur color pawn's attacking sq, then
+        // the opponent pawn is attacking the current sq
+        attackers |= WHITE_PAWN_ATTACKS[to_pos] & self.bb(Piece::BLACK | Piece::PAWN);
+        attackers |= BLACK_PAWN_ATTACKS[to_pos] & self.bb(Piece::WHITE | Piece::PAWN);
+
+        attackers
+    }
+
+    // Code written using the algorithm provided in chess programming wiki
+    // link -> https://www.chessprogramming.org/SEE_-_The_Swap_Algorithm
+    pub fn see(&self, mov: &Move) -> i32 {
+        if mov.flag() == MoveFlag::EN_PASSANT {
+            return 100;
+        }
+
+        // let xray_pieces = Piece::BISHOP | Piece::QUEEN | Piece::ROOK | Piece::PAWN;
+
+        let mut d = 0;
+        let mut gain = [0; 32];
+
+        let mut occ = self.all_occ();
+
+        let mut from_set = mask(mov.from());
+        let mut side_to_move = self.side_to_move();
+
+        let (target, mut atk_piece) = (self.piece_on(mov.to()), self.piece_on(mov.from()));
+
+        gain[d] = self.get_see_value(target);
+
+        loop {
+            d += 1;
+
+            // speculative gain
+            gain[d] = self.get_see_value(atk_piece) - gain[d - 1];
+
+            // Pruning: if the exchange is already terrible, we can stop early
+            if i32::max(-gain[d - 1], gain[d]) < 0 {
+                break;
+            }
+
+            // Update occupancy and attacks
+            occ ^= from_set;
+            side_to_move = side_to_move.opponent();
+            let attadef = self.attacks_to(mov.to(), occ);
+            // if xray_pieces & atk_piece != 0 {
+            //     attadef |= self.consider_xrays(occ, mov.to());
+            // }
+            (from_set, atk_piece) = self.get_least_valuable_piece(attadef, occ, side_to_move);
+            if from_set == 0 {
+                break;
+            }
+        }
+
+        while d > 0 {
+            d -= 1;
+            gain[d] = -((-gain[d]).max(gain[d + 1]));
+        }
+
+        gain[0]
+    }
+
+    fn consider_xrays(&self, occ: u64, to_sq: usize) -> u64 {
+        let mut extra_attackers = 0u64;
+
+        // Check horizontal/vertical (Rooks/Queens)
+        let rook_attacks = self.get_sliding_attacks(occ, to_sq, false);
+        extra_attackers |= rook_attacks
+            & (self.bb(Piece::WHITE | Piece::ROOK)
+                | self.bb(Piece::WHITE | Piece::QUEEN)
+                | self.bb(Piece::BLACK | Piece::ROOK)
+                | self.bb(Piece::BLACK | Piece::QUEEN));
+
+        // Check diagonals (Bishops/Queens)
+        let bishop_attacks = self.get_sliding_attacks(occ, to_sq, true);
+        extra_attackers |= bishop_attacks
+            & (self.bb(Piece::WHITE | Piece::BISHOP)
+                | self.bb(Piece::WHITE | Piece::QUEEN)
+                | self.bb(Piece::BLACK | Piece::BISHOP)
+                | self.bb(Piece::BLACK | Piece::QUEEN));
+
+        extra_attackers
+    }
+
+    fn get_least_valuable_piece(&self, attackers: u64, occ: u64, side: Color) -> (u64, PieceInfo) {
+        let color_mask = if side == Color::White {
+            Piece::WHITE
+        } else {
+            Piece::BLACK
+        };
+
+        let my_attackers = attackers & occ & self.occ(&side);
+
+        for p_type in [
+            Piece::PAWN,
+            Piece::KNIGHT,
+            Piece::BISHOP,
+            Piece::ROOK,
+            Piece::QUEEN,
+            Piece::KING,
+        ] {
+            let subset = my_attackers & self.bb(p_type | color_mask);
+
+            if subset != 0 {
+                let lsb = subset & subset.wrapping_neg();
+
+                return (lsb, p_type | color_mask);
+            }
+        }
+
+        (0, Piece::NONE)
+    }
+
+    fn get_see_value(&self, piece: PieceInfo) -> i32 {
+        if piece == Piece::NONE {
+            return 0;
+        }
+
+        let idx = Piece::to_idx(piece) % 6;
+        // Piece indices: 0:P, 1:N, 2:B, 3:R, 4:Q, 5:K
+        match idx {
+            0 => 100,
+            1 => 320,
+            2 => 330,
+            3 => 500,
+            4 => 900,
+            _ => 10000,
+        }
     }
 }
