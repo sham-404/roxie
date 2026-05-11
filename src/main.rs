@@ -82,8 +82,8 @@ mod tests {
         init_zobrist();
         init_pesto_table();
         let mut engine = Engine::new();
-        engine.board = Board::start_pos();
-        // Board::load_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ");
+        engine.board =
+            Board::load_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ");
 
         let depth = 7;
         let start = Instant::now();

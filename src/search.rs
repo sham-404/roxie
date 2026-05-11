@@ -1,7 +1,7 @@
 use crate::{
     engine::Engine,
-    evaluation::{MG_VALUE, evaluate},
-    items::{Color, Move, MoveFlag, Piece},
+    evaluation::{evaluate},
+    items::{Color, Move},
     tt::{TTEntry, TTFlag},
     uci::{GoControl, MAX_DEPTH},
     uci_print,
@@ -345,18 +345,18 @@ impl Engine {
         for mv in move_list.with_ordering(tt_move) {
             // soft delta pruning
             if !in_check {
-                let mut captured_sq = mv.to();
-                if mv.flag() == MoveFlag::EN_PASSANT {
-                    captured_sq = if self.board.side_to_move() == Color::White {
-                        mv.to() - 8
-                    } else {
-                        mv.to() + 8
-                    };
-                }
-                let captured = self.board.piece_on(captured_sq);
+                // let mut captured_sq = mv.to();
+                // if mv.flag() == MoveFlag::EN_PASSANT {
+                //     captured_sq = if self.board.side_to_move() == Color::White {
+                //         mv.to() - 8
+                //     } else {
+                //         mv.to() + 8
+                //     };
+                // }
+                // let captured = self.board.piece_on(captured_sq);
 
-                let cap_value = MG_VALUE[Piece::to_idx(captured) % 6];
-                if (stand_pat + cap_value + 200 < alpha) && !mv.flag().is_promo() {
+                // let cap_value = MG_VALUE[Piece::to_idx(captured) % 6];
+                if self.board.see(&mv) < 0 && !mv.flag().is_promo() {
                     continue;
                 }
             }
