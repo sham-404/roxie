@@ -545,9 +545,10 @@ impl Board {
                     // Some piece is blocking our way
                     if to_bb & all_occ != 0 {
                         let piece = self.piece_on(next.index());
-                        if piece == Piece::QUEEN
-                            || (piece == Piece::BISHOP && is_diag)
-                            || (piece == Piece::ROOK && !is_diag)
+                        let piece_type = Piece::get_type(piece);
+                        if piece_type == Piece::QUEEN
+                            || (piece_type == Piece::BISHOP && is_diag)
+                            || (piece_type == Piece::ROOK && !is_diag)
                         {
                             attackers |= to_bb;
                         }
@@ -566,93 +567,79 @@ impl Board {
 
         //knight is attacking
         attackers |= KNIGHT_ATTACKS[to_pos]
-            & (self.bb(Piece::WHITE | Piece::KNIGHT) | self.bb(Piece::BLACK | Piece::KNIGHT));
+            & (self.bb(Piece::WHITE | Piece::KNIGHT) | self.bb(Piece::BLACK | Piece::KNIGHT))
+            & all_occ;
 
         // King attacks
         attackers |= KING_ATTACKS[to_pos]
-            & (self.bb(Piece::WHITE | Piece::KING) | self.bb(Piece::BLACK | Piece::KING));
+            & (self.bb(Piece::WHITE | Piece::KING) | self.bb(Piece::BLACK | Piece::KING))
+            & all_occ;
 
         // if a opp pawn is in cur color pawn's attacking sq, then
         // the opponent pawn is attacking the current sq
-        attackers |= WHITE_PAWN_ATTACKS[to_pos] & self.bb(Piece::BLACK | Piece::PAWN);
-        attackers |= BLACK_PAWN_ATTACKS[to_pos] & self.bb(Piece::WHITE | Piece::PAWN);
+        attackers |= WHITE_PAWN_ATTACKS[to_pos] & self.bb(Piece::BLACK | Piece::PAWN) & all_occ;
+        attackers |= BLACK_PAWN_ATTACKS[to_pos] & self.bb(Piece::WHITE | Piece::PAWN) & all_occ;
 
         attackers
     }
 
-    // Code written using the algorithm provided in chess programming wiki
+    // Code written by refering the algorithm provided in chess programming wiki
     // link -> https://www.chessprogramming.org/SEE_-_The_Swap_Algorithm
     pub fn see(&self, mov: &Move) -> i32 {
         if mov.flag() == MoveFlag::EN_PASSANT {
             return 100;
         }
 
-        // let xray_pieces = Piece::BISHOP | Piece::QUEEN | Piece::ROOK | Piece::PAWN;
-
-        let mut d = 0;
         let mut gain = [0; 32];
+        let mut d = 0;
 
+        let from = mov.from();
+        let to = mov.to();
+
+        let target = self.piece_on(to);
+        let mut cur_victim = self.piece_on(from); // victim coz it moved to the to_sq
+
+        // Initial gain = captured piece
+        gain[0] = self.get_see_value(target);
+
+        // Simulated occupancy AFTER first capture
         let mut occ = self.all_occ();
+        occ ^= mask(from); // piece moved from from_sq
 
-        let mut from_set = mask(mov.from());
-        let mut side_to_move = self.side_to_move();
-
-        let (target, mut atk_piece) = (self.piece_on(mov.to()), self.piece_on(mov.from()));
-
-        gain[d] = self.get_see_value(target);
+        let mut side = self.side_to_move().opponent();
 
         loop {
-            d += 1;
+            // Find all attackers in current position
+            let attackers = self.attacks_to(to, occ);
+            let (from_set, piece) = self.get_least_valuable_piece(attackers, occ, side);
 
-            // speculative gain
-            gain[d] = self.get_see_value(atk_piece) - gain[d - 1];
-
-            // Pruning: if the exchange is already terrible, we can stop early
-            if i32::max(-gain[d - 1], gain[d]) < 0 {
-                break;
-            }
-
-            // Update occupancy and attacks
-            occ ^= from_set;
-            side_to_move = side_to_move.opponent();
-            let attadef = self.attacks_to(mov.to(), occ);
-            // if xray_pieces & atk_piece != 0 {
-            //     attadef |= self.consider_xrays(occ, mov.to());
-            // }
-            (from_set, atk_piece) = self.get_least_valuable_piece(attadef, occ, side_to_move);
             if from_set == 0 {
                 break;
             }
+
+            d += 1;
+
+            gain[d] = self.get_see_value(cur_victim) - gain[d - 1];
+
+            // SEE pruning
+            if (-gain[d - 1]).max(gain[d]) < 0 {
+                break;
+            }
+
+            cur_victim = piece; // next victim is the cur attacker
+
+            // Remove this attacker from occupancy
+            occ ^= from_set;
+            side = side.opponent();
         }
 
+        // Backward minimax pass
         while d > 0 {
             d -= 1;
             gain[d] = -((-gain[d]).max(gain[d + 1]));
         }
 
         gain[0]
-    }
-
-    fn consider_xrays(&self, occ: u64, to_sq: usize) -> u64 {
-        let mut extra_attackers = 0u64;
-
-        // Check horizontal/vertical (Rooks/Queens)
-        let rook_attacks = self.get_sliding_attacks(occ, to_sq, false);
-        extra_attackers |= rook_attacks
-            & (self.bb(Piece::WHITE | Piece::ROOK)
-                | self.bb(Piece::WHITE | Piece::QUEEN)
-                | self.bb(Piece::BLACK | Piece::ROOK)
-                | self.bb(Piece::BLACK | Piece::QUEEN));
-
-        // Check diagonals (Bishops/Queens)
-        let bishop_attacks = self.get_sliding_attacks(occ, to_sq, true);
-        extra_attackers |= bishop_attacks
-            & (self.bb(Piece::WHITE | Piece::BISHOP)
-                | self.bb(Piece::WHITE | Piece::QUEEN)
-                | self.bb(Piece::BLACK | Piece::BISHOP)
-                | self.bb(Piece::BLACK | Piece::QUEEN));
-
-        extra_attackers
     }
 
     fn get_least_valuable_piece(&self, attackers: u64, occ: u64, side: Color) -> (u64, PieceInfo) {

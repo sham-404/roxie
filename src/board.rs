@@ -1108,29 +1108,6 @@ impl Board {
         }
     }
 
-    pub fn get_sliding_attacks(&self, occ: u64, to_sq: usize, is_diagonal: bool) -> u64 {
-        let mut attacks = 0u64;
-        let from = Square::new(to_sq);
-        let directions = if is_diagonal {
-            &[(1, 1), (1, -1), (-1, 1), (-1, -1)]
-        } else {
-            &[(1, 0), (-1, 0), (0, 1), (0, -1)]
-        };
-
-        for &(dr, df) in directions {
-            let mut sq = from;
-            while let Some(next) = sq.offset(dr, df) {
-                let bit = mask(next.index());
-                attacks |= bit;
-                if bit & occ != 0 {
-                    break; // Hit a blocker
-                }
-                sq = next;
-            }
-        }
-        attacks
-    }
-
     fn gen_castling_moves(&self, moves: &mut MoveList) {
         let (king_piece, color, ks_rights, qs_rights) = match self.side_to_move {
             Color::White => (
