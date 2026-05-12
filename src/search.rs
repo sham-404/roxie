@@ -334,6 +334,13 @@ impl Engine {
             alpha = stand_pat;
         }
 
+        //////// NOTE: MUST BE REMOVED LATER ///////////
+        // hardcoded depth cutting
+        if ply as u16 - info.depth > 8  {
+            return alpha;
+        }
+        ////////////////////////////////////////////////
+
         let mut move_list = if in_check {
             self.board.gen_moves()
         } else {
@@ -348,17 +355,6 @@ impl Engine {
         for mv in move_list.with_ordering(tt_move) {
             // soft delta pruning
             if !in_check {
-                // let mut captured_sq = mv.to();
-                // if mv.flag() == MoveFlag::EN_PASSANT {
-                //     captured_sq = if self.board.side_to_move() == Color::White {
-                //         mv.to() - 8
-                //     } else {
-                //         mv.to() + 8
-                //     };
-                // }
-                // let captured = self.board.piece_on(captured_sq);
-
-                // let cap_value = MG_VALUE[Piece::to_idx(captured) % 6];
                 if self.board.see(&mv) < -75 && !mv.flag().is_promo() {
                     continue;
                 }
