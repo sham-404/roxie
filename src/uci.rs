@@ -2,6 +2,11 @@ use std::{
     io::{self, BufRead},
     iter::Peekable,
     str::SplitWhitespace,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread,
 };
 
 use crate::{board::Board, engine::Engine, items::Move, perft::perft_divide, search::SearchLimits};
@@ -20,7 +25,8 @@ macro_rules! uci_print {
 
 pub fn uci_loop() {
     let stdin = io::stdin();
-    let mut engine = Engine::new();
+    let mut cur_stop_signal = Arc::new(AtomicBool::new(false));
+    let engine = Arc::new(Mutex::new(Engine::new()));
 
     for line in stdin.lock().lines() {
         let line = line.unwrap();
@@ -38,13 +44,24 @@ pub fn uci_loop() {
                     uci_print!("readyok");
                 }
 
-                "ucinewgame" => engine = Engine::new(),
+                "ucinewgame" => {
+                    let mut engine_guard = engine.lock().unwrap();
+                    *engine_guard = Engine::new()
+                }
 
-                "position" => handle_position(&mut words, &mut engine),
+                "position" => {
+                    let mut guard = engine.lock().unwrap();
+                    handle_position(&mut words, &mut guard)
+                }
 
-                "go" => handle_go(&mut words, &mut engine),
+                "stop" => cur_stop_signal.store(true, Ordering::Relaxed),
 
-                "quit" => break,
+                "go" => handle_go(&mut words, Arc::clone(&engine), &mut cur_stop_signal),
+
+                "quit" => {
+                    cur_stop_signal.store(true, Ordering::Relaxed);
+                    break;
+                }
 
                 _ => {}
             }
@@ -52,24 +69,39 @@ pub fn uci_loop() {
     }
 }
 
-fn handle_go<'a>(commands: &mut SplitWhitespace<'a>, engine: &mut Engine) {
+fn handle_go<'a>(
+    commands: &mut SplitWhitespace<'a>,
+    engine: Arc<Mutex<Engine>>,
+    stop_sig: &mut Arc<AtomicBool>,
+) {
     let mut args = commands.peekable();
 
     if let Some(&"perft") = args.peek() {
         args.next(); // consuming "perft"
         let depth = args.next().and_then(|val| val.parse().ok()).unwrap_or(1);
-        perft_divide(&mut engine.board, depth);
+        let mut engine_guard = engine.lock().unwrap();
+        perft_divide(&mut engine_guard.board, depth);
         return;
     }
 
     let go_ctrl = GoControl::parse(&mut args);
-    let limits = SearchLimits::from_go(&go_ctrl, engine.board.side_to_move());
+    let stm = {
+        let engine_guard = engine.lock().unwrap();
+        engine_guard.board.side_to_move()
+    };
 
-    let data = engine.search_ids(&limits, |info| {
-        info.print();
+    let mut limits = SearchLimits::from_go(&go_ctrl, stm);
+    limits.stop_signal = Arc::clone(&stop_sig);
+    stop_sig.store(false, Ordering::Relaxed);
+
+    thread::spawn(move || {
+        let mut engine_clone = engine.lock().unwrap();
+        let data = engine_clone.search_ids(&limits, |info| {
+            info.print();
+        });
+
+        uci_print!("bestmove {}", data.best_move.to_coord());
     });
-
-    uci_print!("bestmove {}", data.best_move.to_coord());
 }
 
 fn handle_position<'a>(commands: &mut SplitWhitespace<'a>, engine: &mut Engine) {

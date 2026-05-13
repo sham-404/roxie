@@ -10,7 +10,13 @@ use crate::{
     uci_print,
 };
 
-use std::time::{Duration, Instant};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
+};
 
 const INF: i32 = 10000000;
 
@@ -336,7 +342,7 @@ impl Engine {
 
         //////// NOTE: MUST BE REMOVED LATER ///////////
         // hardcoded depth cutting
-        if ply as u16 - info.depth > 8  {
+        if ply - info.depth as i32 > 8 {
             return alpha;
         }
         ////////////////////////////////////////////////
@@ -418,6 +424,13 @@ impl SearchInfo {
             return;
         }
 
+        // cheking if stop command is made
+        if limits.stop_signal.load(Ordering::Relaxed) {
+            self.abort = true;
+            return;
+        }
+
+        // checking once in a while if the time limit is reached
         if self.nodes & 2047 == 0 {
             if let Some(limit) = limits.hard_time {
                 if self.start_time.elapsed() >= limit {
@@ -435,6 +448,8 @@ pub struct SearchLimits {
     pub soft_time: Option<Duration>,
     pub infinite: bool,
     pub start_time: Instant,
+
+    pub stop_signal: Arc<AtomicBool>,
 }
 
 impl Default for SearchLimits {
@@ -445,6 +460,7 @@ impl Default for SearchLimits {
             depth: None,
             infinite: false,
             start_time: Instant::now(),
+            stop_signal: Arc::new(AtomicBool::new(false)),
         }
     }
 }
