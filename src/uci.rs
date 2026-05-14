@@ -6,7 +6,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
-    thread,
+    thread::{self, JoinHandle},
 };
 
 use crate::{board::Board, engine::Engine, items::Move, perft::perft_divide, search::SearchLimits};
@@ -23,116 +23,140 @@ macro_rules! uci_print {
     }};
 }
 
-pub fn uci_loop() {
-    let stdin = io::stdin();
-    let mut cur_stop_signal = Arc::new(AtomicBool::new(false));
-    let engine = Arc::new(Mutex::new(Engine::new()));
+pub struct UCI {
+    engine: Arc<Mutex<Engine>>,
+    stop_signal: Arc<AtomicBool>,
+    search_handle: Option<JoinHandle<()>>,
+}
 
-    for line in stdin.lock().lines() {
-        let line = line.unwrap();
-        let mut words = line.trim().split_whitespace();
+impl UCI {
+    pub fn new() -> Self {
+        Self {
+            engine: Arc::new(Mutex::new(Engine::new())),
+            stop_signal: Arc::new(AtomicBool::new(false)),
+            search_handle: None,
+        }
+    }
 
-        if let Some(cmd) = words.next() {
+    pub fn uci_loop(&mut self) {
+        let stdin = io::stdin();
+
+        for line in stdin.lock().lines() {
+            let line = line.unwrap();
+            let mut words = line.trim().split_whitespace();
+
+            if let Some(cmd) = words.next() {
+                match cmd {
+                    "uci" => {
+                        uci_print!("id name Roxie {}", env!("CARGO_PKG_VERSION"));
+                        uci_print!("id author sham-404");
+                        uci_print!("uciok");
+                    }
+
+                    "isready" => {
+                        uci_print!("readyok");
+                    }
+
+                    "ucinewgame" => {
+                        self.stop_search();
+                        let mut engine_guard = self.engine.lock().unwrap();
+                        *engine_guard = Engine::new()
+                    }
+
+                    "position" => {
+                        self.stop_search();
+                        self.handle_position(&mut words)
+                    }
+
+                    "stop" => self.stop_signal.store(true, Ordering::Relaxed),
+
+                    "go" => {
+                        self.stop_search();
+                        self.handle_go(&mut words)
+                    }
+
+                    "quit" => {
+                        self.stop_search();
+                        break;
+                    }
+
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    fn handle_go<'a>(&mut self, commands: &mut SplitWhitespace<'a>) {
+        let mut args = commands.peekable();
+
+        if let Some(&"perft") = args.peek() {
+            args.next(); // consuming "perft"
+            let depth = args.next().and_then(|val| val.parse().ok()).unwrap_or(1);
+            let mut engine_guard = self.engine.lock().unwrap();
+            perft_divide(&mut engine_guard.board, depth);
+            return;
+        }
+
+        let go_ctrl = GoControl::parse(&mut args);
+        let stm = {
+            let engine_guard = self.engine.lock().unwrap();
+            engine_guard.board.side_to_move()
+        };
+
+        let mut limits = SearchLimits::from_go(&go_ctrl, stm);
+        limits.stop_signal = Arc::clone(&self.stop_signal);
+        self.stop_signal.store(false, Ordering::Relaxed);
+
+        let thread_engine = Arc::clone(&self.engine);
+
+        self.search_handle = Some(thread::spawn(move || {
+            let mut engine_guard = thread_engine.lock().unwrap();
+            let data = engine_guard.search_ids(&limits, |info| {
+                info.print();
+            });
+
+            uci_print!("bestmove {}", data.best_move.to_coord());
+        }));
+    }
+
+    fn handle_position<'a>(&self, commands: &mut SplitWhitespace<'a>) {
+        let mut engine = self.engine.lock().unwrap();
+        if let Some(cmd) = commands.next() {
             match cmd {
-                "uci" => {
-                    uci_print!("id name Roxie {}", env!("CARGO_PKG_VERSION"));
-                    uci_print!("id author sham-404");
-                    uci_print!("uciok");
+                "startpos" => {
+                    engine.board = Board::start_pos();
+
+                    if let Some("moves") = commands.next() {
+                        for mv_str in commands {
+                            let mv = Move::from_uci(mv_str, &mut engine.board);
+                            engine.board.make_move(&mv);
+                        }
+                    }
                 }
 
-                "isready" => {
-                    uci_print!("readyok");
-                }
+                "fen" => {
+                    let fen_parts: Vec<&str> = commands.by_ref().take(6).collect();
+                    let fen = fen_parts.join(" ");
 
-                "ucinewgame" => {
-                    let mut engine_guard = engine.lock().unwrap();
-                    *engine_guard = Engine::new()
-                }
+                    engine.board = Board::load_fen(&fen);
 
-                "position" => {
-                    let mut guard = engine.lock().unwrap();
-                    handle_position(&mut words, &mut guard)
-                }
-
-                "stop" => cur_stop_signal.store(true, Ordering::Relaxed),
-
-                "go" => handle_go(&mut words, Arc::clone(&engine), &mut cur_stop_signal),
-
-                "quit" => {
-                    cur_stop_signal.store(true, Ordering::Relaxed);
-                    break;
+                    if let Some("moves") = commands.next() {
+                        for mv_str in commands {
+                            let mv = Move::from_uci(mv_str, &mut engine.board);
+                            engine.board.make_move(&mv);
+                        }
+                    }
                 }
 
                 _ => {}
             }
         }
     }
-}
 
-fn handle_go<'a>(
-    commands: &mut SplitWhitespace<'a>,
-    engine: Arc<Mutex<Engine>>,
-    stop_sig: &mut Arc<AtomicBool>,
-) {
-    let mut args = commands.peekable();
-
-    if let Some(&"perft") = args.peek() {
-        args.next(); // consuming "perft"
-        let depth = args.next().and_then(|val| val.parse().ok()).unwrap_or(1);
-        let mut engine_guard = engine.lock().unwrap();
-        perft_divide(&mut engine_guard.board, depth);
-        return;
-    }
-
-    let go_ctrl = GoControl::parse(&mut args);
-    let stm = {
-        let engine_guard = engine.lock().unwrap();
-        engine_guard.board.side_to_move()
-    };
-
-    let mut limits = SearchLimits::from_go(&go_ctrl, stm);
-    limits.stop_signal = Arc::clone(&stop_sig);
-    stop_sig.store(false, Ordering::Relaxed);
-
-    thread::spawn(move || {
-        let mut engine_clone = engine.lock().unwrap();
-        let data = engine_clone.search_ids(&limits, |info| {
-            info.print();
-        });
-
-        uci_print!("bestmove {}", data.best_move.to_coord());
-    });
-}
-
-fn handle_position<'a>(commands: &mut SplitWhitespace<'a>, engine: &mut Engine) {
-    if let Some(cmd) = commands.next() {
-        match cmd {
-            "startpos" => {
-                engine.board = Board::start_pos();
-
-                if let Some("moves") = commands.next() {
-                    for mv_str in commands {
-                        let mv = Move::from_uci(mv_str, &mut engine.board);
-                        engine.board.make_move(&mv);
-                    }
-                }
-            }
-
-            "fen" => {
-                let fen_parts: Vec<&str> = commands.by_ref().take(6).collect();
-                let fen = fen_parts.join(" ");
-
-                engine.board = Board::load_fen(&fen);
-
-                if let Some("moves") = commands.next() {
-                    for mv_str in commands {
-                        let mv = Move::from_uci(mv_str, &mut engine.board);
-                        engine.board.make_move(&mv);
-                    }
-                }
-            }
-
-            _ => {}
+    fn stop_search(&mut self) {
+        if let Some(handle) = self.search_handle.take() {
+            self.stop_signal.store(true, Ordering::Relaxed);
+            let _ = handle.join();
         }
     }
 }

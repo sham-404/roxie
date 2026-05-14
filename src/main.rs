@@ -1,9 +1,10 @@
-use roxie::{evaluation::init_pesto_table, uci::uci_loop, zobrist::init_zobrist};
+use roxie::{evaluation::init_pesto_table, uci::UCI, zobrist::init_zobrist};
 
 fn main() {
     init_zobrist();
     init_pesto_table();
-    uci_loop();
+    let mut uci = UCI::new();
+    uci.uci_loop();
 }
 
 #[cfg(test)]
