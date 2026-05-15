@@ -516,7 +516,6 @@ impl Board {
         false
     }
 
-
     pub fn in_check(&self) -> bool {
         let color = match self.side_to_move {
             Color::White => Piece::WHITE,
