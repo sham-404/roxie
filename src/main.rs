@@ -15,8 +15,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use roxie::{
-        board::Board, engine::Engine, evaluation::init_pesto_table, perft::perft,
-        search::SearchLimits, zobrist::init_zobrist,
+        board::Board, engine::Engine, perft::perft,
+        search::SearchLimits,
     };
     use std::time::Instant;
 

@@ -96,6 +96,24 @@ pub fn init_magics() {
     BISHOP_ATTACKS.get_or_init(init_bishop_atk);
 }
 
+pub fn get_bishop_move_bits(sq: usize, occ: u64) -> u64 {
+    let occ = occ & BISHOP_MASKS[sq];
+    let shift = 64 - BISHOP_MASKS[sq].count_ones();
+
+    let idx = occ.wrapping_mul(BISHOP_MAGICS[sq]) >> shift;
+
+    BISHOP_ATTACKS.get().unwrap()[sq][idx as usize]
+}
+
+pub fn get_rook_move_bits(sq: usize, occ: u64) -> u64 {
+    let occ = occ & ROOK_MASKS[sq];
+    let shift = 64 - ROOK_MASKS[sq].count_ones();
+
+    let idx = occ.wrapping_mul(ROOK_MAGICS[sq]) >> shift;
+
+    ROOK_ATTACKS.get().unwrap()[sq][idx as usize]
+}
+
 fn get_blocker_occ(index: usize, bits: u32, mut mask: u64) -> u64 {
     let mut occ = 0;
 

@@ -1,21 +1,12 @@
 use crate::r#const::*;
 use crate::evaluation::{GAME_PHASE_VAL, MG_TABLE};
 use crate::items::*;
+use crate::magics::{get_bishop_move_bits, get_rook_move_bits};
 use crate::square::Square;
 use crate::zobrist::{CASTLING_KEYS, ENPASSANT_KEYS, SIDE_KEY, ZOBRIST_TABLE};
 
 pub const ROOK_DIRS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
 pub const BISHOP_DIRS: [(i32, i32); 4] = [(1, 1), (1, -1), (-1, 1), (-1, -1)];
-const QUEEN_DIRS: [(i32, i32); 8] = [
-    (1, 0),
-    (-1, 0),
-    (0, 1),
-    (0, -1),
-    (1, 1),
-    (1, -1),
-    (-1, 1),
-    (-1, -1),
-];
 
 #[inline]
 pub fn pop_lsb(bb: &mut u64) -> Option<usize> {
@@ -738,22 +729,9 @@ impl Board {
         self.gen_king_moves(&mut moves);
         self.gen_knight_moves(&mut moves);
         self.gen_pawn_moves(&mut moves);
-
-        let color = if self.side_to_move == Color::White {
-            Piece::WHITE
-        } else {
-            Piece::BLACK
-        };
-
-        let (bishop_bb, rook_bb, queen_bb) = (
-            self.bb(color | Piece::BISHOP),
-            self.bb(color | Piece::ROOK),
-            self.bb(color | Piece::QUEEN),
-        );
-
-        self.gen_sliding_moves(&mut moves, bishop_bb, &BISHOP_DIRS);
-        self.gen_sliding_moves(&mut moves, rook_bb, &ROOK_DIRS);
-        self.gen_sliding_moves(&mut moves, queen_bb, &QUEEN_DIRS);
+        self.gen_rook_moves(&mut moves);
+        self.gen_bishop_moves(&mut moves);
+        self.gen_queen_moves(&mut moves);
 
         self.gen_castling_moves(&mut moves);
 
@@ -848,15 +826,9 @@ impl Board {
 
         //// Captures of sliding pieces
 
-        let (bishop_bb, rook_bb, queen_bb) = (
-            self.bb(color | Piece::BISHOP),
-            self.bb(color | Piece::ROOK),
-            self.bb(color | Piece::QUEEN),
-        );
-
-        self.gen_sliding_cap_moves(&mut moves, bishop_bb, &BISHOP_DIRS);
-        self.gen_sliding_cap_moves(&mut moves, rook_bb, &ROOK_DIRS);
-        self.gen_sliding_cap_moves(&mut moves, queen_bb, &QUEEN_DIRS);
+        self.gen_bishop_cap_moves(&mut moves);
+        self.gen_queen_cap_moves(&mut moves);
+        self.gen_rook_cap_moves(&mut moves);
 
         self.filter_illegal(&mut moves);
         moves
@@ -1030,79 +1002,171 @@ impl Board {
         }
     }
 
-    pub fn gen_sliding_moves(&self, moves: &mut MoveList, mut bb: u64, directions: &[(i32, i32)]) {
+    fn gen_bishop_moves(&self, moves: &mut MoveList) {
         let own_occ = self.occ(&self.side_to_move);
         let enemy_occ = self.occ(&self.side_to_move.opponent());
+        let all_occ = self.all_occ();
+
+        let color = if self.side_to_move == Color::White {
+            Piece::WHITE
+        } else {
+            Piece::BLACK
+        };
+
+        let bishop = color | Piece::BISHOP;
+        let mut bb = self.bb(bishop);
 
         while let Some(from_idx) = pop_lsb(&mut bb) {
-            let from = Square::new(from_idx);
+            let mut move_bb = get_bishop_move_bits(from_idx, all_occ) & !own_occ;
 
-            for &(dr, df) in directions {
-                let mut sq = from;
+            while let Some(next) = pop_lsb(&mut move_bb) {
+                let to_bb = mask(next);
 
-                while let Some(next) = sq.offset(dr, df) {
-                    let to_bb = mask(next.index());
+                let flag = if to_bb & enemy_occ != 0 {
+                    MoveFlag::CAPTURE
+                } else {
+                    MoveFlag::QUIET
+                };
 
-                    // blocked by own piece
-                    if to_bb & own_occ != 0 {
-                        break;
-                    }
-
-                    let flag = if to_bb & enemy_occ != 0 {
-                        MoveFlag::CAPTURE
-                    } else {
-                        MoveFlag::QUIET
-                    };
-
-                    let mv = Move::new(from_idx, next.index(), flag);
-                    moves.push(mv, self.score_move(mv));
-
-                    // stop after capture
-                    if to_bb & enemy_occ != 0 {
-                        break;
-                    }
-
-                    sq = next;
-                }
+                let mv = Move::new(from_idx, next, flag);
+                moves.push(mv, self.score_move(mv));
             }
         }
     }
 
-    pub fn gen_sliding_cap_moves(
-        &self,
-        moves: &mut MoveList,
-        mut bb: u64,
-        directions: &[(i32, i32)],
-    ) {
+    fn gen_rook_moves(&self, moves: &mut MoveList) {
         let own_occ = self.occ(&self.side_to_move);
         let enemy_occ = self.occ(&self.side_to_move.opponent());
+        let all_occ = self.all_occ();
+
+        let color = if self.side_to_move == Color::White {
+            Piece::WHITE
+        } else {
+            Piece::BLACK
+        };
+
+        let rook = color | Piece::ROOK;
+        let mut bb = self.bb(rook);
 
         while let Some(from_idx) = pop_lsb(&mut bb) {
-            let from = Square::new(from_idx);
+            let mut move_bb = get_rook_move_bits(from_idx, all_occ) & !own_occ;
 
-            for &(dr, df) in directions {
-                let mut sq = from;
+            while let Some(next) = pop_lsb(&mut move_bb) {
+                let to_bb = mask(next);
 
-                while let Some(next) = sq.offset(dr, df) {
-                    let to_bb = mask(next.index());
+                let flag = if to_bb & enemy_occ != 0 {
+                    MoveFlag::CAPTURE
+                } else {
+                    MoveFlag::QUIET
+                };
 
-                    // blocked by own piece
-                    if to_bb & own_occ != 0 {
-                        break;
-                    }
+                let mv = Move::new(from_idx, next, flag);
+                moves.push(mv, self.score_move(mv));
+            }
+        }
+    }
 
-                    if to_bb & enemy_occ != 0 {
-                        let mv = Move::new(from_idx, next.index(), MoveFlag::CAPTURE);
-                        moves.push(mv, self.score_move(mv));
-                    }
+    fn gen_queen_moves(&self, moves: &mut MoveList) {
+        let own_occ = self.occ(&self.side_to_move);
+        let enemy_occ = self.occ(&self.side_to_move.opponent());
+        let all_occ = self.all_occ();
 
-                    // stop after capture
-                    if to_bb & enemy_occ != 0 {
-                        break;
-                    }
+        let color = if self.side_to_move == Color::White {
+            Piece::WHITE
+        } else {
+            Piece::BLACK
+        };
 
-                    sq = next;
-                }
+        let queen = color | Piece::QUEEN;
+        let mut bb = self.bb(queen);
+
+        while let Some(from_idx) = pop_lsb(&mut bb) {
+            let mut move_bb = (get_rook_move_bits(from_idx, all_occ)
+                | get_bishop_move_bits(from_idx, all_occ))
+                & !own_occ;
+
+            while let Some(next) = pop_lsb(&mut move_bb) {
+                let to_bb = mask(next);
+
+                let flag = if to_bb & enemy_occ != 0 {
+                    MoveFlag::CAPTURE
+                } else {
+                    MoveFlag::QUIET
+                };
+
+                let mv = Move::new(from_idx, next, flag);
+                moves.push(mv, self.score_move(mv));
+            }
+        }
+    }
+
+    fn gen_bishop_cap_moves(&self, moves: &mut MoveList) {
+        let enemy_occ = self.occ(&self.side_to_move.opponent());
+        let all_occ = self.all_occ();
+
+        let color = if self.side_to_move == Color::White {
+            Piece::WHITE
+        } else {
+            Piece::BLACK
+        };
+
+        let bishop = color | Piece::BISHOP;
+        let mut bb = self.bb(bishop);
+
+        while let Some(from_idx) = pop_lsb(&mut bb) {
+            let mut move_bb = get_bishop_move_bits(from_idx, all_occ) & enemy_occ;
+
+            while let Some(next) = pop_lsb(&mut move_bb) {
+                let mv = Move::new(from_idx, next, MoveFlag::CAPTURE);
+                moves.push(mv, self.score_move(mv));
+            }
+        }
+    }
+
+    fn gen_rook_cap_moves(&self, moves: &mut MoveList) {
+        let enemy_occ = self.occ(&self.side_to_move.opponent());
+        let all_occ = self.all_occ();
+
+        let color = if self.side_to_move == Color::White {
+            Piece::WHITE
+        } else {
+            Piece::BLACK
+        };
+
+        let rook = color | Piece::ROOK;
+        let mut bb = self.bb(rook);
+
+        while let Some(from_idx) = pop_lsb(&mut bb) {
+            let mut move_bb = get_rook_move_bits(from_idx, all_occ) & enemy_occ;
+
+            while let Some(next) = pop_lsb(&mut move_bb) {
+                let mv = Move::new(from_idx, next, MoveFlag::CAPTURE);
+                moves.push(mv, self.score_move(mv));
+            }
+        }
+    }
+
+    fn gen_queen_cap_moves(&self, moves: &mut MoveList) {
+        let enemy_occ = self.occ(&self.side_to_move.opponent());
+        let all_occ = self.all_occ();
+
+        let color = if self.side_to_move == Color::White {
+            Piece::WHITE
+        } else {
+            Piece::BLACK
+        };
+
+        let queen = color | Piece::QUEEN;
+        let mut bb = self.bb(queen);
+
+        while let Some(from_idx) = pop_lsb(&mut bb) {
+            let mut move_bb = (get_rook_move_bits(from_idx, all_occ)
+                | get_bishop_move_bits(from_idx, all_occ))
+                & enemy_occ;
+
+            while let Some(next) = pop_lsb(&mut move_bb) {
+                let mv = Move::new(from_idx, next, MoveFlag::CAPTURE);
+                moves.push(mv, self.score_move(mv));
             }
         }
     }
