@@ -1,8 +1,13 @@
-use roxie::{evaluation::init_pesto_table, uci::UCI, zobrist::init_zobrist};
+use roxie::{evaluation::init_pesto_table, magics::init_magics, uci::UCI, zobrist::init_zobrist};
 
-fn main() {
+fn init_all() {
     init_zobrist();
     init_pesto_table();
+    init_magics();
+}
+
+fn main() {
+    init_all();
     let mut uci = UCI::new();
     uci.uci_loop();
 }
@@ -15,10 +20,11 @@ mod tests {
     };
     use std::time::Instant;
 
+    use crate::init_all;
+
     #[test]
     fn analysis() {
-        init_zobrist();
-        init_pesto_table();
+        init_all();
 
         let mut engine: Engine = Engine::new();
         // startpos perft evaluation
@@ -80,8 +86,7 @@ mod tests {
 
     #[test]
     fn search() {
-        init_zobrist();
-        init_pesto_table();
+        init_all();
         let mut engine = Engine::new();
         engine.board =
             Board::load_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ");
@@ -128,8 +133,7 @@ mod tests {
 
     #[test]
     fn qperft_test() {
-        init_zobrist();
-        init_pesto_table();
+        init_all();
         let fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
 
         let mut board = Board::load_fen(fen);

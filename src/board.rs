@@ -4,8 +4,8 @@ use crate::items::*;
 use crate::square::Square;
 use crate::zobrist::{CASTLING_KEYS, ENPASSANT_KEYS, SIDE_KEY, ZOBRIST_TABLE};
 
-const ROOK_DIRS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
-const BISHOP_DIRS: [(i32, i32); 4] = [(1, 1), (1, -1), (-1, 1), (-1, -1)];
+pub const ROOK_DIRS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+pub const BISHOP_DIRS: [(i32, i32); 4] = [(1, 1), (1, -1), (-1, 1), (-1, -1)];
 const QUEEN_DIRS: [(i32, i32); 8] = [
     (1, 0),
     (-1, 0),

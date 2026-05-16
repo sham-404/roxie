@@ -1,46 +1,9 @@
 use std::sync::OnceLock;
 
-// Path of the ROOK
-#[rustfmt::skip]
-const ROOK_RAYS: [u64; 64] = [
-    0x1010101010101fe,  0x2020202020202fd,  0x4040404040404fb,  0x8080808080808f7,
-    0x10101010101010ef, 0x20202020202020df, 0x40404040404040bf, 0x808080808080807f,
-    0x10101010101fe01,  0x20202020202fd02,  0x40404040404fb04,  0x80808080808f708,
-    0x101010101010ef10, 0x202020202020df20, 0x404040404040bf40, 0x8080808080807f80,
-    0x101010101fe0101,  0x202020202fd0202,  0x404040404fb0404,  0x808080808f70808,
-    0x1010101010ef1010, 0x2020202020df2020, 0x4040404040bf4040, 0x80808080807f8080,
-    0x1010101fe010101,  0x2020202fd020202,  0x4040404fb040404,  0x8080808f7080808,
-    0x10101010ef101010, 0x20202020df202020, 0x40404040bf404040, 0x808080807f808080,
-    0x10101fe01010101,  0x20202fd02020202,  0x40404fb04040404,  0x80808f708080808,
-    0x101010ef10101010, 0x202020df20202020, 0x404040bf40404040, 0x8080807f80808080,
-    0x101fe0101010101,  0x202fd0202020202,  0x404fb0404040404,  0x808f70808080808,
-    0x1010ef1010101010, 0x2020df2020202020, 0x4040bf4040404040, 0x80807f8080808080,
-    0x1fe010101010101,  0x2fd020202020202,  0x4fb040404040404,  0x8f7080808080808,
-    0x10ef101010101010, 0x20df202020202020, 0x40bf404040404040, 0x807f808080808080,
-    0xfe01010101010101, 0xfd02020202020202, 0xfb04040404040404, 0xf708080808080808,
-    0xef10101010101010, 0xdf20202020202020, 0xbf40404040404040, 0x7f80808080808080,
-];
-
-// Path of the BISHOP
-#[rustfmt::skip]
-const BISHOP_RAYS: [u64; 64] = [
-    0x8040201008040200, 0x80402010080500,   0x804020110a00,     0x8041221400,
-    0x182442800,        0x10204885000,      0x102040810a000,    0x102040810204000,
-    0x4020100804020002, 0x8040201008050005, 0x804020110a000a,   0x804122140014,
-    0x18244280028,      0x1020488500050,    0x102040810a000a0,  0x204081020400040,
-    0x2010080402000204, 0x4020100805000508, 0x804020110a000a11, 0x80412214001422,
-    0x1824428002844,    0x102048850005088,  0x2040810a000a010,  0x408102040004020,
-    0x1008040200020408, 0x2010080500050810, 0x4020110a000a1120, 0x8041221400142241,
-    0x182442800284482,  0x204885000508804,  0x40810a000a01008,  0x810204000402010,
-    0x804020002040810,  0x1008050005081020, 0x20110a000a112040, 0x4122140014224180,
-    0x8244280028448201, 0x488500050880402,  0x810a000a0100804,  0x1020400040201008,
-    0x402000204081020,  0x805000508102040,  0x110a000a11204080, 0x2214001422418000,
-    0x4428002844820100, 0x8850005088040201, 0x10a000a010080402, 0x2040004020100804,
-    0x200020408102040,  0x500050810204080,  0xa000a1120408000,  0x1400142241800000,
-    0x2800284482010000, 0x5000508804020100, 0xa000a01008040201, 0x4000402010080402,
-    0x2040810204080,    0x5081020408000,    0xa112040800000,    0x14224180000000,
-    0x28448201000000,   0x50880402010000,   0xa0100804020100,   0x40201008040201,
-];
+use crate::{
+    board::{BISHOP_DIRS, ROOK_DIRS, mask},
+    square::Square,
+};
 
 // Mask needed for magic indexing for rook
 #[rustfmt::skip]
@@ -125,5 +88,115 @@ pub const BISHOP_MAGICS: [u64; 64] = [
     0x0000000010020200, 0x0000000404080200, 0x0000040404040400, 0x0002020202020200,
 ];
 
-pub static ROOK_ATTACKS: OnceLock<[[u64; 4096]; 64]> = OnceLock::new();
-pub static BISHOP_ATTACKS: OnceLock<[[u64; 512]; 64]> = OnceLock::new();
+pub static ROOK_ATTACKS: OnceLock<Vec<Vec<u64>>> = OnceLock::new();
+pub static BISHOP_ATTACKS: OnceLock<Vec<Vec<u64>>> = OnceLock::new();
+
+pub fn init_magics() {
+    ROOK_ATTACKS.get_or_init(init_rook_atk);
+    BISHOP_ATTACKS.get_or_init(init_bishop_atk);
+}
+
+fn get_blocker_occ(index: usize, bits: u32, mut mask: u64) -> u64 {
+    let mut occ = 0;
+
+    for i in 0..bits {
+        // getting the sq idx from the mask
+        let sq = mask.trailing_zeros();
+
+        // flipping the lsb to 0
+        mask &= mask - 1;
+
+        // checking whether the idx is mapped with the cur mask bit and
+        // updating the occ accodingly
+        if index & (1 << i) != 0 {
+            occ |= 1u64 << sq;
+        }
+    }
+    occ
+}
+
+fn init_rook_atk() -> Vec<Vec<u64>> {
+    let mut table: Vec<Vec<u64>> = Vec::new();
+
+    for sq in 0..64 {
+        let relevant_bits = ROOK_MASKS[sq].count_ones();
+        let occ_count = 1 << relevant_bits; // total no of possible configurations of blockers
+        table.push(vec![0; occ_count]);
+
+        for index in 0..occ_count {
+            let blocker = get_blocker_occ(index, relevant_bits, ROOK_MASKS[sq]);
+
+            let move_bits = gen_rook_moves(sq, blocker);
+
+            let magic_idx = blocker.wrapping_mul(ROOK_MAGICS[sq]) >> (64 - relevant_bits);
+            table[sq][magic_idx as usize] = move_bits;
+        }
+    }
+    table
+}
+
+fn init_bishop_atk() -> Vec<Vec<u64>> {
+    let mut table: Vec<Vec<u64>> = Vec::new();
+
+    for sq in 0..64 {
+        let relevant_bits = BISHOP_MASKS[sq].count_ones();
+        let occ_count = 1 << relevant_bits;
+        table.push(vec![0; occ_count]);
+
+        for index in 0..occ_count {
+            let blocker = get_blocker_occ(index, relevant_bits, BISHOP_MASKS[sq]);
+
+            let move_bits = gen_bishop_moves(sq, blocker);
+
+            let magic_idx = blocker.wrapping_mul(BISHOP_MAGICS[sq]) >> (64 - relevant_bits);
+            table[sq][magic_idx as usize] = move_bits;
+        }
+    }
+    table
+}
+
+fn gen_rook_moves(sq_idx: usize, blockers: u64) -> u64 {
+    let mut move_bits = 0;
+    let from = Square::new(sq_idx);
+
+    for &(dr, df) in &ROOK_DIRS {
+        let mut sq = from;
+        while let Some(next) = sq.offset(dr, df) {
+            let to_bb = mask(next.index());
+
+            if to_bb & blockers != 0 {
+                move_bits |= to_bb;
+                break;
+            }
+
+            move_bits |= to_bb;
+
+            sq = next;
+        }
+    }
+
+    move_bits
+}
+
+fn gen_bishop_moves(sq_idx: usize, blockers: u64) -> u64 {
+    let mut move_bits = 0;
+    let from = Square::new(sq_idx);
+
+    for &(dr, df) in &BISHOP_DIRS {
+        let mut sq = from;
+        while let Some(next) = sq.offset(dr, df) {
+            let to_bb = mask(next.index());
+
+            if to_bb & blockers != 0 {
+                move_bits |= to_bb;
+                break;
+            }
+
+            move_bits |= to_bb;
+
+            sq = next;
+        }
+    }
+
+    move_bits
+}
