@@ -155,12 +155,24 @@ impl Engine {
             return self.quiescence(alpha, beta, ply, info, limits);
         }
 
+        let in_check = self.board.in_check();
+        let static_eval = evaluate(&self.board); // static evaluation
+
+        ///// Reverse Futility Pruning (Static Null Move Pruning)
+        if !in_check && depth <= 4 && beta.abs() < INF - 1000 {
+            let margin = depth as i32 * 120; // 120 cp per depth as margin
+
+            if static_eval - margin >= beta {
+                return static_eval; // Immediate static beta cutoff
+            }
+        }
+
         let mut move_list = self.board.gen_moves();
         let original_alpha = alpha;
 
         // checking mates
         if move_list.len() == 0 {
-            return if self.board.in_check() { -INF + ply } else { 0 };
+            return if in_check { -INF + ply } else { 0 };
         }
 
         // NULL move pruning
@@ -172,6 +184,32 @@ impl Engine {
         let mut best_move_this_node = Move::NULL;
 
         for (mv_idx, mv) in move_list.with_ordering(tt_move, &self.board).enumerate() {
+            let flag = mv.flag();
+            let is_capture = flag.is_capture();
+            let is_promo = flag.is_promo();
+
+            // Futility Pruning
+            if depth == 1 
+                && mv_idx > 0
+                && !is_capture 
+                && !is_promo 
+                && !in_check 
+            {
+                // If static eval + 150 margin can't even beat alpha,
+                // this quiet move is highly unlikely to change the node status.
+                if static_eval + 150 <= alpha {
+                    // We must verify the move doesn't give a check before skipping it
+                    // for safeplay
+                    let undo = self.board.make_move(&mv);
+                    let gives_check = self.board.in_check();
+                    self.board.unmake_move(&mv, &undo);
+
+                    if !gives_check {
+                        continue;
+                    }
+                }
+            }
+
             let undo = self.board.make_move(&mv);
             // Late Move Reduction (LMR)
             let eval = self.lmr_search(&mv, mv_idx, depth, alpha, beta, ply, limits, info);
