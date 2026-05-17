@@ -52,7 +52,7 @@ impl Engine {
                 tt_move = entry.best_move;
             }
 
-            for mv in move_list.with_ordering(tt_move) {
+            for mv in move_list.with_ordering(tt_move, &self.board) {
                 let undo = self.board.make_move(&mv);
                 let score = -self.negamax(d - 1, -INF, INF, 1, &limits, &mut info);
                 self.board.unmake_move(&mv, &undo);
@@ -171,7 +171,7 @@ impl Engine {
         let mut max_eval = -INF;
         let mut best_move_this_node = Move::NULL;
 
-        for (mv_idx, mv) in move_list.with_ordering(tt_move).enumerate() {
+        for (mv_idx, mv) in move_list.with_ordering(tt_move, &self.board).enumerate() {
             let undo = self.board.make_move(&mv);
             // Late Move Reduction (LMR)
             let eval = self.lmr_search(&mv, mv_idx, depth, alpha, beta, ply, limits, info);
@@ -358,7 +358,7 @@ impl Engine {
             tt_move = entry.best_move;
         }
 
-        for mv in move_list.with_ordering(tt_move) {
+        for mv in move_list.with_ordering(tt_move, &self.board) {
             // soft delta pruning
             if !in_check {
                 if self.board.see(&mv) < -75 && !mv.flag().is_promo() {

@@ -14,10 +14,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use roxie::{
-        board::Board, engine::Engine, perft::perft,
-        search::SearchLimits,
-    };
+    use roxie::{board::Board, engine::Engine, perft::perft, search::SearchLimits};
     use std::time::Instant;
 
     use crate::init_all;

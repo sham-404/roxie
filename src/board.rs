@@ -758,7 +758,7 @@ impl Board {
 
             while let Some(to) = pop_lsb(&mut atk) {
                 let mv = Move::new(from, to, MoveFlag::CAPTURE);
-                moves.push(mv, self.score_move(mv));
+                moves.push(mv);
             }
         }
 
@@ -773,7 +773,7 @@ impl Board {
 
             while let Some(to) = pop_lsb(&mut atk) {
                 let mv = Move::new(from, to, MoveFlag::CAPTURE);
-                moves.push(mv, self.score_move(mv));
+                moves.push(mv);
             }
         }
 
@@ -800,7 +800,7 @@ impl Board {
                 if let Some(sq) = self.en_passant {
                     if sq as usize == to {
                         let mv = Move::new(from, to, MoveFlag::EN_PASSANT);
-                        moves.push(mv, self.score_move(mv));
+                        moves.push(mv);
                         continue;
                     }
                 }
@@ -812,14 +812,13 @@ impl Board {
                     let m_r = Move::new(from, to, MoveFlag::PROMO_CAP_ROOK);
                     let m_b = Move::new(from, to, MoveFlag::PROMO_CAP_BISHOP);
 
-                    // Score: Base for Capture-Promo (20k) + MVV-LVA + Promo Piece Value
-                    moves.push(m_q, (20000 + self.score_move(m_q) + 900) as u16);
-                    moves.push(m_n, (20000 + self.score_move(m_n) + 320) as u16);
-                    moves.push(m_r, (20000 + self.score_move(m_r) + 500) as u16);
-                    moves.push(m_b, (20000 + self.score_move(m_b) + 330) as u16);
+                    moves.push(m_q);
+                    moves.push(m_n);
+                    moves.push(m_r);
+                    moves.push(m_b);
                 } else {
                     let mv = Move::new(from, to, MoveFlag::CAPTURE);
-                    moves.push(mv, self.score_move(mv));
+                    moves.push(mv);
                 }
             }
         }
@@ -859,7 +858,7 @@ impl Board {
                 };
 
                 let mv = Move::new(from, to, flag);
-                moves.push(mv, self.score_move(mv));
+                moves.push(mv);
             }
         }
     }
@@ -889,7 +888,7 @@ impl Board {
                 };
 
                 let mv = Move::new(from, to, flag);
-                moves.push(mv, self.score_move(mv));
+                moves.push(mv);
             }
         }
     }
@@ -941,13 +940,13 @@ impl Board {
                 let m_rook = Move::new(from, to, MoveFlag::PROMO_ROOK);
                 let m_bishop = Move::new(from, to, MoveFlag::PROMO_BISHOP);
 
-                moves.push(m_queen, self.score_move(m_queen) + 900);
-                moves.push(m_knight, self.score_move(m_knight) + 300);
-                moves.push(m_rook, self.score_move(m_rook) + 500);
-                moves.push(m_bishop, self.score_move(m_bishop) + 330);
+                moves.push(m_queen);
+                moves.push(m_knight);
+                moves.push(m_rook);
+                moves.push(m_bishop);
             } else {
                 let mv = Move::new(from, to, MoveFlag::QUIET);
-                moves.push(mv, self.score_move(mv));
+                moves.push(mv);
             }
         }
 
@@ -955,7 +954,7 @@ impl Board {
         while let Some(to) = pop_lsb(&mut double) {
             let from = (to as i8 - (2 * dir)) as usize;
             let mv = Move::new(from, to, MoveFlag::DOUBLE_PUSH);
-            moves.push(mv, self.score_move(mv));
+            moves.push(mv);
         }
 
         // Captures
@@ -976,7 +975,7 @@ impl Board {
                 if let Some(sq) = self.en_passant {
                     if sq as usize == to {
                         let mv = Move::new(from, to, MoveFlag::EN_PASSANT);
-                        moves.push(mv, self.score_move(mv));
+                        moves.push(mv);
                         continue;
                     }
                 }
@@ -989,14 +988,13 @@ impl Board {
                     let m_r = Move::new(from, to, MoveFlag::PROMO_CAP_ROOK);
                     let m_b = Move::new(from, to, MoveFlag::PROMO_CAP_BISHOP);
 
-                    // Score: Base for Capture-Promo (20k) + MVV-LVA + Promo Piece Value
-                    moves.push(m_q, (20000 + self.score_move(m_q) + 900) as u16);
-                    moves.push(m_n, (20000 + self.score_move(m_n) + 320) as u16);
-                    moves.push(m_r, (20000 + self.score_move(m_r) + 500) as u16);
-                    moves.push(m_b, (20000 + self.score_move(m_b) + 330) as u16);
+                    moves.push(m_q);
+                    moves.push(m_n);
+                    moves.push(m_r);
+                    moves.push(m_b);
                 } else {
                     let mv = Move::new(from, to, MoveFlag::CAPTURE);
-                    moves.push(mv, self.score_move(mv));
+                    moves.push(mv);
                 }
             }
         }
@@ -1029,7 +1027,7 @@ impl Board {
                 };
 
                 let mv = Move::new(from_idx, next, flag);
-                moves.push(mv, self.score_move(mv));
+                moves.push(mv);
             }
         }
     }
@@ -1061,7 +1059,7 @@ impl Board {
                 };
 
                 let mv = Move::new(from_idx, next, flag);
-                moves.push(mv, self.score_move(mv));
+                moves.push(mv);
             }
         }
     }
@@ -1095,7 +1093,7 @@ impl Board {
                 };
 
                 let mv = Move::new(from_idx, next, flag);
-                moves.push(mv, self.score_move(mv));
+                moves.push(mv);
             }
         }
     }
@@ -1118,7 +1116,7 @@ impl Board {
 
             while let Some(next) = pop_lsb(&mut move_bb) {
                 let mv = Move::new(from_idx, next, MoveFlag::CAPTURE);
-                moves.push(mv, self.score_move(mv));
+                moves.push(mv);
             }
         }
     }
@@ -1141,7 +1139,7 @@ impl Board {
 
             while let Some(next) = pop_lsb(&mut move_bb) {
                 let mv = Move::new(from_idx, next, MoveFlag::CAPTURE);
-                moves.push(mv, self.score_move(mv));
+                moves.push(mv);
             }
         }
     }
@@ -1166,7 +1164,7 @@ impl Board {
 
             while let Some(next) = pop_lsb(&mut move_bb) {
                 let mv = Move::new(from_idx, next, MoveFlag::CAPTURE);
-                moves.push(mv, self.score_move(mv));
+                moves.push(mv);
             }
         }
     }
@@ -1192,12 +1190,12 @@ impl Board {
 
         if ks_rights && self.can_castle_kingside(king_pos, &color) {
             let mv = Move::new(king_pos, king_pos + 2, MoveFlag::KING_CASTLE);
-            moves.push(mv, self.score_move(mv));
+            moves.push(mv);
         }
 
         if qs_rights && self.can_castle_queenside(king_pos, &color) {
             let mv = Move::new(king_pos, king_pos - 2, MoveFlag::QUEEN_CASTLE);
-            moves.push(mv, self.score_move(mv));
+            moves.push(mv);
         }
     }
 

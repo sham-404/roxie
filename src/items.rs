@@ -330,10 +330,9 @@ impl MoveList {
     }
 
     #[inline]
-    pub fn push(&mut self, mv: Move, score: u16) {
+    pub fn push(&mut self, mv: Move) {
         debug_assert!(self.len < MAX_MOVES);
         self.moves[self.len] = mv;
-        self.score[self.len] = score;
         self.len += 1;
     }
 
@@ -355,14 +354,15 @@ impl MoveList {
     }
 
     #[inline]
-    pub fn with_ordering(&mut self, tt_move: Move) -> MoveIter<'_> {
-        if tt_move != Move::NULL {
-            for i in 0..self.len {
-                if self.moves[i] == tt_move {
-                    // Give it a score higher than any possible capture/promotion
-                    self.score[i] = 65535;
-                    break;
-                }
+    pub fn with_ordering(&mut self, tt_move: Move, board: &Board) -> MoveIter<'_> {
+        for i in 0..self.len {
+            let mv = self.moves[i];
+
+            if mv == tt_move {
+                // Give it a score higher than any possible capture/promotion
+                self.score[i] = 65535;
+            } else {
+                self.score[i] = board.score_move(mv);
             }
         }
 
