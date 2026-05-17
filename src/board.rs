@@ -747,13 +747,15 @@ impl Board {
             Piece::BLACK
         };
 
+        let all_occ = self.all_occ();
+        let opp_occ = self.occ(&self.side_to_move.opponent());
+
         //// Captures of King
 
         let king = color | Piece::KING;
         let mut bb = self.bb(king);
 
         while let Some(from) = pop_lsb(&mut bb) {
-            let opp_occ = self.occ(&self.side_to_move().opponent());
             let mut atk = KING_ATTACKS[from] & opp_occ;
 
             while let Some(to) = pop_lsb(&mut atk) {
@@ -768,7 +770,6 @@ impl Board {
         let mut bb = self.bb(knight);
 
         while let Some(from) = pop_lsb(&mut bb) {
-            let opp_occ = self.occ(&self.side_to_move().opponent());
             let mut atk = KNIGHT_ATTACKS[from] & opp_occ;
 
             while let Some(to) = pop_lsb(&mut atk) {
@@ -784,13 +785,12 @@ impl Board {
             Color::Black => (Piece::BLACK | Piece::PAWN, RANK1, BLACK_PAWN_ATTACKS),
         };
         let mut pawn_bb = self.bb(pawn);
-        let enemy = self.occ(&self.side_to_move.opponent());
 
         while let Some(from) = pop_lsb(&mut pawn_bb) {
             // To include en_passant sq, as there wont be any enemy there
             let target = match self.en_passant {
-                Some(sq) => enemy | mask(sq as usize),
-                None => enemy,
+                Some(sq) => opp_occ | mask(sq as usize),
+                None => opp_occ,
             };
 
             let mut atk = attacks[from] & target;
@@ -823,11 +823,47 @@ impl Board {
             }
         }
 
-        //// Captures of sliding pieces
+        //// Captures of bishop
+        let bishop = color | Piece::BISHOP;
+        let mut bb = self.bb(bishop);
 
-        self.gen_bishop_cap_moves(&mut moves);
-        self.gen_queen_cap_moves(&mut moves);
-        self.gen_rook_cap_moves(&mut moves);
+        while let Some(from_idx) = pop_lsb(&mut bb) {
+            let mut move_bb = get_bishop_move_bits(from_idx, all_occ) & opp_occ;
+
+            while let Some(next) = pop_lsb(&mut move_bb) {
+                let mv = Move::new(from_idx, next, MoveFlag::CAPTURE);
+                moves.push(mv);
+            }
+        }
+
+        // Captures of rook
+        let rook = color | Piece::ROOK;
+        let mut bb = self.bb(rook);
+
+        while let Some(from_idx) = pop_lsb(&mut bb) {
+            let mut move_bb = get_rook_move_bits(from_idx, all_occ) & opp_occ;
+
+            while let Some(next) = pop_lsb(&mut move_bb) {
+                let mv = Move::new(from_idx, next, MoveFlag::CAPTURE);
+                moves.push(mv);
+            }
+        }
+
+        // Captures of queen
+        let queen = color | Piece::QUEEN;
+        let mut bb = self.bb(queen);
+
+        while let Some(from_idx) = pop_lsb(&mut bb) {
+            let mut move_bb = (get_rook_move_bits(from_idx, all_occ)
+                | get_bishop_move_bits(from_idx, all_occ))
+                & opp_occ;
+
+            while let Some(next) = pop_lsb(&mut move_bb) {
+                let mv = Move::new(from_idx, next, MoveFlag::CAPTURE);
+                moves.push(mv);
+            }
+        }
+
 
         self.filter_illegal(&mut moves);
         moves
@@ -1093,77 +1129,6 @@ impl Board {
                 };
 
                 let mv = Move::new(from_idx, next, flag);
-                moves.push(mv);
-            }
-        }
-    }
-
-    fn gen_bishop_cap_moves(&self, moves: &mut MoveList) {
-        let enemy_occ = self.occ(&self.side_to_move.opponent());
-        let all_occ = self.all_occ();
-
-        let color = if self.side_to_move == Color::White {
-            Piece::WHITE
-        } else {
-            Piece::BLACK
-        };
-
-        let bishop = color | Piece::BISHOP;
-        let mut bb = self.bb(bishop);
-
-        while let Some(from_idx) = pop_lsb(&mut bb) {
-            let mut move_bb = get_bishop_move_bits(from_idx, all_occ) & enemy_occ;
-
-            while let Some(next) = pop_lsb(&mut move_bb) {
-                let mv = Move::new(from_idx, next, MoveFlag::CAPTURE);
-                moves.push(mv);
-            }
-        }
-    }
-
-    fn gen_rook_cap_moves(&self, moves: &mut MoveList) {
-        let enemy_occ = self.occ(&self.side_to_move.opponent());
-        let all_occ = self.all_occ();
-
-        let color = if self.side_to_move == Color::White {
-            Piece::WHITE
-        } else {
-            Piece::BLACK
-        };
-
-        let rook = color | Piece::ROOK;
-        let mut bb = self.bb(rook);
-
-        while let Some(from_idx) = pop_lsb(&mut bb) {
-            let mut move_bb = get_rook_move_bits(from_idx, all_occ) & enemy_occ;
-
-            while let Some(next) = pop_lsb(&mut move_bb) {
-                let mv = Move::new(from_idx, next, MoveFlag::CAPTURE);
-                moves.push(mv);
-            }
-        }
-    }
-
-    fn gen_queen_cap_moves(&self, moves: &mut MoveList) {
-        let enemy_occ = self.occ(&self.side_to_move.opponent());
-        let all_occ = self.all_occ();
-
-        let color = if self.side_to_move == Color::White {
-            Piece::WHITE
-        } else {
-            Piece::BLACK
-        };
-
-        let queen = color | Piece::QUEEN;
-        let mut bb = self.bb(queen);
-
-        while let Some(from_idx) = pop_lsb(&mut bb) {
-            let mut move_bb = (get_rook_move_bits(from_idx, all_occ)
-                | get_bishop_move_bits(from_idx, all_occ))
-                & enemy_occ;
-
-            while let Some(next) = pop_lsb(&mut move_bb) {
-                let mv = Move::new(from_idx, next, MoveFlag::CAPTURE);
                 moves.push(mv);
             }
         }
