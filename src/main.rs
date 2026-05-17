@@ -97,7 +97,7 @@ mod tests {
         let nps = (data.nodes as f64 / secs) as u64;
 
         println!(
-            "search depth {} (startpos): nodes searched={} time={:.5}s nps={}",
+            "search depth {} (kiwipete): nodes searched={} time={:.5}s nps={}",
             depth, data.nodes, secs, nps
         );
     }
