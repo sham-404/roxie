@@ -1,4 +1,4 @@
-use std::sync::OnceLock;
+use std::sync::{LazyLock};
 
 use crate::{
     board::{BISHOP_DIRS, ROOK_DIRS, mask},
@@ -88,30 +88,77 @@ pub const BISHOP_MAGICS: [u64; 64] = [
     0x0000000010020200, 0x0000000404080200, 0x0000040404040400, 0x0002020202020200,
 ];
 
-pub static ROOK_ATTACKS: OnceLock<Vec<Vec<u64>>> = OnceLock::new();
-pub static BISHOP_ATTACKS: OnceLock<Vec<Vec<u64>>> = OnceLock::new();
+pub static ROOK_ATTACKS: LazyLock<Vec<Vec<u64>>> = LazyLock::new(init_rook_atk);
+pub static BISHOP_ATTACKS: LazyLock<Vec<Vec<u64>>> = LazyLock::new(init_bishop_atk);
 
-pub fn init_magics() {
-    ROOK_ATTACKS.get_or_init(init_rook_atk);
-    BISHOP_ATTACKS.get_or_init(init_bishop_atk);
+pub static BISHOP_MAGIC_STORE: LazyLock<[Magic; 64]> = LazyLock::new(|| {
+    let mut magics = [Magic {
+        mask: 0,
+        multiplier: 0,
+        shift: 0,
+    }; 64];
+
+    for sq in 0..64 {
+        let multiplier = BISHOP_MAGICS[sq];
+        let mask = BISHOP_MASKS[sq];
+        let shift = 64 - BISHOP_MASKS[sq].count_ones() as u8;
+
+        magics[sq] = Magic {
+            multiplier,
+            mask,
+            shift,
+        };
+    }
+    magics
+});
+
+pub static ROOK_MAGIC_STORE: LazyLock<[Magic; 64]> = LazyLock::new(|| {
+    let mut magics = [Magic {
+        mask: 0,
+        multiplier: 0,
+        shift: 0,
+    }; 64];
+
+    for sq in 0..64 {
+        let multiplier = ROOK_MAGICS[sq];
+        let mask = ROOK_MASKS[sq];
+        let shift = 64 - ROOK_MASKS[sq].count_ones() as u8;
+
+        magics[sq] = Magic {
+            multiplier,
+            mask,
+            shift,
+        };
+    }
+    magics
+});
+
+#[derive(Clone, Copy)]
+pub struct Magic {
+    pub multiplier: u64,
+    pub mask: u64,
+    pub shift: u8,
+}
+
+impl Magic {
+    #[inline]
+    pub fn index(&self, occ: u64) -> usize {
+        ((occ & self.mask).wrapping_mul(self.multiplier) >> self.shift) as usize
+    }
 }
 
 pub fn get_bishop_move_bits(sq: usize, occ: u64) -> u64 {
-    let occ = occ & BISHOP_MASKS[sq];
-    let shift = 64 - BISHOP_MASKS[sq].count_ones();
+    let magic = &BISHOP_MAGIC_STORE[sq];
+    let idx = magic.index(occ);
 
-    let idx = occ.wrapping_mul(BISHOP_MAGICS[sq]) >> shift;
-
-    BISHOP_ATTACKS.get().unwrap()[sq][idx as usize]
+    BISHOP_ATTACKS[sq][idx as usize]
 }
 
 pub fn get_rook_move_bits(sq: usize, occ: u64) -> u64 {
-    let occ = occ & ROOK_MASKS[sq];
-    let shift = 64 - ROOK_MASKS[sq].count_ones();
+    let magic = &ROOK_MAGIC_STORE[sq];
+    let idx = magic.index(occ);
 
-    let idx = occ.wrapping_mul(ROOK_MAGICS[sq]) >> shift;
-
-    ROOK_ATTACKS.get().unwrap()[sq][idx as usize]
+    ROOK_ATTACKS[sq][idx as usize]
 }
 
 fn get_blocker_occ(index: usize, bits: u32, mut mask: u64) -> u64 {

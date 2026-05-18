@@ -1,9 +1,8 @@
-use roxie::{evaluation::init_pesto_table, magics::init_magics, uci::UCI, zobrist::init_zobrist};
+use roxie::{evaluation::init_pesto_table, uci::UCI, zobrist::init_zobrist};
 
 fn init_all() {
     init_zobrist();
     init_pesto_table();
-    init_magics();
 }
 
 fn main() {
