@@ -864,7 +864,6 @@ impl Board {
             }
         }
 
-
         self.filter_illegal(&mut moves);
         moves
     }
@@ -1239,48 +1238,75 @@ impl Board {
     }
 
     pub fn score_move(&self, mv: Move) -> u16 {
+        // ORDERING BASE SCORES USED
+        // TT move            : 65535 (handled on ordering)
+        // winning captures   : 50000
+        // equal captures     : 40000
+        // killers            : (not yet implemented)
+        // promotions         : 30000
+        // quiets and castles : 10000
+        // bad captures       : 0
+
         let flag = mv.flag();
         let from = mv.from();
         let to = mv.to();
 
+        // Captures
         if flag.is_capture() {
             let attacker = self.piece_on(from);
             let victim = self.piece_on(to);
 
+            // En passant
             if victim == Piece::NONE {
                 debug_assert!(flag == MoveFlag::EN_PASSANT);
-                // the move is an En passant
-                return 10900;
+                return 45000;
             }
 
-            // MVV-LVA logic
             let v_val = self.get_value(victim);
             let a_val = self.get_value(attacker);
-            let mut score = 10000 + ((v_val * 10) - a_val) as u16;
 
+            // MVV-LVA
+            let mvv_lva = ((v_val * 10) - a_val) as u16;
+
+            let mut score = mvv_lva;
+
+            // Promotions updation
             if flag.is_promo() {
-                score += 20000 + flag.get_promo_value();
+                score += 8000 + flag.get_promo_value();
             }
 
+            let see_score = self.see(&mv);
+
+            // Winning capture
+            if see_score > 0 {
+                return 50000 + score + see_score as u16;
+            }
+
+            // Equal capture
+            if see_score == 0 {
+                return 40000 + score;
+            }
+
+            // Losing capture
             return score;
         }
 
+        // Promotions
         if flag.is_promo() {
-            return 9000 + flag.get_promo_value();
+            return 30000 + flag.get_promo_value();
         }
 
-        if flag.is_castle() {
-            return 1000;
-        }
-
+        // Quiets and castles
         let attacker = self.piece_on(from);
         let p_idx = Piece::to_idx(attacker);
+
         if let Some(mg_table) = MG_TABLE.get() {
-            let p_score = mg_table[p_idx][to] - mg_table[p_idx][from];
-            return (5000 + p_score).max(0) as u16;
+            let pst_delta = mg_table[p_idx][to] - mg_table[p_idx][from];
+
+            return (10000 + pst_delta).max(0) as u16;
         }
 
-        0
+        10000
     }
 
     fn get_value(&self, piece: PieceInfo) -> i32 {
