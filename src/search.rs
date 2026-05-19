@@ -189,12 +189,7 @@ impl Engine {
             let is_promo = flag.is_promo();
 
             // Futility Pruning
-            if depth == 1 
-                && mv_idx > 0
-                && !is_capture 
-                && !is_promo 
-                && !in_check 
-            {
+            if depth == 1 && mv_idx > 0 && !is_capture && !is_promo && !in_check {
                 // If static eval + 150 margin can't even beat alpha,
                 // this quiet move is highly unlikely to change the node status.
                 if static_eval + 150 <= alpha {
@@ -212,7 +207,7 @@ impl Engine {
 
             let undo = self.board.make_move(&mv);
             // Late Move Reduction (LMR)
-            let eval = self.lmr_search(&mv, mv_idx, depth, alpha, beta, ply, limits, info);
+            let eval = self.pv_search(&mv, mv_idx, depth, alpha, beta, ply, limits, info);
 
             self.board.unmake_move(&mv, &undo);
 
@@ -292,7 +287,7 @@ impl Engine {
         None
     }
 
-    fn lmr_search(
+    fn pv_search(
         &mut self,
         mv: &Move,
         mv_idx: usize,
@@ -303,36 +298,53 @@ impl Engine {
         limits: &SearchLimits,
         info: &mut SearchInfo,
     ) -> i32 {
+        // searching first move with full window
+        if mv_idx == 0 {
+            return -self.negamax(depth - 1, -beta, -alpha, ply + 1, limits, info);
+        }
+
         let in_check = self.board.in_check();
 
-        // Check if move is eligible for LMR
-        if mv_idx > 3 && depth > 4 && !in_check && !mv.flag().is_capture() && !mv.flag().is_promo()
-        {
-            let mut reduction = 1 + (mv_idx as u16 / 4) + (depth / 6);
+        // checking whether lmr is applicable
+        let can_reduce = mv_idx > 3
+            && depth > 4
+            && !in_check
+            && !mv.flag().is_capture()
+            && !mv.flag().is_promo();
+
+        let reduction = if can_reduce {
+            let mut r = 1 + (mv_idx as u16 / 4) + (depth / 6);
+
             if depth <= 5 {
-                reduction = 1;
+                r = 1;
             }
-            let reduction = reduction.min(depth - 1);
 
-            // Search at reduced depth with a null window
-            let mut eval = -self.negamax(
-                depth - 1 - reduction,
-                -alpha - 1,
-                -alpha,
-                ply + 1,
-                limits,
-                info,
-            );
-
-            // If reduced search fails high, we must re-search at full depth
-            if eval > alpha {
-                eval = -self.negamax(depth - 1, -beta, -alpha, ply + 1, limits, info);
-            }
-            eval
+            r.min(depth - 1)
         } else {
-            // Normal PVS/Negamax search
-            -self.negamax(depth - 1, -beta, -alpha, ply + 1, limits, info)
+            0
+        };
+
+        // Null window search
+        let mut eval = -self.negamax(
+            depth - 1 - reduction,
+            -alpha - 1,
+            -alpha,
+            ply + 1,
+            limits,
+            info,
+        );
+
+        // re-search if fail high
+        if reduction > 0 && eval > alpha {
+            eval = -self.negamax(depth - 1, -alpha - 1, -alpha, ply + 1, limits, info);
         }
+
+        // full window re-search if needed
+        if eval > alpha && eval < beta {
+            eval = -self.negamax(depth - 1, -beta, -alpha, ply + 1, limits, info);
+        }
+
+        eval
     }
 
     fn quiescence(
