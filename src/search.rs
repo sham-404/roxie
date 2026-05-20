@@ -38,33 +38,84 @@ impl Engine {
 
         let mut last_complete_info = info.clone();
         for d in 1..=limits.depth.unwrap_or(MAX_DEPTH) {
-            let mut best_move = Move::NULL;
-            let mut best_score = -INF;
+            let mut best_move: Move;
+            let mut best_score: i32;
 
             // making the search of depth 1 completely mandatory
             // as it guarentees us to return a valid move
             info.is_mandatory = 1 == d;
 
-            let mut move_list = self.board.gen_moves();
+            // Aspiration window setup
+            let mut delta = 50;
+            let mut alpha = -INF;
+            let mut beta = INF;
 
-            let mut tt_move = Move::NULL;
-            if let Some(entry) = self.tt.probe(self.board.get_zob_key()) {
-                tt_move = entry.best_move;
+            // using aspiration window only on relatively higher depths
+            if d > 5 {
+                alpha = last_complete_info.score - delta;
+                beta = last_complete_info.score + delta;
             }
 
-            for mv in move_list.with_ordering(tt_move, &self.board) {
-                let undo = self.board.make_move(&mv);
-                let score = -self.negamax(d - 1, -INF, INF, 1, &limits, &mut info);
-                self.board.unmake_move(&mv, &undo);
+            // aspiration re-search loop
+            loop {
+                let orig_alpha = alpha;
+                let orig_beta = beta;
+
+                let mut move_list = self.board.gen_moves();
+
+                best_move = if move_list.len() != 0 {
+                    move_list.get(0)
+                } else {
+                    Move::NULL
+                };
+                best_score = -INF;
+
+                let mut tt_move = Move::NULL;
+                if let Some(entry) = self.tt.probe(self.board.get_zob_key()) {
+                    tt_move = entry.best_move;
+                }
+
+                for mv in move_list.with_ordering(tt_move, &self.board) {
+                    let undo = self.board.make_move(&mv);
+                    let score = -self.negamax(d - 1, -beta, -alpha, 1, &limits, &mut info);
+                    self.board.unmake_move(&mv, &undo);
+
+                    if info.abort {
+                        break;
+                    }
+
+                    if score > best_score {
+                        best_score = score;
+                        best_move = mv;
+                    }
+
+                    alpha = alpha.max(score);
+                }
 
                 if info.abort {
                     break;
                 }
 
-                if score > best_score {
-                    best_score = score;
-                    best_move = mv;
+                // aspiration failed low
+                if best_score <= orig_alpha {
+                    alpha = orig_alpha - delta;
+                    beta = orig_beta;
+
+                    delta *= 2;
+                    continue;
                 }
+
+                // aspiration failed high
+                if best_score >= orig_beta {
+                    alpha = orig_alpha;
+                    beta = orig_beta + delta;
+
+                    delta *= 2;
+                    continue;
+                }
+
+                // successful aspiration search
+                break;
             }
 
             // if aborted, dont update the result
@@ -72,9 +123,13 @@ impl Engine {
                 break;
             }
 
-            if best_move == Move::NULL && move_list.len() > 0 {
-                best_move = move_list.get(0);
-            }
+            // // safety check
+            // if best_move == Move::NULL {
+            //     let mv_list = self.board.gen_moves();
+            //     if mv_list.len() != 0 {
+            //         best_move = mv_list.get(0);
+            //     }
+            // }
 
             info.depth = d;
             info.score = best_score;
