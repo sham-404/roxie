@@ -1,4 +1,4 @@
-use std::sync::{LazyLock};
+use std::sync::LazyLock;
 
 use crate::{
     board::{BISHOP_DIRS, ROOK_DIRS, mask},
@@ -145,6 +145,13 @@ impl Magic {
     pub fn index(&self, occ: u64) -> usize {
         ((occ & self.mask).wrapping_mul(self.multiplier) >> self.shift) as usize
     }
+}
+
+pub fn init_magics() {
+    LazyLock::force(&ROOK_ATTACKS);
+    LazyLock::force(&BISHOP_ATTACKS);
+    LazyLock::force(&ROOK_MAGIC_STORE);
+    LazyLock::force(&BISHOP_MAGIC_STORE);
 }
 
 pub fn get_bishop_move_bits(sq: usize, occ: u64) -> u64 {
