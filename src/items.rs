@@ -44,6 +44,15 @@ impl Piece {
     }
 
     #[inline]
+    pub fn get_color_fac(p: PieceInfo) -> i32 {
+        if p & Self::COLOR_MASK == Piece::WHITE {
+            1
+        } else {
+            -1
+        }
+    }
+
+    #[inline]
     pub fn from_idx(idx: usize) -> PieceInfo {
         // idx 0-5 -> White Pawn to King
         // idx 6-11 -> Black Pawn to King

@@ -2,8 +2,9 @@ use std::sync::OnceLock;
 
 use crate::{
     board::{Board, pop_lsb},
-    r#const::{BLACK, WHITE},
-    items::{Piece},
+    r#const::{BLACK, KNIGHT_ATTACKS, WHITE},
+    items::{Color, Piece, PieceInfo},
+    magics::{get_bishop_move_bits, get_rook_move_bits},
 };
 
 // const SCORE: [i32; 5] = [100, 320, 330, 500, 900];
@@ -240,10 +241,58 @@ fn pesto_score(board: &Board) -> i32 {
     (mg_score * mg_phase + eg_score * eg_phase) / 24
 }
 
+const KNIGHT_MOBILITY: [i32; 9] = [-16, -10, -4, 0, 3, 6, 9, 12, 15];
+const BISHOP_MOBILITY: [i32; 14] = [-12, -8, -4, 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20];
+const ROOK_MOBILITY: [i32; 15] = [-8, -6, -4, -2, 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20];
+const QUEEN_MOBILITY: [i32; 28] = [
+    -4, -3, -2, -1, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12,
+];
+
+fn mobility_score(board: &Board) -> i32 {
+    let all_occ = board.all_occ();
+    let mut piece_bb = all_occ;
+    let mut score = 0;
+
+    while let Some(sq) = pop_lsb(&mut piece_bb) {
+        let piece = board.piece_on(sq);
+        let (fac, friendly_occ) = if Piece::get_color(piece) == Piece::WHITE {
+            (1, board.occ(&Color::White))
+        } else {
+            (-1, board.occ(&Color::Black))
+        };
+
+        let move_count = (get_piece_move_bits(piece, sq, all_occ) & !friendly_occ).count_ones();
+
+        score += get_piece_mobility_score(piece, move_count) * fac;
+    }
+    score
+}
+
+fn get_piece_mobility_score(piece: PieceInfo, count: u32) -> i32 {
+    match Piece::get_type(piece) {
+        Piece::BISHOP => BISHOP_MOBILITY[count as usize],
+        Piece::ROOK => ROOK_MOBILITY[count as usize],
+        Piece::QUEEN => QUEEN_MOBILITY[count as usize],
+        Piece::KNIGHT => KNIGHT_MOBILITY[count as usize],
+        _ => 0,
+    }
+}
+
+fn get_piece_move_bits(piece: PieceInfo, sq: usize, all_occ: u64) -> u64 {
+    match Piece::get_type(piece) {
+        Piece::BISHOP => get_bishop_move_bits(sq, all_occ),
+        Piece::ROOK => get_rook_move_bits(sq, all_occ),
+        Piece::QUEEN => get_rook_move_bits(sq, all_occ) | get_bishop_move_bits(sq, all_occ),
+        Piece::KNIGHT => KNIGHT_ATTACKS[sq],
+        _ => 0,
+    }
+}
+
 pub fn evaluate(board: &Board) -> i32 {
     let mut score = 0;
 
     score += pesto_score(board);
+    score += mobility_score(board);
 
     score * board.side_to_move().fac()
 }
