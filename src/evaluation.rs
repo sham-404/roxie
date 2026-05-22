@@ -272,7 +272,7 @@ fn get_piece_mobility_score(piece: PieceInfo, count: u32) -> i32 {
     match Piece::get_type(piece) {
         Piece::BISHOP => BISHOP_MOBILITY[count as usize],
         Piece::ROOK => ROOK_MOBILITY[count as usize],
-        Piece::QUEEN => QUEEN_MOBILITY[count as usize],
+        // Piece::QUEEN => QUEEN_MOBILITY[count as usize],
         Piece::KNIGHT => KNIGHT_MOBILITY[count as usize],
         _ => 0,
     }
@@ -282,7 +282,7 @@ fn get_piece_move_bits(piece: PieceInfo, sq: usize, all_occ: u64) -> u64 {
     match Piece::get_type(piece) {
         Piece::BISHOP => get_bishop_move_bits(sq, all_occ),
         Piece::ROOK => get_rook_move_bits(sq, all_occ),
-        Piece::QUEEN => get_rook_move_bits(sq, all_occ) | get_bishop_move_bits(sq, all_occ),
+        // Piece::QUEEN => get_rook_move_bits(sq, all_occ) | get_bishop_move_bits(sq, all_occ),
         Piece::KNIGHT => KNIGHT_ATTACKS[sq],
         _ => 0,
     }
