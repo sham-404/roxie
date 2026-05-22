@@ -244,7 +244,7 @@ fn pesto_score(board: &Board) -> i32 {
 const KNIGHT_MOBILITY: [i32; 9] = [-16, -10, -4, 0, 3, 6, 9, 12, 15];
 const BISHOP_MOBILITY: [i32; 14] = [-12, -8, -4, 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20];
 const ROOK_MOBILITY: [i32; 15] = [-8, -6, -4, -2, 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20];
-const QUEEN_MOBILITY: [i32; 28] = [
+const _QUEEN_MOBILITY: [i32; 28] = [
     -4, -3, -2, -1, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12,
 ];
 
