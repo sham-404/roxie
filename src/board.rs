@@ -1163,6 +1163,95 @@ impl Board {
         }
     }
 
+    pub fn gen_pawn_attack_map(&self, side_to_check: Color) -> u64 {
+        let mut move_bits = 0u64;
+        let (pawn, attacks) = match side_to_check {
+            Color::White => (Piece::WHITE | Piece::PAWN, WHITE_PAWN_ATTACKS),
+            Color::Black => (Piece::BLACK | Piece::PAWN, BLACK_PAWN_ATTACKS),
+        };
+        let mut pawn_bb = self.bb(pawn);
+
+        while let Some(from) = pop_lsb(&mut pawn_bb) {
+            let atk = attacks[from];
+            move_bits |= atk;
+        }
+
+        move_bits
+    }
+
+    fn _gen_attack_map(&self, side_to_map: Color) -> u64 {
+        let mut move_bits = 0u64;
+        let color = if side_to_map == Color::White {
+            Piece::WHITE
+        } else {
+            Piece::BLACK
+        };
+
+        let all_occ = self.all_occ();
+
+        //// Captures of King
+
+        let king = color | Piece::KING;
+        let mut bb = self.bb(king);
+
+        while let Some(from) = pop_lsb(&mut bb) {
+            let atk = KING_ATTACKS[from];
+            move_bits |= atk;
+        }
+
+        //// Captures of Knights
+
+        let knight = color | Piece::KNIGHT;
+        let mut bb = self.bb(knight);
+
+        while let Some(from) = pop_lsb(&mut bb) {
+            let atk = KNIGHT_ATTACKS[from];
+            move_bits |= atk;
+        }
+
+        //// Captures of Pawns
+        let (pawn, attacks) = match side_to_map {
+            Color::White => (Piece::WHITE | Piece::PAWN, WHITE_PAWN_ATTACKS),
+            Color::Black => (Piece::BLACK | Piece::PAWN, BLACK_PAWN_ATTACKS),
+        };
+        let mut pawn_bb = self.bb(pawn);
+
+        while let Some(from) = pop_lsb(&mut pawn_bb) {
+            let atk = attacks[from];
+            move_bits |= atk;
+        }
+
+        //// Captures of bishop
+        let bishop = color | Piece::BISHOP;
+        let mut bb = self.bb(bishop);
+
+        while let Some(from_idx) = pop_lsb(&mut bb) {
+            let move_bb = get_bishop_move_bits(from_idx, all_occ);
+            move_bits |= move_bb;
+        }
+
+        // Captures of rook
+        let rook = color | Piece::ROOK;
+        let mut bb = self.bb(rook);
+
+        while let Some(from_idx) = pop_lsb(&mut bb) {
+            let move_bb = get_rook_move_bits(from_idx, all_occ);
+            move_bits |= move_bb;
+        }
+
+        // Captures of queen
+        let queen = color | Piece::QUEEN;
+        let mut bb = self.bb(queen);
+
+        while let Some(from_idx) = pop_lsb(&mut bb) {
+            let move_bb =
+                get_rook_move_bits(from_idx, all_occ) | get_bishop_move_bits(from_idx, all_occ);
+            move_bits |= move_bb;
+        }
+
+        move_bits
+    }
+
     fn filter_illegal(&mut self, moves: &mut MoveList) {
         let color = if self.side_to_move == Color::White {
             Piece::WHITE

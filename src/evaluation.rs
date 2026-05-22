@@ -253,15 +253,22 @@ fn mobility_score(board: &Board) -> i32 {
     let mut piece_bb = all_occ;
     let mut score = 0;
 
+    let white_occ = board.occ(&Color::White);
+    let black_occ = board.occ(&Color::Black);
+
+    let white_pawn_attacks = board.gen_pawn_attack_map(Color::White);
+    let black_pawn_attacks = board.gen_pawn_attack_map(Color::Black);
+
     while let Some(sq) = pop_lsb(&mut piece_bb) {
         let piece = board.piece_on(sq);
-        let (fac, friendly_occ) = if Piece::get_color(piece) == Piece::WHITE {
-            (1, board.occ(&Color::White))
+        let (fac, friendly_occ, attacks) = if Piece::get_color(piece) == Piece::WHITE {
+            (1, white_occ, black_pawn_attacks)
         } else {
-            (-1, board.occ(&Color::Black))
+            (-1, black_occ, white_pawn_attacks)
         };
 
-        let move_count = (get_piece_move_bits(piece, sq, all_occ) & !friendly_occ).count_ones();
+        let move_count =
+            (get_piece_move_bits(piece, sq, all_occ) & !friendly_occ & !attacks).count_ones();
 
         score += get_piece_mobility_score(piece, move_count) * fac;
     }
