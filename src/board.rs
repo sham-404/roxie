@@ -5,9 +5,6 @@ use crate::magics::{get_bishop_move_bits, get_rook_move_bits};
 use crate::square::Square;
 use crate::zobrist::{CASTLING_KEYS, ENPASSANT_KEYS, SIDE_KEY, ZOBRIST_TABLE};
 
-pub const ROOK_DIRS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
-pub const BISHOP_DIRS: [(i32, i32); 4] = [(1, 1), (1, -1), (-1, 1), (-1, -1)];
-
 #[inline]
 pub fn pop_lsb(bb: &mut u64) -> Option<usize> {
     if *bb == 0 {
@@ -706,21 +703,9 @@ impl Board {
         self.zobrist_key
     }
 
+    #[inline]
     pub fn is_endgame(&self) -> bool {
-        let mut all_occ = self.all_occ();
-        let mut game_phase = 0;
-
-        while let Some(sq) = pop_lsb(&mut all_occ) {
-            let piece = self.piece_on(sq);
-            let p_idx = Piece::to_idx(piece);
-            game_phase += GAME_PHASE_VAL[p_idx];
-
-            if game_phase > 8 {
-                return false;
-            }
-        }
-
-        true
+        self.game_phase.min(24) < 9
     }
 
     #[inline(always)]

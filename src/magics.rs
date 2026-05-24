@@ -1,9 +1,9 @@
 use std::sync::LazyLock;
 
-use crate::{
-    board::{BISHOP_DIRS, ROOK_DIRS, mask},
-    square::Square,
-};
+use crate::{board::mask, square::Square};
+
+const ROOK_DIRS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+const BISHOP_DIRS: [(i32, i32); 4] = [(1, 1), (1, -1), (-1, 1), (-1, -1)];
 
 // Mask needed for magic indexing for rook
 #[rustfmt::skip]
