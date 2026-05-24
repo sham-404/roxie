@@ -445,13 +445,6 @@ impl Engine {
             alpha = stand_pat;
         }
 
-        //////// NOTE: MUST BE REMOVED LATER ///////////
-        // hardcoded depth cutting
-        if ply - info.depth as i32 > 8 {
-            return alpha;
-        }
-        ////////////////////////////////////////////////
-
         let mut move_list = if in_check {
             self.board.gen_moves()
         } else {
