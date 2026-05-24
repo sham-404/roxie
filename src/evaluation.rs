@@ -315,88 +315,70 @@ const ADJ_FILE_MASKS: [u64; 8] = [
     0xA0A0A0A0A0A0A0A0,
     0x4040404040404040,
 ];
-
-fn eval_isolated_pawns(white_pawns: u64, black_pawns: u64) -> i32 {
-    let mut score = 0;
-    let iso_pawn_penalty = 25;
-
-    let mut white_pawn_bb = white_pawns;
-    while let Some(sq) = pop_lsb(&mut white_pawn_bb) {
-        let file = sq % 8;
-
-        if ADJ_FILE_MASKS[file] & white_pawns == 0 {
-            score -= iso_pawn_penalty;
-        }
-    }
-
-    let mut black_pawn_bb = black_pawns;
-    while let Some(sq) = pop_lsb(&mut black_pawn_bb) {
-        let file = sq % 8;
-
-        if ADJ_FILE_MASKS[file] & black_pawns == 0 {
-            score += iso_pawn_penalty;
-        }
-    }
-
-    score
-}
-
 const PASSED_PAWN_BONUS: [i32; 8] = [0, 5, 10, 20, 35, 60, 100, 0];
-fn eval_passed_pawns(white_pawns: u64, black_pawns: u64) -> i32 {
-    let mut score = 0;
-    let mut white_pawn_bb = white_pawns;
-    let mut black_pawn_bb = black_pawns;
+const DOUBLE_PAWN_PENALTY: i32 = 20;
+const ISO_PAWN_PENALTY: i32 = 25;
 
-    while let Some(sq) = pop_lsb(&mut white_pawn_bb) {
+fn pawn_struct_score(board: &Board) -> i32 {
+    let white_pawns = board.bb(Piece::WHITE | Piece::PAWN);
+    let black_pawns = board.bb(Piece::BLACK | Piece::PAWN);
+
+    let mut score = 0;
+
+    // Arrays to track how many pawns are on each file for the doubled penalty
+    let mut w_file_counts = [0; 8];
+    let mut b_file_counts = [0; 8];
+
+    // EVALUATE WHITE PAWNS
+    let mut w_bb = white_pawns;
+    while let Some(sq) = pop_lsb(&mut w_bb) {
+        let file = sq % 8;
         let rank = sq / 8;
 
+        // Isolated Pawns
+        if ADJ_FILE_MASKS[file] & white_pawns == 0 {
+            score -= ISO_PAWN_PENALTY;
+        }
+
+        // Passed Pawns
         if black_pawns & WHITE_PASSED_MASKS[sq] == 0 {
             score += PASSED_PAWN_BONUS[rank];
         }
+
+        // Track for doubled pawns
+        w_file_counts[file] += 1;
     }
 
-    while let Some(sq) = pop_lsb(&mut black_pawn_bb) {
+    // EVALUATE BLACK PAWNS
+    let mut b_bb = black_pawns;
+    while let Some(sq) = pop_lsb(&mut b_bb) {
+        let file = sq % 8;
         let rank = sq / 8;
 
+        // Isolated Pawns
+        if ADJ_FILE_MASKS[file] & black_pawns == 0 {
+            score += ISO_PAWN_PENALTY;
+        }
+
+        // Passed Pawns
         if white_pawns & BLACK_PASSED_MASKS[sq] == 0 {
             score -= PASSED_PAWN_BONUS[7 - rank];
         }
+
+        // Track for doubled pawns
+        b_file_counts[file] += 1;
     }
 
-    score
-}
-
-const DOUBLE_PAWN_PENALTY: i32 = 20;
-const A_FILE: u64 = 0x0101010101010101;
-fn eval_doubled_pawns(white_pawns: u64, black_pawns: u64) -> i32 {
-    let mut score = 0;
-
-    for file in 0..8 {
-        let file_mask = A_FILE << file;
-        let w_pawns_on_file = (white_pawns & file_mask).count_ones() as i32;
-
-        if w_pawns_on_file > 1 {
-            score -= (w_pawns_on_file - 1) * DOUBLE_PAWN_PENALTY;
+    // APPLYING DOUBLED PAWN PENALTIES
+    for i in 0..8 {
+        if w_file_counts[i] > 1 {
+            score -= (w_file_counts[i] - 1) * DOUBLE_PAWN_PENALTY;
         }
-
-        let b_pawns_on_file = (black_pawns & file_mask).count_ones() as i32;
-
-        if b_pawns_on_file > 1 {
-            score += (b_pawns_on_file - 1) * DOUBLE_PAWN_PENALTY;
+        if b_file_counts[i] > 1 {
+            score += (b_file_counts[i] - 1) * DOUBLE_PAWN_PENALTY;
         }
     }
 
-    score
-}
-
-fn pawn_struct_score(board: &Board) -> i32 {
-    let mut score = 0;
-    let white_pawn_bb = board.bb(Piece::WHITE | Piece::PAWN);
-    let black_pawn_bb = board.bb(Piece::BLACK | Piece::PAWN);
-
-    score += eval_isolated_pawns(white_pawn_bb, black_pawn_bb);
-    score += eval_passed_pawns(white_pawn_bb, black_pawn_bb);
-    score += eval_doubled_pawns(white_pawn_bb, black_pawn_bb);
     score
 }
 

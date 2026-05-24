@@ -597,6 +597,7 @@ impl Board {
 
 ///////// Helpers
 impl Board {
+    #[inline]
     fn move_piece_quiet(&mut self, from: usize, to: usize) {
         let (from_mask, to_mask) = (mask(from), mask(to));
         let piece = self.piece_on(from);
@@ -615,6 +616,7 @@ impl Board {
         self.occupancy[BOTH] ^= from_mask | to_mask;
     }
 
+    #[inline]
     fn remove_piece(&mut self, piece: PieceInfo, pos: usize) {
         let pos_mask = mask(pos);
 
@@ -626,6 +628,7 @@ impl Board {
         self.occupancy[BOTH] &= !pos_mask;
     }
 
+    #[inline]
     fn add_piece(&mut self, piece: PieceInfo, pos: usize) {
         let pos_mask = mask(pos);
 
