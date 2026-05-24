@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use crate::{
     board::{Board, pop_lsb},
     r#const::{BLACK, BLACK_PASSED_MASKS, KNIGHT_ATTACKS, WHITE, WHITE_PASSED_MASKS},
-    items::{Color, Piece, PieceInfo},
+    items::{Color, Piece},
     magics::{get_bishop_move_bits, get_rook_move_bits},
 };
 
@@ -251,7 +251,6 @@ const _QUEEN_MOBILITY: [i32; 28] = [
 
 fn mobility_score(board: &Board) -> i32 {
     let all_occ = board.all_occ();
-    let mut piece_bb = all_occ;
     let mut score = 0;
 
     let white_occ = board.occ(&Color::White);
@@ -260,40 +259,50 @@ fn mobility_score(board: &Board) -> i32 {
     let white_pawn_attacks = board.gen_pawn_attack_map(Color::White);
     let black_pawn_attacks = board.gen_pawn_attack_map(Color::Black);
 
-    while let Some(sq) = pop_lsb(&mut piece_bb) {
-        let piece = board.piece_on(sq);
-        let (fac, friendly_occ, attacks) = if Piece::get_color(piece) == Piece::WHITE {
-            (1, white_occ, black_pawn_attacks)
-        } else {
-            (-1, black_occ, white_pawn_attacks)
-        };
+    let white_safe_sq = !white_occ & !black_pawn_attacks;
+    let black_safe_sq = !black_occ & !white_pawn_attacks;
 
-        let move_count =
-            (get_piece_move_bits(piece, sq, all_occ) & !friendly_occ & !attacks).count_ones();
+    //////// WHITE PIECE MOBILITY SCORING
 
-        score += get_piece_mobility_score(piece, move_count) * fac;
+    let mut w_knight = board.bb(Piece::WHITE | Piece::KNIGHT);
+    while let Some(sq) = pop_lsb(&mut w_knight) {
+        let move_count = (KNIGHT_ATTACKS[sq] & white_safe_sq).count_ones();
+        score += KNIGHT_MOBILITY[move_count as usize];
     }
+
+    let mut w_bishop = board.bb(Piece::WHITE | Piece::BISHOP);
+    while let Some(sq) = pop_lsb(&mut w_bishop) {
+        let move_count = (get_bishop_move_bits(sq, all_occ) & white_safe_sq).count_ones();
+        score += BISHOP_MOBILITY[move_count as usize];
+    }
+
+    let mut w_rook = board.bb(Piece::WHITE | Piece::ROOK);
+    while let Some(sq) = pop_lsb(&mut w_rook) {
+        let move_count = (get_rook_move_bits(sq, all_occ) & white_safe_sq).count_ones();
+        score += ROOK_MOBILITY[move_count as usize];
+    }
+
+    //////// BLACK PIECE MOBILITY SCORING
+
+    let mut b_knight = board.bb(Piece::BLACK | Piece::KNIGHT);
+    while let Some(sq) = pop_lsb(&mut b_knight) {
+        let move_count = (KNIGHT_ATTACKS[sq] & black_safe_sq).count_ones();
+        score -= KNIGHT_MOBILITY[move_count as usize];
+    }
+
+    let mut b_bishop = board.bb(Piece::BLACK | Piece::BISHOP);
+    while let Some(sq) = pop_lsb(&mut b_bishop) {
+        let move_count = (get_bishop_move_bits(sq, all_occ) & black_safe_sq).count_ones();
+        score -= BISHOP_MOBILITY[move_count as usize];
+    }
+
+    let mut b_rook = board.bb(Piece::BLACK | Piece::ROOK);
+    while let Some(sq) = pop_lsb(&mut b_rook) {
+        let move_count = (get_rook_move_bits(sq, all_occ) & black_safe_sq).count_ones();
+        score -= ROOK_MOBILITY[move_count as usize];
+    }
+
     score
-}
-
-fn get_piece_mobility_score(piece: PieceInfo, count: u32) -> i32 {
-    match Piece::get_type(piece) {
-        Piece::BISHOP => BISHOP_MOBILITY[count as usize],
-        Piece::ROOK => ROOK_MOBILITY[count as usize],
-        // Piece::QUEEN => QUEEN_MOBILITY[count as usize],
-        Piece::KNIGHT => KNIGHT_MOBILITY[count as usize],
-        _ => 0,
-    }
-}
-
-fn get_piece_move_bits(piece: PieceInfo, sq: usize, all_occ: u64) -> u64 {
-    match Piece::get_type(piece) {
-        Piece::BISHOP => get_bishop_move_bits(sq, all_occ),
-        Piece::ROOK => get_rook_move_bits(sq, all_occ),
-        // Piece::QUEEN => get_rook_move_bits(sq, all_occ) | get_bishop_move_bits(sq, all_occ),
-        Piece::KNIGHT => KNIGHT_ATTACKS[sq],
-        _ => 0,
-    }
 }
 
 const ADJ_FILE_MASKS: [u64; 8] = [
@@ -363,7 +372,7 @@ fn eval_doubled_pawns(white_pawns: u64, black_pawns: u64) -> i32 {
     let mut score = 0;
 
     for file in 0..8 {
-        let file_mask = A_FILE << file; 
+        let file_mask = A_FILE << file;
         let w_pawns_on_file = (white_pawns & file_mask).count_ones() as i32;
 
         if w_pawns_on_file > 1 {
