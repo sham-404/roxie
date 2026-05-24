@@ -1,0 +1,37 @@
+go depth 15
+info depth 1 seldepth 1 score cp 66 nodes 40 nps 40000 time 0 pv d2d4
+info depth 2 seldepth 4 score cp 0 nodes 193 nps 193000 time 0 pv d2d4
+info depth 3 seldepth 5 score cp 58 nodes 1275 nps 1275000 time 0 pv g1f3
+info depth 4 seldepth 9 score cp 8 nodes 5160 nps 1290000 time 4 pv e2e4
+info depth 5 seldepth 12 score cp 44 nodes 22323 nps 1717153 time 13 pv g1f3
+info depth 6 seldepth 14 score cp 15 nodes 62800 nps 1395555 time 45 pv e2e4
+info depth 7 seldepth 15 score cp 44 nodes 97216 nps 1543111 time 63 pv g1f3
+info depth 8 seldepth 16 score cp 15 nodes 288475 nps 1323279 time 218 pv e2e4
+info depth 9 seldepth 17 score cp 32 nodes 489337 nps 1370691 time 357 pv g1f3
+info depth 10 seldepth 18 score cp 8 nodes 1077137 nps 1283834 time 839 pv g1f3
+info depth 11 seldepth 19 score cp 23 nodes 1824264 nps 1272150 time 1434 pv e2e4
+info depth 12 seldepth 20 score cp 20 nodes 3805991 nps 1247865 time 3050 pv g1f3
+info depth 13 seldepth 21 score cp 22 nodes 7787122 nps 1238606 time 6287 pv g1f3
+info depth 14 seldepth 22 score cp 26 nodes 15017994 nps 1210640 time 12405 pv e2e4
+info depth 15 seldepth 23 score cp 22 nodes 22939830 nps 1201352 time 19095 pv g1f3
+bestmove g1f3
+quit
+
+go depth 15
+info depth 1 seldepth 1 score cp 66 nodes 40 nps 40000 time 0 pv d2d4
+info depth 2 seldepth 4 score cp 0 nodes 193 nps 193000 time 0 pv d2d4
+info depth 3 seldepth 5 score cp 58 nodes 1275 nps 1275000 time 0 pv g1f3
+info depth 4 seldepth 9 score cp 8 nodes 5160 nps 1032000 time 5 pv e2e4
+info depth 5 seldepth 12 score cp 44 nodes 22323 nps 930125 time 24 pv g1f3
+info depth 6 seldepth 14 score cp 15 nodes 62800 nps 884507 time 71 pv e2e4
+info depth 7 seldepth 15 score cp 44 nodes 97216 nps 992000 time 98 pv g1f3
+info depth 8 seldepth 16 score cp 15 nodes 288475 nps 898676 time 321 pv e2e4
+info depth 9 seldepth 17 score cp 32 nodes 489337 nps 939226 time 521 pv g1f3
+info depth 10 seldepth 18 score cp 8 nodes 1077137 nps 890195 time 1210 pv g1f3
+info depth 11 seldepth 19 score cp 23 nodes 1824264 nps 895564 time 2037 pv e2e4
+info depth 12 seldepth 20 score cp 20 nodes 3805991 nps 886763 time 4292 pv g1f3
+info depth 13 seldepth 21 score cp 22 nodes 7787122 nps 886613 time 8783 pv g1f3
+info depth 14 seldepth 22 score cp 26 nodes 15017994 nps 869600 time 17270 pv e2e4
+info depth 15 seldepth 23 score cp 22 nodes 22939830 nps 864251 time 26543 pv g1f3
+bestmove g1f3
+quit

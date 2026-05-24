@@ -2,7 +2,7 @@ use std::sync::OnceLock;
 
 use crate::{
     board::{Board, pop_lsb},
-    r#const::{BLACK, BLACK_PASSED_MASKS, KNIGHT_ATTACKS, WHITE, WHITE_PASSED_MASKS},
+    r#const::{BLACK_PASSED_MASKS, KNIGHT_ATTACKS, WHITE_PASSED_MASKS},
     items::{Color, Piece},
     magics::{get_bishop_move_bits, get_rook_move_bits},
 };
@@ -178,7 +178,7 @@ const EG_PESTO_TABLE: [[i32; 64]; 6] = [
 
 pub const GAME_PHASE_VAL: [i32; 12] = [0, 1, 1, 2, 4, 0, 0, 1, 1, 2, 4, 0];
 
-static EG_TABLE: OnceLock<[[i32; 64]; 12]> = OnceLock::new();
+pub static EG_TABLE: OnceLock<[[i32; 64]; 12]> = OnceLock::new();
 pub static MG_TABLE: OnceLock<[[i32; 64]; 12]> = OnceLock::new();
 
 #[inline(always)]
@@ -209,36 +209,6 @@ pub fn init_pesto_table() {
         }
         table
     });
-}
-
-fn pesto_score(board: &Board) -> i32 {
-    let mut mg = [0i32; 2];
-    let mut eg = [0i32; 2];
-
-    let mut game_phase = 0;
-    let mg_table = MG_TABLE.get().unwrap();
-    let eg_table = EG_TABLE.get().unwrap();
-
-    let mut all_occ = board.all_occ();
-
-    while let Some(sq) = pop_lsb(&mut all_occ) {
-        let piece = board.piece_on(sq);
-
-        let p_idx = Piece::to_idx(piece);
-        let col_idx = Piece::get_color_idx(piece);
-
-        mg[col_idx] += mg_table[p_idx][sq];
-        eg[col_idx] += eg_table[p_idx][sq];
-        game_phase += GAME_PHASE_VAL[p_idx];
-    }
-
-    let mg_score = mg[WHITE] - mg[BLACK];
-    let eg_score = eg[WHITE] - eg[BLACK];
-
-    let mg_phase = game_phase.min(24); // Max as 24 is made coz of early promotions
-    let eg_phase = 24 - mg_phase;
-
-    (mg_score * mg_phase + eg_score * eg_phase) / 24
 }
 
 const KNIGHT_MOBILITY: [i32; 9] = [-20, -8, 0, 6, 12, 17, 21, 24, 26];
@@ -385,7 +355,7 @@ fn pawn_struct_score(board: &Board) -> i32 {
 pub fn evaluate(board: &Board) -> i32 {
     let mut score = 0;
 
-    score += pesto_score(board);
+    score += board.get_pesto_score();
     score += mobility_score(board);
     score += pawn_struct_score(board);
 
