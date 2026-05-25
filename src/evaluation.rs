@@ -2,7 +2,7 @@ use std::sync::OnceLock;
 
 use crate::{
     board::{Board, pop_lsb},
-    r#const::{BLACK_PASSED_MASKS, KNIGHT_ATTACKS, WHITE_PASSED_MASKS},
+    r#const::{BLACK_PASSED_MASKS, KING_ATTACKS, KNIGHT_ATTACKS, WHITE_PASSED_MASKS},
     items::{Color, Piece},
     magics::{get_bishop_move_bits, get_rook_move_bits},
 };
@@ -352,12 +352,230 @@ fn pawn_struct_score(board: &Board) -> i32 {
     score
 }
 
+const MISSING_PAWN_SHIELD_PENALTY: i32 = 35;
+const ADVANCED_PAWN_SHIELD_PENALTY: i32 = 10;
+const NOT_CASTLED_YET_PENALTY: i32 = 5;
+
+const WHITE_SAFE_RANKS: u64 = 0x0000000000FFFF00; // Ranks 2 and 3
+const BLACK_SAFE_RANKS: u64 = 0x00FFFF0000000000; // Ranks 7 and 6
+
+const FILE_MASKS: [u64; 8] = [
+    0x0101010101010101, 0x0202020202020202, 0x0404040404040404, 0x0808080808080808,
+    0x1010101010101010, 0x2020202020202020, 0x4040404040404040, 0x8080808080808080,
+];
+
+const KNIGHT_ATTACK_VAL: i32 = 20;
+const BISHOP_ATTACK_VAL: i32 = 20;
+const ROOK_ATTACK_VAL: i32 = 40;
+const QUEEN_ATTACK_VAL: i32 = 80;
+
+const ATTACK_WEIGHT_TABLE: [i32; 8] = [0, 0, 50, 75, 88, 94, 97, 99];
+
+#[rustfmt::skip]
+const _SAFETY_TABLE: [i32; 100] = [
+       0,  0,   1,   2,   3,   5,   7,   9,  12,  15,
+      18,  22,  26,  30,  35,  39,  44,  50,  56,  62,
+      68,  75,  82,  85,  89,  97, 105, 113, 122, 131,
+     140, 150, 169, 180, 191, 202, 213, 225, 237, 248,
+     260, 272, 283, 295, 307, 319, 330, 342, 354, 366,
+     377, 389, 401, 412, 424, 436, 448, 459, 471, 483,
+     494, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+     500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+     500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+     500, 500, 500, 500, 500, 500, 500, 500, 500, 500
+];
+
+const fn compute_king_zones(is_white: bool) -> [u64; 64] {
+    let mut zones = [0; 64];
+    let mut sq = 0;
+
+    while sq < 64 {
+        let ring = KING_ATTACKS[sq];
+
+        if is_white {
+            zones[sq] = ring | (ring << 8); // Shift UP for White
+        } else {
+            zones[sq] = ring | (ring >> 8); // Shift DOWN for Black
+        }
+        sq += 1;
+    }
+    zones
+}
+
+pub const WHITE_KING_ZONES: [u64; 64] = compute_king_zones(true);
+pub const BLACK_KING_ZONES: [u64; 64] = compute_king_zones(false);
+
+fn king_safety_score(board: &Board) -> i32 {
+    let phase = board.get_game_phase();
+    
+    // Early exit
+    if phase < 10 {
+        return 0;
+    }
+    let scale_fac = 9;
+
+    let mut score = 0;
+    let all_occ = board.all_occ();
+
+    let w_pawns = board.bb(Piece::WHITE | Piece::PAWN);
+    let b_pawns = board.bb(Piece::BLACK | Piece::PAWN);
+
+    let w_king = board.bb(Piece::WHITE | Piece::KING);
+    let b_king = board.bb(Piece::BLACK | Piece::KING);
+
+    let w_king_sq = w_king.trailing_zeros() as usize;
+    let b_king_sq = b_king.trailing_zeros() as usize;
+
+    let w_king_file = w_king_sq % 8;
+    let b_king_file = b_king_sq % 8;
+
+    //////// DEFENSE: PAWN SHIELD EVALUATION
+
+    // White Shield
+    if w_king_file < 3 || w_king_file > 4 {
+        let start_file = w_king_file.saturating_sub(1);
+        let end_file = (w_king_file + 1).min(7);
+
+        for file in start_file..=end_file {
+            let file_pawns = w_pawns & FILE_MASKS[file];
+
+            if file_pawns == 0 {
+                score -= MISSING_PAWN_SHIELD_PENALTY;
+            } else if file_pawns & WHITE_SAFE_RANKS == 0 {
+                score -= ADVANCED_PAWN_SHIELD_PENALTY;
+            }
+        }
+    } else {
+        score -= NOT_CASTLED_YET_PENALTY;
+    }
+
+    // Black Shield
+    if b_king_file < 3 || b_king_file > 4 {
+        let start_file = b_king_file.saturating_sub(1);
+        let end_file = (b_king_file + 1).min(7);
+
+        for file in start_file..=end_file {
+            let file_pawns = b_pawns & FILE_MASKS[file];
+
+            if file_pawns == 0 {
+                score += MISSING_PAWN_SHIELD_PENALTY;
+            } else if file_pawns & BLACK_SAFE_RANKS == 0 {
+                score += ADVANCED_PAWN_SHIELD_PENALTY;
+            }
+        }
+    } else {
+        score += NOT_CASTLED_YET_PENALTY;
+    }
+
+    //////// OFFENSE: TOGA ATTACK EVALUATION
+
+    let w_king_zone = WHITE_KING_ZONES[w_king_sq];
+    let b_king_zone = BLACK_KING_ZONES[b_king_sq];
+
+    // Black Attacks on White King Zone 
+    let mut b_attacking_pieces = 0;
+    let mut b_value_of_attacks = 0;
+
+    let mut b_knight = board.bb(Piece::BLACK | Piece::KNIGHT);
+    while let Some(sq) = pop_lsb(&mut b_knight) {
+        let attacked_squares = (KNIGHT_ATTACKS[sq] & w_king_zone).count_ones() as i32;
+        if attacked_squares > 0 {
+            b_attacking_pieces += 1;
+            b_value_of_attacks += attacked_squares * KNIGHT_ATTACK_VAL;
+        }
+    }
+
+    let mut b_bishop = board.bb(Piece::BLACK | Piece::BISHOP);
+    while let Some(sq) = pop_lsb(&mut b_bishop) {
+        let attacked_squares = (get_bishop_move_bits(sq, all_occ) & w_king_zone).count_ones() as i32;
+        if attacked_squares > 0 {
+            b_attacking_pieces += 1;
+            b_value_of_attacks += attacked_squares * BISHOP_ATTACK_VAL;
+        }
+    }
+
+    let mut b_rook = board.bb(Piece::BLACK | Piece::ROOK);
+    while let Some(sq) = pop_lsb(&mut b_rook) {
+        let attacked_squares = (get_rook_move_bits(sq, all_occ) & w_king_zone).count_ones() as i32;
+        if attacked_squares > 0 {
+            b_attacking_pieces += 1;
+            b_value_of_attacks += attacked_squares * ROOK_ATTACK_VAL;
+        }
+    }
+
+    let mut b_queen = board.bb(Piece::BLACK | Piece::QUEEN);
+    while let Some(sq) = pop_lsb(&mut b_queen) {
+        let queen_attacks = get_bishop_move_bits(sq, all_occ) | get_rook_move_bits(sq, all_occ);
+        let attacked_squares = (queen_attacks & w_king_zone).count_ones() as i32;
+        if attacked_squares > 0 {
+            b_attacking_pieces += 1;
+            b_value_of_attacks += attacked_squares * QUEEN_ATTACK_VAL;
+        }
+    }
+
+    if b_attacking_pieces > 1 {
+        let b_weight_index = (b_attacking_pieces as usize).min(7);
+        let white_danger = (b_value_of_attacks * ATTACK_WEIGHT_TABLE[b_weight_index]) / 100;
+        score -= white_danger
+    }
+
+    // White Attacks on Black King Zone 
+    let mut w_attacking_pieces = 0;
+    let mut w_value_of_attacks = 0;
+
+    let mut w_knight = board.bb(Piece::WHITE | Piece::KNIGHT);
+    while let Some(sq) = pop_lsb(&mut w_knight) {
+        let attacked_squares = (KNIGHT_ATTACKS[sq] & b_king_zone).count_ones() as i32;
+        if attacked_squares > 0 {
+            w_attacking_pieces += 1;
+            w_value_of_attacks += attacked_squares * KNIGHT_ATTACK_VAL;
+        }
+    }
+
+    let mut w_bishop = board.bb(Piece::WHITE | Piece::BISHOP);
+    while let Some(sq) = pop_lsb(&mut w_bishop) {
+        let attacked_squares = (get_bishop_move_bits(sq, all_occ) & b_king_zone).count_ones() as i32;
+        if attacked_squares > 0 {
+            w_attacking_pieces += 1;
+            w_value_of_attacks += attacked_squares * BISHOP_ATTACK_VAL;
+        }
+    }
+
+    let mut w_rook = board.bb(Piece::WHITE | Piece::ROOK);
+    while let Some(sq) = pop_lsb(&mut w_rook) {
+        let attacked_squares = (get_rook_move_bits(sq, all_occ) & b_king_zone).count_ones() as i32;
+        if attacked_squares > 0 {
+            w_attacking_pieces += 1;
+            w_value_of_attacks += attacked_squares * ROOK_ATTACK_VAL;
+        }
+    }
+
+    let mut w_queen = board.bb(Piece::WHITE | Piece::QUEEN);
+    while let Some(sq) = pop_lsb(&mut w_queen) {
+        let queen_attacks = get_bishop_move_bits(sq, all_occ) | get_rook_move_bits(sq, all_occ);
+        let attacked_squares = (queen_attacks & b_king_zone).count_ones() as i32;
+        if attacked_squares > 0 {
+            w_attacking_pieces += 1;
+            w_value_of_attacks += attacked_squares * QUEEN_ATTACK_VAL;
+        }
+    }
+
+    if w_attacking_pieces > 1 {
+        let w_weight_index = (w_attacking_pieces as usize).min(7);
+        let black_danger = (w_value_of_attacks * ATTACK_WEIGHT_TABLE[w_weight_index]) / 100;
+        score += black_danger
+    }
+
+    (score * (phase - scale_fac)) / (24 - scale_fac)
+}
+
 pub fn evaluate(board: &Board) -> i32 {
     let mut score = 0;
 
     score += board.get_pesto_score();
     score += mobility_score(board);
     score += pawn_struct_score(board);
+    score += king_safety_score(board);
 
     score * board.side_to_move().fac()
 }

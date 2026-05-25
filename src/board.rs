@@ -708,6 +708,11 @@ impl Board {
         self.game_phase.min(24) < 9
     }
 
+    #[inline]
+    pub fn get_game_phase(&self) -> i32 {
+        self.game_phase
+    }
+
     #[inline(always)]
     pub fn occ(&self, color: &Color) -> u64 {
         match color {
