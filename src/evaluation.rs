@@ -407,12 +407,12 @@ pub const BLACK_KING_ZONES: [u64; 64] = compute_king_zones(false);
 
 fn king_safety_score(board: &Board) -> i32 {
     let phase = board.get_game_phase();
+    let king_safety_start_phase = 6;
     
     // Early exit
-    if phase < 10 {
+    if phase <= king_safety_start_phase {
         return 0;
     }
-    let scale_fac = 9;
 
     let mut score = 0;
     let all_occ = board.all_occ();
@@ -566,7 +566,7 @@ fn king_safety_score(board: &Board) -> i32 {
         score += black_danger
     }
 
-    (score * (phase - scale_fac)) / (24 - scale_fac)
+    (score * (phase - king_safety_start_phase)) / (24 - king_safety_start_phase)
 }
 
 pub fn evaluate(board: &Board) -> i32 {
