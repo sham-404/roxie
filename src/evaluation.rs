@@ -219,6 +219,7 @@ const _QUEEN_MOBILITY: [i32; 28] = [
     30, 30, 30, 30,
 ];
 
+const BISHOP_PAIR_BONUS: i32 = 30;
 fn mobility_score(board: &Board) -> i32 {
     let all_occ = board.all_occ();
     let mut score = 0;
@@ -241,6 +242,10 @@ fn mobility_score(board: &Board) -> i32 {
     }
 
     let mut w_bishop = board.bb(Piece::WHITE | Piece::BISHOP);
+    if w_bishop.count_ones() > 1 {
+        score += BISHOP_PAIR_BONUS;
+    }
+
     while let Some(sq) = pop_lsb(&mut w_bishop) {
         let move_count = (get_bishop_move_bits(sq, all_occ) & white_safe_sq).count_ones();
         score += BISHOP_MOBILITY[move_count as usize];
@@ -261,6 +266,10 @@ fn mobility_score(board: &Board) -> i32 {
     }
 
     let mut b_bishop = board.bb(Piece::BLACK | Piece::BISHOP);
+    if b_bishop.count_ones() > 1 {
+        score -= BISHOP_PAIR_BONUS;
+    }
+
     while let Some(sq) = pop_lsb(&mut b_bishop) {
         let move_count = (get_bishop_move_bits(sq, all_occ) & black_safe_sq).count_ones();
         score -= BISHOP_MOBILITY[move_count as usize];
@@ -569,6 +578,7 @@ fn king_safety_score(board: &Board) -> i32 {
     (score * (phase - king_safety_start_phase)) / (24 - king_safety_start_phase)
 }
 
+const TEMPO_BONUS: i32 = 10;
 pub fn evaluate(board: &Board) -> i32 {
     let mut score = 0;
 
@@ -577,5 +587,5 @@ pub fn evaluate(board: &Board) -> i32 {
     score += pawn_struct_score(board);
     score += king_safety_score(board);
 
-    score * board.side_to_move().fac()
+    (score + TEMPO_BONUS) * board.side_to_move().fac()
 }
