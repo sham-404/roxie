@@ -353,12 +353,13 @@ impl Engine {
         limits: &SearchLimits,
         info: &mut SearchInfo,
     ) -> i32 {
+        let in_check = self.board.in_check();
+        let extension = if in_check { 1 } else { 0 };
+
         // searching first move with full window
         if mv_idx == 0 {
-            return -self.negamax(depth - 1, -beta, -alpha, ply + 1, limits, info);
+            return -self.negamax(depth - 1 + extension, -beta, -alpha, ply + 1, limits, info);
         }
-
-        let in_check = self.board.in_check();
 
         // checking whether lmr is applicable
         let can_reduce = mv_idx > 3
@@ -381,7 +382,7 @@ impl Engine {
 
         // Null window search
         let mut eval = -self.negamax(
-            depth - 1 - reduction,
+            depth - 1 - reduction + extension,
             -alpha - 1,
             -alpha,
             ply + 1,
@@ -391,12 +392,19 @@ impl Engine {
 
         // re-search if fail high
         if reduction > 0 && eval > alpha {
-            eval = -self.negamax(depth - 1, -alpha - 1, -alpha, ply + 1, limits, info);
+            eval = -self.negamax(
+                depth - 1 + extension,
+                -alpha - 1,
+                -alpha,
+                ply + 1,
+                limits,
+                info,
+            );
         }
 
         // full window re-search if needed
         if eval > alpha && eval < beta {
-            eval = -self.negamax(depth - 1, -beta, -alpha, ply + 1, limits, info);
+            eval = -self.negamax(depth - 1 + extension, -beta, -alpha, ply + 1, limits, info);
         }
 
         eval
