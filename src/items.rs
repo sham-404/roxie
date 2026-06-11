@@ -190,6 +190,11 @@ impl MoveFlag {
     }
 
     #[inline]
+    pub fn is_quiet(self) -> bool {
+        (self.0 & (Self::CAPTURE_BIT | Self::PROMO_BIT)) == 0
+    }
+
+    #[inline]
     pub fn get_promo_value(self) -> u16 {
         match self.0 & Self::PIECE_BIT {
             Self::KNIGHT => 320,

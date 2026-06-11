@@ -19,6 +19,7 @@ use std::{
 };
 
 const INF: i32 = 10000000;
+const MAX_HISTORY: u16 = 20000;
 
 impl Engine {
     pub fn search_ids<F>(&mut self, limits: &SearchLimits, mut on_iteration: F) -> SearchInfo
@@ -291,6 +292,13 @@ impl Engine {
             // pruning
             if eval >= beta {
                 fail_high = true;
+
+                if mv.flag().is_quiet() {
+                    let stm = self.board.side_to_move().val();
+                    let bonus = depth * depth;
+                    let h = &mut self.history[stm][mv.from()][mv.to()];
+                    *h = (*h).saturating_add(bonus).min(MAX_HISTORY);
+                }
                 break;
             }
         }
@@ -519,7 +527,12 @@ impl Engine {
                 // Give it a score higher than any possible capture/promotion
                 movelist.score[i] = 65535;
             } else {
-                movelist.score[i] = self.board.score_move(mv);
+                let mut score = self.board.score_move(mv);
+                if mv.flag().is_quiet() {
+                    score += self.history[self.board.side_to_move().val()][mv.from()][mv.to()];
+                }
+
+                movelist.score[i] = score;
             }
         }
     }
