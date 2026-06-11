@@ -3,7 +3,7 @@ use crate::{board::Board, tt::TranspositionTable};
 pub struct Engine {
     pub board: Board,
     pub tt: TranspositionTable,
-    pub history: Vec<Vec<Vec<u16>>>,
+    pub history: Vec<Vec<Vec<i32>>>,
 }
 
 impl Engine {

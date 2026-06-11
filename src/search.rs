@@ -19,7 +19,7 @@ use std::{
 };
 
 const INF: i32 = 10000000;
-const MAX_HISTORY: u16 = 20000;
+const MAX_HISTORY: i32 = 20000;
 
 impl Engine {
     pub fn search_ids<F>(&mut self, limits: &SearchLimits, mut on_iteration: F) -> SearchInfo
@@ -227,6 +227,7 @@ impl Engine {
 
         let mut move_list = self.board.gen_moves();
         let original_alpha = alpha;
+        let mut quiet_list = MoveList::new();
 
         // checking mates
         if move_list.len() == 0 {
@@ -250,6 +251,11 @@ impl Engine {
             let flag = mv.flag();
             let is_capture = flag.is_capture();
             let is_promo = flag.is_promo();
+            let is_quiet = flag.is_quiet();
+
+            if is_quiet {
+                quiet_list.push(mv);
+            }
 
             // Futility Pruning
             if depth == 1 && mv_idx > 0 && !is_capture && !is_promo && !in_check {
@@ -293,11 +299,25 @@ impl Engine {
             if eval >= beta {
                 fail_high = true;
 
-                if mv.flag().is_quiet() {
+                if is_quiet {
                     let stm = self.board.side_to_move().val();
-                    let bonus = depth * depth;
+                    let bonus = (depth * depth) as i32;
+
+                    // history maluses
+                    for q_mv in quiet_list.as_slice() {
+                        if *q_mv == mv {
+                            continue;
+                        }
+
+                        let h = &mut self.history[stm][q_mv.from()][q_mv.to()];
+                        *h -= bonus / 8;
+                        *h = (*h).clamp(-MAX_HISTORY, MAX_HISTORY);
+                    }
+
+                    // history bonus scoring
                     let h = &mut self.history[stm][mv.from()][mv.to()];
-                    *h = (*h).saturating_add(bonus).min(MAX_HISTORY);
+                    *h += bonus;
+                    *h = (*h).clamp(-MAX_HISTORY, MAX_HISTORY);
                 }
                 break;
             }
@@ -529,7 +549,8 @@ impl Engine {
             } else {
                 let mut score = self.board.score_move(mv);
                 if mv.flag().is_quiet() {
-                    score += self.history[self.board.side_to_move().val()][mv.from()][mv.to()];
+                    score += self.history[self.board.side_to_move().val()][mv.from()][mv.to()]
+                        .max(0) as u16;
                 }
 
                 movelist.score[i] = score;
