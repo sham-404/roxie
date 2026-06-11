@@ -296,25 +296,6 @@ impl Undo {
     }
 }
 
-pub struct MoveIter<'a> {
-    list: &'a mut MoveList,
-    current: usize,
-}
-
-impl<'a> Iterator for MoveIter<'a> {
-    type Item = Move;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current < self.list.len {
-            let mv = self.list.pick_move(self.current);
-            self.current += 1;
-            Some(mv)
-        } else {
-            None
-        }
-    }
-}
-
 const MAX_MOVES: usize = 256;
 #[derive(Debug)]
 pub struct MoveList {
@@ -360,25 +341,6 @@ impl MoveList {
         self.score.swap(start_idx, best_idx);
 
         self.moves[start_idx]
-    }
-
-    #[inline]
-    pub fn with_ordering(&mut self, tt_move: Move, board: &Board) -> MoveIter<'_> {
-        for i in 0..self.len {
-            let mv = self.moves[i];
-
-            if mv == tt_move {
-                // Give it a score higher than any possible capture/promotion
-                self.score[i] = 65535;
-            } else {
-                self.score[i] = board.score_move(mv);
-            }
-        }
-
-        MoveIter {
-            list: self,
-            current: 0,
-        }
     }
 
     #[inline]

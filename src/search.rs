@@ -3,7 +3,7 @@ use crate::{
     r#const::{BLACK_PAWN_ATTACKS, KING_ATTACKS, KNIGHT_ATTACKS, WHITE_PAWN_ATTACKS},
     engine::Engine,
     evaluation::evaluate,
-    items::{Color, Move, MoveFlag, Piece, PieceInfo},
+    items::{Color, Move, MoveFlag, MoveList, Piece, PieceInfo},
     square::Square,
     tt::{TTEntry, TTFlag},
     uci::{GoControl, MAX_DEPTH},
@@ -75,7 +75,9 @@ impl Engine {
                     tt_move = entry.best_move;
                 }
 
-                for mv in move_list.with_ordering(tt_move, &self.board) {
+                self.with_ordering(tt_move, &mut move_list);
+                for mv_idx in 0..move_list.len() {
+                    let mv = move_list.pick_move(mv_idx);
                     let undo = self.board.make_move(&mv);
                     let score = -self.negamax(d - 1, -beta, -alpha, 1, &limits, &mut info);
                     self.board.unmake_move(&mv, &undo);
@@ -240,7 +242,10 @@ impl Engine {
         let mut fail_high = false;
 
         // Actual searching loop
-        for (mv_idx, mv) in move_list.with_ordering(tt_move, &self.board).enumerate() {
+
+        self.with_ordering(tt_move, &mut move_list);
+        for mv_idx in 0..move_list.len() {
+            let mv = move_list.pick_move(mv_idx);
             let flag = mv.flag();
             let is_capture = flag.is_capture();
             let is_promo = flag.is_promo();
@@ -292,7 +297,7 @@ impl Engine {
 
         let flag = if fail_high {
             TTFlag::LowerBound
-        } else if max_eval <= original_alpha{
+        } else if max_eval <= original_alpha {
             TTFlag::UpperBound
         } else {
             TTFlag::Exact
@@ -473,7 +478,9 @@ impl Engine {
             tt_move = entry.best_move;
         }
 
-        for mv in move_list.with_ordering(tt_move, &self.board) {
+        self.with_ordering(tt_move, &mut move_list);
+        for mv_idx in 0..move_list.len() {
+            let mv = move_list.pick_move(mv_idx);
             // soft delta pruning
             if !in_check {
                 if self.board.see(&mv) < -75 && !mv.flag().is_promo() {
@@ -499,6 +506,22 @@ impl Engine {
         }
 
         alpha
+    }
+}
+
+impl Engine {
+    #[inline]
+    pub fn with_ordering(&mut self, tt_move: Move, movelist: &mut MoveList) {
+        for i in 0..movelist.len() {
+            let mv = movelist.moves[i];
+
+            if mv == tt_move {
+                // Give it a score higher than any possible capture/promotion
+                movelist.score[i] = 65535;
+            } else {
+                movelist.score[i] = self.board.score_move(mv);
+            }
+        }
     }
 }
 
