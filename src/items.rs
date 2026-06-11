@@ -305,7 +305,7 @@ const MAX_MOVES: usize = 256;
 #[derive(Debug)]
 pub struct MoveList {
     pub moves: [Move; MAX_MOVES],
-    pub score: [u16; MAX_MOVES],
+    pub score: [i32; MAX_MOVES],
     pub len: usize,
 }
 
@@ -314,7 +314,7 @@ impl MoveList {
     pub fn new() -> Self {
         Self {
             moves: [Move::NULL; MAX_MOVES],
-            score: [0u16; MAX_MOVES],
+            score: [0i32; MAX_MOVES],
             len: 0,
         }
     }

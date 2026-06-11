@@ -545,12 +545,11 @@ impl Engine {
 
             if mv == tt_move {
                 // Give it a score higher than any possible capture/promotion
-                movelist.score[i] = 65535;
+                movelist.score[i] = 1_000_000_000;
             } else {
                 let mut score = self.board.score_move(mv);
                 if mv.flag().is_quiet() {
-                    score += self.history[self.board.side_to_move().val()][mv.from()][mv.to()]
-                        .max(0) as u16;
+                    score += self.history[self.board.side_to_move().val()][mv.from()][mv.to()];
                 }
 
                 movelist.score[i] = score;
