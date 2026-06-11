@@ -451,6 +451,14 @@ impl Color {
     }
 
     #[inline]
+    pub fn val(&self) -> usize {
+        match self {
+            Color::White => WHITE,
+            Color::Black => BLACK,
+        }
+    }
+
+    #[inline]
     pub fn fac(&self) -> i32 {
         match self {
             Color::White => 1,

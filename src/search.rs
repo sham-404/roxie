@@ -237,7 +237,9 @@ impl Engine {
 
         let mut max_eval = -INF;
         let mut best_move_this_node = Move::NULL;
+        let mut fail_high = false;
 
+        // Actual searching loop
         for (mv_idx, mv) in move_list.with_ordering(tt_move, &self.board).enumerate() {
             let flag = mv.flag();
             let is_capture = flag.is_capture();
@@ -260,6 +262,12 @@ impl Engine {
                 }
             }
 
+            // // Late Move Pruning
+            // if depth <= 5 && mv_idx > 4 + depth as usize * 3 && !in_check && !is_promo && !is_capture
+            // {
+            //     continue;
+            // }
+
             let undo = self.board.make_move(&mv);
             // Late Move Reduction (LMR)
             let eval = self.pv_search(&mv, mv_idx, depth, alpha, beta, ply, limits, info);
@@ -276,15 +284,16 @@ impl Engine {
             }
 
             // pruning
-            if alpha >= beta {
+            if eval >= beta {
+                fail_high = true;
                 break;
             }
         }
 
-        let flag = if max_eval <= original_alpha {
-            TTFlag::UpperBound
-        } else if max_eval >= beta {
+        let flag = if fail_high {
             TTFlag::LowerBound
+        } else if max_eval <= original_alpha{
+            TTFlag::UpperBound
         } else {
             TTFlag::Exact
         };
