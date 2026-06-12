@@ -721,6 +721,11 @@ impl Board {
         }
     }
 
+    #[inline]
+    pub fn get_bb(&self) -> &[u64] {
+        &self.bitboards
+    }
+
     #[inline(always)]
     pub fn all_occ(&self) -> u64 {
         self.occupancy[BOTH]

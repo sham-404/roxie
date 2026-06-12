@@ -14,7 +14,9 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use roxie::{board::Board, engine::Engine, network::Network, perft::perft, search::SearchLimits};
+    use roxie::{
+        board::Board, engine::Engine, network::Network, perft::perft, search::SearchLimits,
+    };
     use std::time::Instant;
 
     use crate::init_all;
@@ -104,7 +106,28 @@ mod tests {
 
     #[test]
     fn nn_load() {
-        let _ = Network::load("roxie_f.nn");
+        let _ = Network::load("roxie_v1.nn");
+    }
+
+    #[test]
+    fn nn_eval() {
+        init_all();
+        let fens = [
+            "r1bqkbnr/ppp3pp/2np4/4pp2/4P3/2NP1N1P/PPP2PP1/R1BQKB1R b KQkq - 1 5",
+            "r2qkbnr/p1pp1P2/1p2p3/6p1/2Pn3p/2N2Q1P/PP3PP1/R1B1KB1R b KQkq - 0 11",
+            "8/8/1K2pR2/4P3/4kP2/8/8/8 w - - 5 59",
+            "8/8/1p4R1/6b1/1PP3kp/P5p1/4K1B1/8 b - - 0 43",
+            "rn1q1bnr/pp2pk1p/3pb1p1/3p4/4P3/5N2/PPP2PPP/RNB1KB1R w KQ - 0 7",
+        ];
+        let nn = Network::load("roxie_v1.nn");
+
+        for fen in fens {
+            let board = Board::load_fen(fen);
+            let eval = nn.eval(&board);
+
+            println!("fen: {}", fen);
+            println!("roxie's nn eval: {}", eval);
+        }
     }
 
     fn qperft(board: &mut Board, depth: u32) -> u64 {

@@ -1,8 +1,16 @@
-use std::{fs::{File, metadata}, io::{Read, Seek}};
+use std::{
+    fs::{File, metadata},
+    io::{Read, Seek},
+};
+
+use crate::{
+    board::{Board, pop_lsb},
+    items::Color,
+};
 
 const INPUT: usize = 769;
-const HL1: usize = 1024;
-const HL2: usize = 32;
+const HL1: usize = 512;
+const HL2: usize = 256;
 const OUTPUT: usize = 1;
 const MAGIC: &[u8; 7] = b"ROXIE_F";
 
@@ -42,6 +50,87 @@ impl Network {
             w3,
             b3,
         }
+    }
+
+    pub fn eval(&self, board: &Board) -> i32 {
+        let mut feature: Vec<f32> = vec![0.0; INPUT];
+
+        for (idx, &bb) in board.get_bb().iter().enumerate() {
+            let mut cur_bb = bb;
+
+            while let Some(sq) = pop_lsb(&mut cur_bb) {
+                let feat_idx = sq * 12 + idx;
+                feature[feat_idx] = 1.0;
+            }
+        }
+
+        if board.side_to_move() == Color::White {
+            feature[INPUT - 1] = 1.0;
+        }
+
+        let normalized_cp = self.forward(&feature).clamp(0.00001, 0.99999);
+        let cp = (700.0 * (normalized_cp / (1.0 - normalized_cp)).ln()) as i32;
+
+        cp
+    }
+
+    pub fn forward(&self, feature: &[f32]) -> f32 {
+        let fc1 = Network::process_layer(feature, &self.w1, &self.b1);
+        let fc1 = Network::relu_layer(&fc1);
+
+        let fc2 = Network::process_layer(&fc1, &self.w2, &self.b2);
+        let fc2 = Network::relu_layer(&fc2);
+
+        let fc3 = Network::process_layer(&fc2, &self.w3, &self.b3);
+        let fc3 = Network::sigmoid_layer(&fc3);
+
+        fc3[0]
+    }
+
+    fn process_layer(layer: &[f32], weight: &[f32], bias: &[f32]) -> Vec<f32> {
+        let mut result = Vec::with_capacity(bias.len());
+        let input_len = layer.len();
+
+        for neuron_idx in 0..bias.len() {
+            let mut val = bias[neuron_idx];
+
+            for i in 0..input_len {
+                val += layer[i] * weight[i + neuron_idx * input_len];
+            }
+
+            // activation
+            result.push(val);
+        }
+
+        result
+    }
+
+    fn sigmoid_layer(layer: &[f32]) -> Vec<f32> {
+        let mut res = Vec::with_capacity(layer.len());
+
+        for i in 0..layer.len() {
+            res.push(Network::sigmoid(layer[i]));
+        }
+
+        res
+    }
+
+    fn relu_layer(layer: &[f32]) -> Vec<f32> {
+        let mut res = Vec::with_capacity(layer.len());
+
+        for i in 0..layer.len() {
+            res.push(Network::relu(layer[i]));
+        }
+
+        res
+    }
+
+    fn sigmoid(val: f32) -> f32 {
+        1.0 / (1.0 + (-val).exp())
+    }
+
+    fn relu(val: f32) -> f32 {
+        val.max(0.0)
     }
 
     fn read_f32(file: &mut File, size: usize) -> Vec<f32> {
