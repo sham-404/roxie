@@ -14,7 +14,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use roxie::{board::Board, engine::Engine, perft::perft, search::SearchLimits};
+    use roxie::{board::Board, engine::Engine, network::Network, perft::perft, search::SearchLimits};
     use std::time::Instant;
 
     use crate::init_all;
@@ -100,6 +100,11 @@ mod tests {
             "search depth {} (kiwipete): nodes searched={} time={:.5}s nps={}",
             depth, data.nodes, secs, nps
         );
+    }
+
+    #[test]
+    fn nn_load() {
+        let _ = Network::load("roxie_f.nn");
     }
 
     fn qperft(board: &mut Board, depth: u32) -> u64 {

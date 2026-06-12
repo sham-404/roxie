@@ -4,6 +4,7 @@ pub mod engine;
 pub mod evaluation;
 pub mod items;
 pub mod magics;
+pub mod network;
 pub mod perft;
 pub mod search;
 pub mod square;
