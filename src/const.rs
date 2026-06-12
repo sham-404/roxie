@@ -12,6 +12,8 @@ pub const BQ: u8 = 0b1000;
 pub const WK_START_POS: usize = 4;
 pub const BK_START_POS: usize = 60;
 
+pub const MAX_PLY: usize = 128;
+
 #[rustfmt::skip]
 pub const KING_ATTACKS: [u64; 64] = [
     0x302,              0x705,              0xe0a,              0x1c14,

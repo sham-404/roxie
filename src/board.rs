@@ -1355,8 +1355,9 @@ impl Board {
         // ORDERING BASE SCORES USED
         // TT move            : 1_000_000_000 (handled on ordering)
         // winning captures   : 70_000_000
+        // killer 1           : 60_000_000
+        // killer 2           : 59_000_000
         // equal captures     : 50_000_000
-        // killers            : (not yet implemented)
         // promotions         : 30_000_000
         // quiets and castles : 10_000_000
         // bad captures       : 0

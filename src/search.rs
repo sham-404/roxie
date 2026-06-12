@@ -1,6 +1,6 @@
 use crate::{
     board::{Board, mask},
-    r#const::{BLACK_PAWN_ATTACKS, KING_ATTACKS, KNIGHT_ATTACKS, WHITE_PAWN_ATTACKS},
+    r#const::{BLACK_PAWN_ATTACKS, KING_ATTACKS, KNIGHT_ATTACKS, MAX_PLY, WHITE_PAWN_ATTACKS},
     engine::Engine,
     evaluation::evaluate,
     items::{Color, Move, MoveFlag, MoveList, Piece, PieceInfo},
@@ -36,6 +36,8 @@ impl Engine {
             abort: false,
             is_mandatory: true,
         };
+
+        self.killers = [[Move::NULL; 2]; MAX_PLY];
 
         let mut last_complete_info = info.clone();
         for d in 1..=limits.depth.unwrap_or(MAX_DEPTH) {
@@ -76,7 +78,7 @@ impl Engine {
                     tt_move = entry.best_move;
                 }
 
-                self.with_ordering(tt_move, &mut move_list);
+                self.with_ordering(tt_move, 0, &mut move_list);
                 for mv_idx in 0..move_list.len() {
                     let mv = move_list.pick_move(mv_idx);
                     let undo = self.board.make_move(&mv);
@@ -245,7 +247,7 @@ impl Engine {
 
         // Actual searching loop
 
-        self.with_ordering(tt_move, &mut move_list);
+        self.with_ordering(tt_move, ply as usize, &mut move_list);
         for mv_idx in 0..move_list.len() {
             let mv = move_list.pick_move(mv_idx);
             let flag = mv.flag();
@@ -300,6 +302,8 @@ impl Engine {
                 fail_high = true;
 
                 if is_quiet {
+                    self.store_killer(mv, ply as usize);
+
                     let stm = self.board.side_to_move().val();
                     let bonus = (depth * depth) as i32;
 
@@ -506,7 +510,7 @@ impl Engine {
             tt_move = entry.best_move;
         }
 
-        self.with_ordering(tt_move, &mut move_list);
+        self.with_ordering(tt_move, ply as usize, &mut move_list);
         for mv_idx in 0..move_list.len() {
             let mv = move_list.pick_move(mv_idx);
             // soft delta pruning
@@ -539,13 +543,17 @@ impl Engine {
 
 impl Engine {
     #[inline]
-    pub fn with_ordering(&mut self, tt_move: Move, movelist: &mut MoveList) {
+    pub fn with_ordering(&mut self, tt_move: Move, ply: usize, movelist: &mut MoveList) {
         for i in 0..movelist.len() {
             let mv = movelist.moves[i];
 
             if mv == tt_move {
                 // Give it a score higher than any possible capture/promotion
                 movelist.score[i] = 1_000_000_000;
+            } else if mv == self.killers[ply][0] {
+                movelist.score[i] = 60_000_000;
+            } else if mv == self.killers[ply][1] {
+                movelist.score[i] = 59_000_000;
             } else {
                 let mut score = self.board.score_move(mv);
                 if mv.flag().is_quiet() {
@@ -554,6 +562,14 @@ impl Engine {
 
                 movelist.score[i] = score;
             }
+        }
+    }
+
+    #[inline]
+    fn store_killer(&mut self, mv: Move, ply: usize) {
+        if self.killers[ply][0] != mv {
+            self.killers[ply][1] = self.killers[ply][0];
+            self.killers[ply][0] = mv;
         }
     }
 }
