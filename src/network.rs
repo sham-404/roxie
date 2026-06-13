@@ -6,11 +6,12 @@ use std::{
 
 use crate::{
     board::{Board, pop_lsb},
-    items::Color,
+    engine::Engine,
+    items::{Color, Move, MoveFlag, Piece, PieceInfo, Undo},
 };
 
 const INPUT: usize = 769;
-const HL1: usize = 512;
+pub const HL1: usize = 512;
 const HL2: usize = 256;
 const OUTPUT: usize = 1;
 const MAGIC: &[u8; 7] = b"ROXIE_F";
@@ -84,6 +85,19 @@ impl Network {
         cp
     }
 
+    pub fn evaluate_with_acc(&self, acc: &[f32]) -> i32 {
+        let fc1 = Network::relu_layer(acc);
+
+        let fc2 = Network::process_layer(&fc1, &self.w2, &self.b2);
+        let fc2 = Network::relu_layer(&fc2);
+
+        let fc3 = Network::process_layer(&fc2, &self.w3, &self.b3);
+        let fc3 = Network::sigmoid_layer(&fc3);
+
+        let p = fc3[0];
+        (700.0 * (p / (1.0 - p)).ln()) as i32
+    }
+
     pub fn forward(&self, feature: &[f32]) -> f32 {
         let fc1 = Network::process_layer(feature, &self.w1, &self.b1);
         let fc1 = Network::relu_layer(&fc1);
@@ -152,5 +166,175 @@ impl Network {
         }
 
         vec_f32
+    }
+}
+
+fn get_feature_idx(piece: PieceInfo, pos: usize) -> usize {
+    let piece_idx = Piece::to_idx(piece);
+    pos * 12 + piece_idx
+}
+
+impl Engine {
+    pub fn setup_accumulator(&self) -> [f32; HL1] {
+        if let Some(nn) = NETWORK.get() {
+            let mut feature: Vec<f32> = vec![0.0; INPUT];
+
+            for (idx, &bb) in self.board.get_bb().iter().enumerate() {
+                let mut cur_bb = bb;
+
+                while let Some(sq) = pop_lsb(&mut cur_bb) {
+                    let feat_idx = sq * 12 + idx;
+                    feature[feat_idx] = 1.0;
+                }
+            }
+
+            if self.board.side_to_move() == Color::White {
+                feature[INPUT - 1] = 1.0;
+            }
+
+            let acc = Network::process_layer(&feature, &nn.w1, &nn.b1);
+            acc.try_into().unwrap()
+        } else {
+            [0.0; HL1]
+        }
+    }
+
+    pub fn update_nnue(&mut self, mv: &Move, undo: &Undo, ply: usize) {
+        let Some(nn) = NETWORK.get() else {
+            return;
+        };
+
+        self.accumulators[ply + 1] = self.accumulators[ply];
+        let acc = &mut self.accumulators[ply + 1];
+
+        let (from, to, flag) = (mv.from(), mv.to(), mv.flag());
+
+        // board is already after make_move()
+        let moved_piece = self.board.piece_on(to);
+        let side = Piece::get_color(moved_piece);
+
+        let mut removed = [0usize; 4];
+        let mut added = [0usize; 3];
+
+        let mut r_cnt = 0;
+        let mut a_cnt = 0;
+
+        //
+        // moved piece
+        //
+
+        removed[r_cnt] = if flag.is_promo() {
+            get_feature_idx(Piece::PAWN | side, from)
+        } else {
+            get_feature_idx(moved_piece, from)
+        };
+        r_cnt += 1;
+
+        added[a_cnt] = get_feature_idx(moved_piece, to);
+        a_cnt += 1;
+
+        //
+        // captures
+        //
+
+        if flag.is_capture() {
+            let cap_sq = if flag == MoveFlag::EN_PASSANT {
+                if side == Piece::WHITE { to - 8 } else { to + 8 }
+            } else {
+                to
+            };
+
+            removed[r_cnt] = get_feature_idx(undo.captured, cap_sq);
+            r_cnt += 1;
+        }
+
+        //
+        // castling rook movement
+        //
+
+        if flag.is_castle() {
+            let (rook_from, rook_to) = match flag {
+                MoveFlag::KING_CASTLE => {
+                    if side == Piece::WHITE {
+                        (63, 61)
+                    } else {
+                        (7, 5)
+                    }
+                }
+                MoveFlag::QUEEN_CASTLE => {
+                    if side == Piece::WHITE {
+                        (56, 59)
+                    } else {
+                        (0, 3)
+                    }
+                }
+                _ => unreachable!(),
+            };
+
+            let rook = Piece::ROOK | side;
+
+            removed[r_cnt] = get_feature_idx(rook, rook_from);
+            r_cnt += 1;
+
+            added[a_cnt] = get_feature_idx(rook, rook_to);
+            a_cnt += 1;
+        }
+
+        //
+        // incremental accumulator update
+        //
+
+        for neuron in 0..HL1 {
+            let mut delta = 0.0;
+
+            for r in 0..r_cnt {
+                delta -= nn.w1[removed[r] + neuron * INPUT];
+            }
+
+            for a in 0..a_cnt {
+                delta += nn.w1[added[a] + neuron * INPUT];
+            }
+
+            //
+            // side-to-move feature
+            //
+            // feature[768] = 1 when White to move
+            //
+
+            let stm_weight = nn.w1[(INPUT - 1) + neuron * INPUT];
+
+            if self.board.side_to_move() == Color::White {
+                delta += stm_weight;
+            } else {
+                delta -= stm_weight;
+            }
+
+            acc[neuron] += delta;
+        }
+    }
+
+    pub fn update_nnue_null_move(&mut self, ply: usize) {
+        let Some(nn) = NETWORK.get() else {
+            return;
+        };
+
+        let acc = &mut self.accumulators[ply + 1];
+
+        for neuron in 0..HL1 {
+            let mut delta = 0.0;
+
+            // side-to-move feature
+            // feature[768] = 1 when White to move
+
+            let stm_weight = nn.w1[(INPUT - 1) + neuron * INPUT];
+
+            if self.board.side_to_move() == Color::White {
+                delta += stm_weight;
+            } else {
+                delta -= stm_weight;
+            }
+
+            acc[neuron] += delta;
+        }
     }
 }

@@ -38,6 +38,7 @@ impl Engine {
         };
 
         self.killers = [[Move::NULL; 2]; MAX_PLY];
+        self.accumulators[0] = self.setup_accumulator();
 
         let mut last_complete_info = info.clone();
         for d in 1..=limits.depth.unwrap_or(MAX_DEPTH) {
@@ -82,6 +83,7 @@ impl Engine {
                 for mv_idx in 0..move_list.len() {
                     let mv = move_list.pick_move(mv_idx);
                     let undo = self.board.make_move(&mv);
+                    self.update_nnue(&mv, &undo, 0);
                     let score = -self.negamax(d - 1, -beta, -alpha, 1, &limits, &mut info);
                     self.board.unmake_move(&mv, &undo);
 
@@ -216,7 +218,7 @@ impl Engine {
         }
 
         let in_check = self.board.in_check();
-        let static_eval = evaluate(&self.board); // static evaluation
+        let static_eval = evaluate(&self.board, &self.accumulators[ply as usize]); // static evaluation
 
         ///// Reverse Futility Pruning (Static Null Move Pruning)
         if !in_check && depth <= 4 && beta.abs() < INF - 1000 {
@@ -283,6 +285,8 @@ impl Engine {
             // }
 
             let undo = self.board.make_move(&mv);
+            self.update_nnue(&mv, &undo, ply as usize);
+
             // Late Move Reduction (LMR)
             let eval = self.pv_search(&mv, mv_idx, depth, alpha, beta, ply, limits, info);
 
@@ -369,10 +373,11 @@ impl Engine {
         if depth > 4
             && !self.board.in_check()
             && !self.board.is_endgame()
-            && evaluate(&self.board) >= beta
+            && evaluate(&self.board, &self.accumulators[ply as usize]) >= beta
         {
             let r = 2 + depth / 6;
             let old_epsq = self.board.make_null_move();
+            self.update_nnue_null_move(ply as usize);
 
             // Zero-window search
             let score = -self.negamax(depth - 1 - r, -beta, -beta + 1, ply + 1, limits, info);
@@ -477,7 +482,7 @@ impl Engine {
 
         // Stand pat
         let stand_pat = if !in_check {
-            evaluate(&self.board)
+            evaluate(&self.board, &self.accumulators[ply as usize])
         } else {
             -INF
         };
@@ -521,6 +526,8 @@ impl Engine {
             }
 
             let undo = self.board.make_move(&mv);
+
+            self.update_nnue(&mv, &undo, ply as usize);
             let score = -self.quiescence(-beta, -alpha, ply + 1, info, limits);
             self.board.unmake_move(&mv, &undo);
 

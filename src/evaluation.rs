@@ -579,11 +579,11 @@ fn king_safety_score(board: &Board) -> i32 {
 }
 
 const TEMPO_BONUS: i32 = 10;
-pub fn evaluate(board: &Board) -> i32 {
+pub fn evaluate(board: &Board, acc: &[f32]) -> i32 {
     let mut score = 0;
 
     if let Some(nn) = NETWORK.get() {
-        return nn.eval(board);
+        return nn.evaluate_with_acc(acc);
     }
 
     score += board.get_pesto_score();

@@ -1,10 +1,11 @@
-use crate::{board::Board, r#const::MAX_PLY, items::Move, tt::TranspositionTable};
+use crate::{board::Board, r#const::MAX_PLY, items::Move, network::HL1, tt::TranspositionTable};
 
 pub struct Engine {
     pub board: Board,
     pub tt: TranspositionTable,
     pub history: [[[i32; 64]; 64]; 2],
-    pub killers: [[Move; 2]; MAX_PLY]
+    pub killers: [[Move; 2]; MAX_PLY],
+    pub accumulators: [[f32; HL1]; MAX_PLY],
 }
 
 impl Engine {
@@ -14,6 +15,7 @@ impl Engine {
             tt: TranspositionTable::new(16),
             history: [[[0; 64]; 64]; 2],
             killers: [[Move::NULL; 2]; MAX_PLY],
+            accumulators: [[0f32; HL1]; MAX_PLY],
         }
     }
 }
