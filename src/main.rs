@@ -1,9 +1,13 @@
-use roxie::{evaluation::init_pesto_table, magics::init_magics, uci::UCI, zobrist::init_zobrist};
+use roxie::{
+    evaluation::init_pesto_table, magics::init_magics, network::init_nn, uci::UCI,
+    zobrist::init_zobrist,
+};
 
 fn init_all() {
     init_zobrist();
     init_pesto_table();
     init_magics();
+    init_nn(false);
 }
 
 fn main() {
@@ -15,7 +19,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use roxie::{
-        board::Board, engine::Engine, network::Network, perft::perft, search::SearchLimits,
+        board::Board, engine::Engine, network::Network, perft::perft,
+        search::SearchLimits,
     };
     use std::time::Instant;
 
@@ -121,13 +126,23 @@ mod tests {
         ];
         let nn = Network::load("roxie_v1.nn");
 
+        let mut time = 0;
         for fen in fens {
             let board = Board::load_fen(fen);
+            let start = Instant::now();
             let eval = nn.eval(&board);
+            let duration = start.elapsed();
+            let elapsed = duration.as_nanos();
+
+            time += elapsed;
 
             println!("fen: {}", fen);
             println!("roxie's nn eval: {}", eval);
+            println!("eval duration: {}ns", elapsed);
+            println!();
         }
+
+        println!("Time taken: {}ns", time);
     }
 
     fn qperft(board: &mut Board, depth: u32) -> u64 {

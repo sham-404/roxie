@@ -4,7 +4,7 @@ use crate::{
     board::{Board, pop_lsb},
     r#const::{BLACK_PASSED_MASKS, KING_ATTACKS, KNIGHT_ATTACKS, WHITE_PASSED_MASKS},
     items::{Color, Piece},
-    magics::{get_bishop_move_bits, get_rook_move_bits},
+    magics::{get_bishop_move_bits, get_rook_move_bits}, network::NETWORK,
 };
 
 // const SCORE: [i32; 5] = [100, 320, 330, 500, 900];
@@ -581,6 +581,10 @@ fn king_safety_score(board: &Board) -> i32 {
 const TEMPO_BONUS: i32 = 10;
 pub fn evaluate(board: &Board) -> i32 {
     let mut score = 0;
+
+    if let Some(nn) = NETWORK.get() {
+        return nn.eval(board);
+    }
 
     score += board.get_pesto_score();
     score += mobility_score(board);

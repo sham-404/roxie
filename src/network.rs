@@ -1,6 +1,7 @@
 use std::{
     fs::{File, metadata},
     io::{Read, Seek},
+    sync::OnceLock,
 };
 
 use crate::{
@@ -13,6 +14,15 @@ const HL1: usize = 512;
 const HL2: usize = 256;
 const OUTPUT: usize = 1;
 const MAGIC: &[u8; 7] = b"ROXIE_F";
+
+pub static NETWORK: OnceLock<Network> = OnceLock::new();
+
+pub fn init_nn(is_needed: bool) {
+    if !is_needed {
+        return;
+    }
+    NETWORK.get_or_init(|| Network::load("roxie_v1.nn"));
+}
 
 pub struct Network {
     w1: Vec<f32>,
@@ -83,7 +93,6 @@ impl Network {
 
         let fc3 = Network::process_layer(&fc2, &self.w3, &self.b3);
         let fc3 = Network::sigmoid_layer(&fc3);
-
         fc3[0]
     }
 

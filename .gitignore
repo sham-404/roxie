@@ -6,3 +6,5 @@ tests/subjects/
 
 releases/
 venv/
+
+*.nn
