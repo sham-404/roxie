@@ -579,7 +579,7 @@ fn king_safety_score(board: &Board) -> i32 {
 }
 
 const TEMPO_BONUS: i32 = 10;
-pub fn evaluate(board: &Board, acc: &[f32]) -> i32 {
+pub fn evaluate(board: &Board, acc: &[i32]) -> i32 {
     let mut score = 0;
 
     if let Some(nn) = NETWORK.get() {

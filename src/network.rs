@@ -16,6 +16,8 @@ const HL2: usize = 64;
 const OUTPUT: usize = 1;
 const MAGIC: &[u8; 8] = b"ROXIE_V2";
 const NN_PATH: &'static str = "roxie_v2.nn";
+const QP: i32 = 6;
+const Q: f32 = (1 << QP) as f32; // 2 ^ 6
 
 pub static NETWORK: OnceLock<Network> = OnceLock::new();
 
@@ -27,12 +29,12 @@ pub fn init_nn(is_needed: bool) {
 }
 
 pub struct Network {
-    w1: Vec<f32>,
-    b1: Vec<f32>,
-    w2: Vec<f32>,
-    b2: Vec<f32>,
-    w3: Vec<f32>,
-    b3: Vec<f32>,
+    w1: Vec<i16>,
+    b1: Vec<i32>,
+    w2: Vec<i16>,
+    b2: Vec<i32>,
+    w3: Vec<i16>,
+    b3: Vec<i32>,
 }
 
 impl Network {
@@ -45,11 +47,22 @@ impl Network {
         assert_eq!(&magic, MAGIC);
 
         let w1 = Network::read_f32(&mut file, INPUT * HL1);
+        let w1 = Network::quantize_to_i16(&w1);
+
         let b1 = Network::read_f32(&mut file, HL1);
+        let b1 = Network::quantize_to_i32(&b1);
+
         let w2 = Network::read_f32(&mut file, HL1 * HL2);
+        let w2 = Network::quantize_to_i16(&w2);
+
         let b2 = Network::read_f32(&mut file, HL2);
+        let b2 = Network::quantize_to_i32(&b2);
+
         let w3 = Network::read_f32(&mut file, HL2 * OUTPUT);
+        let w3 = Network::quantize_to_i16(&w3);
+
         let b3 = Network::read_f32(&mut file, OUTPUT);
+        let b3 = Network::quantize_to_i32(&b3);
 
         let pos = file.stream_position().unwrap();
         assert_eq!(file_size, pos); // validating that we have reached the EOF
@@ -64,56 +77,78 @@ impl Network {
         }
     }
 
+    fn quantize_to_i16(layer: &[f32]) -> Vec<i16> {
+        let mut quantized: Vec<i16> = Vec::with_capacity(layer.len());
+
+        for &val in layer {
+            quantized.push((val * Q).round() as i16);
+        }
+
+        quantized
+    }
+
+    fn quantize_to_i32(layer: &[f32]) -> Vec<i32> {
+        let mut quantized: Vec<i32> = Vec::with_capacity(layer.len());
+
+        for &val in layer {
+            quantized.push((val * Q).round() as i32);
+        }
+
+        quantized
+    }
+
     pub fn eval(&self, board: &Board) -> i32 {
-        let mut feature: Vec<f32> = vec![0.0; INPUT];
+        let mut feature: Vec<i32> = vec![0; INPUT];
 
         for (idx, &bb) in board.get_bb().iter().enumerate() {
             let mut cur_bb = bb;
 
             while let Some(sq) = pop_lsb(&mut cur_bb) {
                 let feat_idx = sq * 12 + idx;
-                feature[feat_idx] = 1.0;
+                feature[feat_idx] = 1;
             }
         }
 
         if board.side_to_move() == Color::White {
-            feature[INPUT - 1] = 1.0;
+            feature[INPUT - 1] = 1;
         }
 
         let normalized_cp = self.forward(&feature);
 
         // let cp = (700.0 * (normalized_cp / (1.0 - normalized_cp)).ln()) as i32;
-        let cp = (normalized_cp * 400.0) as i32;
+        let cp = (normalized_cp * 400) as i32;
 
-        cp
+        cp >> QP
     }
 
-    pub fn evaluate_with_acc(&self, acc: &[f32]) -> i32 {
-        let fc1 = Network::hard_tanh(0.0, 1.0, acc);
+    pub fn evaluate_with_acc(&self, acc: &[i32]) -> i32 {
+        let fc1 = Network::hard_tanh(0 * Q as i32, 1 * Q as i32, acc);
 
-        let fc2 = Network::process_layer(&fc1, &self.w2, &self.b2);
-        let fc2 = Network::hard_tanh(0.0, 1.0, &fc2);
+        let fc2 = Network::process_layer(&fc1, &self.w2, &self.b2, true);
+        let fc2 = Network::hard_tanh(0 * Q as i32, 1 * Q as i32, &fc2);
 
-        let fc3 = Network::process_layer(&fc2, &self.w3, &self.b3);
+        let fc3 = Network::process_layer(&fc2, &self.w3, &self.b3, true);
 
         let p = fc3[0];
 
         // let cp = (700.0 * (p / (1.0 - p)).ln()) as i32;
-        (p * 400.0) as i32
+        (p * 400) >> QP as i32
     }
 
-    pub fn forward(&self, feature: &[f32]) -> f32 {
-        let fc1 = Network::process_layer(feature, &self.w1, &self.b1);
-        let fc1 = Network::hard_tanh(0.0, 1.0, &fc1);
+    pub fn forward(&self, feature: &[i32]) -> i32 {
+        let fc1 = Network::process_layer(feature, &self.w1, &self.b1, false);
+        let fc1 = Network::hard_tanh(0 * Q as i32, 1 * Q as i32, &fc1);
 
-        let fc2 = Network::process_layer(&fc1, &self.w2, &self.b2);
-        let fc2 = Network::hard_tanh(0.0, 1.0, &fc2);
+        let fc2 = Network::process_layer(&fc1, &self.w2, &self.b2, true);
+        let fc2 = Network::hard_tanh(0 * Q as i32, 1 * Q as i32, &fc2);
 
-        let fc3 = Network::process_layer(&fc2, &self.w3, &self.b3);
+        let fc3 = Network::process_layer(&fc2, &self.w3, &self.b3, true);
         fc3[0]
     }
 
-    fn process_layer(layer: &[f32], weight: &[f32], bias: &[f32]) -> Vec<f32> {
+    fn process_layer(layer: &[i32], weight: &[i16], bias: &[i32], to_quantize: bool) -> Vec<i32> {
+        let q = if to_quantize { QP } else { 0 };
+
         let mut result = Vec::with_capacity(bias.len());
         let input_len = layer.len();
 
@@ -121,7 +156,7 @@ impl Network {
             let mut val = bias[neuron_idx];
 
             for i in 0..input_len {
-                val += layer[i] * weight[i + neuron_idx * input_len];
+                val += layer[i] * weight[i + neuron_idx * input_len] as i32 >> q;
             }
 
             // activation
@@ -154,10 +189,10 @@ impl Network {
     }
 
     #[allow(dead_code)]
-    fn hard_tanh(min: f32, max: f32, layer: &[f32]) -> Vec<f32> {
+    fn hard_tanh(min: i32, max: i32, layer: &[i32]) -> Vec<i32> {
         let mut res = Vec::with_capacity(layer.len());
 
-        for val in layer {
+        for &val in layer {
             res.push(val.clamp(min, max));
         }
 
@@ -193,27 +228,27 @@ fn get_feature_idx(piece: PieceInfo, pos: usize) -> usize {
 }
 
 impl Engine {
-    pub fn setup_accumulator(&self) -> [f32; HL1] {
+    pub fn setup_accumulator(&self) -> [i32; HL1] {
         if let Some(nn) = NETWORK.get() {
-            let mut feature: Vec<f32> = vec![0.0; INPUT];
+            let mut feature: Vec<i32> = vec![0; INPUT];
 
             for (idx, &bb) in self.board.get_bb().iter().enumerate() {
                 let mut cur_bb = bb;
 
                 while let Some(sq) = pop_lsb(&mut cur_bb) {
                     let feat_idx = sq * 12 + idx;
-                    feature[feat_idx] = 1.0;
+                    feature[feat_idx] = 1;
                 }
             }
 
             if self.board.side_to_move() == Color::White {
-                feature[INPUT - 1] = 1.0;
+                feature[INPUT - 1] = 1;
             }
 
-            let acc = Network::process_layer(&feature, &nn.w1, &nn.b1);
+            let acc = Network::process_layer(&feature, &nn.w1, &nn.b1, false);
             acc.try_into().unwrap()
         } else {
-            [0.0; HL1]
+            [0; HL1]
         }
     }
 
@@ -303,7 +338,7 @@ impl Engine {
         //
 
         for neuron in 0..HL1 {
-            let mut delta = 0.0;
+            let mut delta = 0;
 
             for r in 0..r_cnt {
                 delta -= nn.w1[removed[r] + neuron * INPUT];
@@ -327,7 +362,7 @@ impl Engine {
                 delta -= stm_weight;
             }
 
-            acc[neuron] += delta;
+            acc[neuron] += delta as i32;
         }
     }
 
@@ -339,7 +374,7 @@ impl Engine {
         let acc = &mut self.accumulators[ply + 1];
 
         for neuron in 0..HL1 {
-            let mut delta = 0.0;
+            let mut delta = 0;
 
             // side-to-move feature
             // feature[768] = 1 when White to move
@@ -352,7 +387,7 @@ impl Engine {
                 delta -= stm_weight;
             }
 
-            acc[neuron] += delta;
+            acc[neuron] += delta as i32;
         }
     }
 }
