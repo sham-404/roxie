@@ -11,10 +11,11 @@ use crate::{
 };
 
 const INPUT: usize = 769;
-pub const HL1: usize = 512;
-const HL2: usize = 256;
+pub const HL1: usize = 1024;
+const HL2: usize = 64;
 const OUTPUT: usize = 1;
-const MAGIC: &[u8; 7] = b"ROXIE_F";
+const MAGIC: &[u8; 8] = b"ROXIE_V2";
+const NN_PATH: &'static str = "roxie_v2.nn";
 
 pub static NETWORK: OnceLock<Network> = OnceLock::new();
 
@@ -22,7 +23,7 @@ pub fn init_nn(is_needed: bool) {
     if !is_needed {
         return;
     }
-    NETWORK.get_or_init(|| Network::load("roxie_v1.nn"));
+    NETWORK.get_or_init(|| Network::load(NN_PATH));
 }
 
 pub struct Network {
@@ -79,34 +80,36 @@ impl Network {
             feature[INPUT - 1] = 1.0;
         }
 
-        let normalized_cp = self.forward(&feature).clamp(0.00001, 0.99999);
-        let cp = (700.0 * (normalized_cp / (1.0 - normalized_cp)).ln()) as i32;
+        let normalized_cp = self.forward(&feature);
+
+        // let cp = (700.0 * (normalized_cp / (1.0 - normalized_cp)).ln()) as i32;
+        let cp = (normalized_cp * 400.0) as i32;
 
         cp
     }
 
     pub fn evaluate_with_acc(&self, acc: &[f32]) -> i32 {
-        let fc1 = Network::relu_layer(acc);
+        let fc1 = Network::hard_tanh(0.0, 1.0, acc);
 
         let fc2 = Network::process_layer(&fc1, &self.w2, &self.b2);
-        let fc2 = Network::relu_layer(&fc2);
+        let fc2 = Network::hard_tanh(0.0, 1.0, &fc2);
 
         let fc3 = Network::process_layer(&fc2, &self.w3, &self.b3);
-        let fc3 = Network::sigmoid_layer(&fc3);
 
         let p = fc3[0];
-        (700.0 * (p / (1.0 - p)).ln()) as i32
+
+        // let cp = (700.0 * (p / (1.0 - p)).ln()) as i32;
+        (p * 400.0) as i32
     }
 
     pub fn forward(&self, feature: &[f32]) -> f32 {
         let fc1 = Network::process_layer(feature, &self.w1, &self.b1);
-        let fc1 = Network::relu_layer(&fc1);
+        let fc1 = Network::hard_tanh(0.0, 1.0, &fc1);
 
         let fc2 = Network::process_layer(&fc1, &self.w2, &self.b2);
-        let fc2 = Network::relu_layer(&fc2);
+        let fc2 = Network::hard_tanh(0.0, 1.0, &fc2);
 
         let fc3 = Network::process_layer(&fc2, &self.w3, &self.b3);
-        let fc3 = Network::sigmoid_layer(&fc3);
         fc3[0]
     }
 
@@ -128,6 +131,7 @@ impl Network {
         result
     }
 
+    #[allow(dead_code)]
     fn sigmoid_layer(layer: &[f32]) -> Vec<f32> {
         let mut res = Vec::with_capacity(layer.len());
 
@@ -138,6 +142,7 @@ impl Network {
         res
     }
 
+    #[allow(dead_code)]
     fn relu_layer(layer: &[f32]) -> Vec<f32> {
         let mut res = Vec::with_capacity(layer.len());
 
@@ -148,10 +153,23 @@ impl Network {
         res
     }
 
+    #[allow(dead_code)]
+    fn hard_tanh(min: f32, max: f32, layer: &[f32]) -> Vec<f32> {
+        let mut res = Vec::with_capacity(layer.len());
+
+        for val in layer {
+            res.push(val.clamp(min, max));
+        }
+
+        res
+    }
+
+    #[allow(dead_code)]
     fn sigmoid(val: f32) -> f32 {
         1.0 / (1.0 + (-val).exp())
     }
 
+    #[allow(dead_code)]
     fn relu(val: f32) -> f32 {
         val.max(0.0)
     }
