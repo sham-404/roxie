@@ -19,7 +19,14 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use roxie::{
-        board::Board, engine::Engine, evaluation::init_pesto_table, magics::init_magics, network::{NETWORK, Network, init_nn}, perft::perft, search::SearchLimits, zobrist::init_zobrist
+        board::Board,
+        engine::Engine,
+        evaluation::init_pesto_table,
+        magics::init_magics,
+        network::{NETWORK, Network, init_nn},
+        perft::perft,
+        search::SearchLimits,
+        zobrist::init_zobrist,
     };
     use std::time::Instant;
 
@@ -106,6 +113,54 @@ mod tests {
             "search depth {} (kiwipete): nodes searched={} time={:.5}s nps={}",
             depth, data.nodes, secs, nps
         );
+    }
+
+    #[test]
+    fn nn_qver() {
+        use roxie::network::Q;
+        use std::{
+            fs::File,
+            io::{BufRead, BufReader},
+        };
+
+        init_all();
+
+        let nn = NETWORK.get().unwrap();
+
+        let file = File::open("nn_qver.csv").unwrap();
+        let reader = BufReader::new(file);
+
+        let mut total_err: i64 = 0;
+        let mut max_err = 0;
+        let mut count = 0;
+
+        for (idx, line) in reader.lines().enumerate() {
+            let line = line.unwrap();
+
+            if idx == 0 {
+                continue;
+            }
+
+            let (fen, expected) = line.rsplit_once(',').unwrap();
+
+            let expected: i32 = expected.parse().unwrap();
+
+            let board = Board::load_fen(fen);
+
+            let quant_eval = nn.eval(&board);
+
+            let err = (expected - quant_eval).abs();
+
+            total_err += err as i64;
+            max_err = max_err.max(err);
+
+            count += 1;
+        }
+
+        println!("positions: {}", count);
+        println!("Q = {}", Q);
+        println!("mae: {:.2}", total_err as f64 / count as f64);
+        println!("max error: {}", max_err);
     }
 
     #[test]

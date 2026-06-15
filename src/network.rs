@@ -16,8 +16,8 @@ const HL2: usize = 64;
 const OUTPUT: usize = 1;
 const MAGIC: &[u8; 8] = b"ROXIE_V2";
 const NN_PATH: &'static str = "roxie_v2.nn";
-const QP: i32 = 6;
-const Q: f32 = (1 << QP) as f32; // 2 ^ 6
+const QP: i32 = 9;
+pub const Q: f32 = (1 << QP) as f32; // 2 ^ 6
 
 pub static NETWORK: OnceLock<Network> = OnceLock::new();
 
@@ -147,19 +147,25 @@ impl Network {
     }
 
     fn process_layer(layer: &[i32], weight: &[i16], bias: &[i32], to_quantize: bool) -> Vec<i32> {
-        let q = if to_quantize { QP } else { 0 };
+        let q = if to_quantize { QP as i32 } else { 0 };
 
         let mut result = Vec::with_capacity(bias.len());
         let input_len = layer.len();
 
         for neuron_idx in 0..bias.len() {
-            let mut val = bias[neuron_idx];
+            let mut dot = 0;
 
             for i in 0..input_len {
-                val += layer[i] * weight[i + neuron_idx * input_len] as i32 >> q;
+                dot += layer[i] * weight[i + neuron_idx * input_len] as i32;
             }
 
-            // activation
+            let val = bias[neuron_idx]
+                + if to_quantize {
+                    (dot + (1 << (q - 1))) >> q
+                } else {
+                    dot
+                };
+
             result.push(val);
         }
 
