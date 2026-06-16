@@ -3,8 +3,10 @@ use std::sync::OnceLock;
 use crate::{
     board::{Board, pop_lsb},
     r#const::{BLACK_PASSED_MASKS, KING_ATTACKS, KNIGHT_ATTACKS, WHITE_PASSED_MASKS},
+    engine::Engine,
     items::{Color, Piece},
-    magics::{get_bishop_move_bits, get_rook_move_bits}, network::NETWORK,
+    magics::{get_bishop_move_bits, get_rook_move_bits},
+    network::NETWORK,
 };
 
 // const SCORE: [i32; 5] = [100, 320, 330, 500, 900];
@@ -369,8 +371,14 @@ const WHITE_SAFE_RANKS: u64 = 0x0000000000FFFF00; // Ranks 2 and 3
 const BLACK_SAFE_RANKS: u64 = 0x00FFFF0000000000; // Ranks 7 and 6
 
 const FILE_MASKS: [u64; 8] = [
-    0x0101010101010101, 0x0202020202020202, 0x0404040404040404, 0x0808080808080808,
-    0x1010101010101010, 0x2020202020202020, 0x4040404040404040, 0x8080808080808080,
+    0x0101010101010101,
+    0x0202020202020202,
+    0x0404040404040404,
+    0x0808080808080808,
+    0x1010101010101010,
+    0x2020202020202020,
+    0x4040404040404040,
+    0x8080808080808080,
 ];
 
 const KNIGHT_ATTACK_VAL: i32 = 20;
@@ -417,7 +425,7 @@ pub const BLACK_KING_ZONES: [u64; 64] = compute_king_zones(false);
 fn king_safety_score(board: &Board) -> i32 {
     let phase = board.get_game_phase();
     let king_safety_start_phase = 6;
-    
+
     // Early exit
     if phase <= king_safety_start_phase {
         return 0;
@@ -481,7 +489,7 @@ fn king_safety_score(board: &Board) -> i32 {
     let w_king_zone = WHITE_KING_ZONES[w_king_sq];
     let b_king_zone = BLACK_KING_ZONES[b_king_sq];
 
-    // Black Attacks on White King Zone 
+    // Black Attacks on White King Zone
     let mut b_attacking_pieces = 0;
     let mut b_value_of_attacks = 0;
 
@@ -496,7 +504,8 @@ fn king_safety_score(board: &Board) -> i32 {
 
     let mut b_bishop = board.bb(Piece::BLACK | Piece::BISHOP);
     while let Some(sq) = pop_lsb(&mut b_bishop) {
-        let attacked_squares = (get_bishop_move_bits(sq, all_occ) & w_king_zone).count_ones() as i32;
+        let attacked_squares =
+            (get_bishop_move_bits(sq, all_occ) & w_king_zone).count_ones() as i32;
         if attacked_squares > 0 {
             b_attacking_pieces += 1;
             b_value_of_attacks += attacked_squares * BISHOP_ATTACK_VAL;
@@ -528,7 +537,7 @@ fn king_safety_score(board: &Board) -> i32 {
         score -= white_danger
     }
 
-    // White Attacks on Black King Zone 
+    // White Attacks on Black King Zone
     let mut w_attacking_pieces = 0;
     let mut w_value_of_attacks = 0;
 
@@ -543,7 +552,8 @@ fn king_safety_score(board: &Board) -> i32 {
 
     let mut w_bishop = board.bb(Piece::WHITE | Piece::BISHOP);
     while let Some(sq) = pop_lsb(&mut w_bishop) {
-        let attacked_squares = (get_bishop_move_bits(sq, all_occ) & b_king_zone).count_ones() as i32;
+        let attacked_squares =
+            (get_bishop_move_bits(sq, all_occ) & b_king_zone).count_ones() as i32;
         if attacked_squares > 0 {
             w_attacking_pieces += 1;
             w_value_of_attacks += attacked_squares * BISHOP_ATTACK_VAL;
@@ -579,17 +589,20 @@ fn king_safety_score(board: &Board) -> i32 {
 }
 
 const TEMPO_BONUS: i32 = 10;
-pub fn evaluate(board: &Board, acc: &[i32]) -> i32 {
-    let mut score = 0;
+impl Engine {
+    pub fn evaluate(&mut self, ply: usize) -> i32 {
+        let mut score = 0;
 
-    if let Some(nn) = NETWORK.get() {
-        return nn.evaluate_with_acc(acc);
+        if let Some(nn) = NETWORK.get() {
+            return nn.evaluate_with_acc(&mut self.eval_buf, ply);
+            // return nn.eval(&self.board);
+        }
+
+        score += &self.board.get_pesto_score();
+        score += mobility_score(&self.board);
+        score += pawn_struct_score(&self.board);
+        score += king_safety_score(&self.board);
+
+        (score + TEMPO_BONUS) * &self.board.side_to_move().fac()
     }
-
-    score += board.get_pesto_score();
-    score += mobility_score(board);
-    score += pawn_struct_score(board);
-    score += king_safety_score(board);
-
-    (score + TEMPO_BONUS) * board.side_to_move().fac()
 }

@@ -6,6 +6,7 @@ use std::{
 
 use crate::{
     board::{Board, pop_lsb},
+    r#const::MAX_PLY,
     engine::Engine,
     items::{Color, Move, MoveFlag, Piece, PieceInfo, Undo},
 };
@@ -17,7 +18,25 @@ const OUTPUT: usize = 1;
 const MAGIC: &[u8; 8] = b"ROXIE_V2";
 const NN_PATH: &'static str = "roxie_v2.nn";
 const QP: i32 = 9;
-pub const Q: f32 = (1 << QP) as f32; // 2 ^ 6
+pub const Q: f32 = (1 << QP) as f32; // 2 ^ QP
+
+pub struct EvalBuf {
+    fc1: Vec<i32>,
+    fc2: Vec<i32>,
+    fc3: Vec<i32>,
+    pub accumulators: [[i32; HL1]; MAX_PLY],
+}
+
+impl EvalBuf {
+    pub fn new() -> EvalBuf {
+        EvalBuf {
+            fc1: vec![0; HL1],
+            fc2: vec![0; HL2],
+            fc3: vec![0; OUTPUT],
+            accumulators: [[0i32; HL1]; MAX_PLY],
+        }
+    }
+}
 
 pub static NETWORK: OnceLock<Network> = OnceLock::new();
 
@@ -121,55 +140,59 @@ impl Network {
         cp >> QP
     }
 
-    pub fn evaluate_with_acc(&self, acc: &[i32]) -> i32 {
-        let fc1 = Network::hard_tanh(0 * Q as i32, 1 * Q as i32, acc);
+    pub fn evaluate_with_acc(&self, buf: &mut EvalBuf, ply: usize) -> i32 {
+        let acc = &mut buf.accumulators[ply];
+        Network::hard_tanh(0 * Q as i32, 1 * Q as i32, acc);
 
-        let fc2 = Network::process_layer(&fc1, &self.w2, &self.b2, true);
-        let fc2 = Network::hard_tanh(0 * Q as i32, 1 * Q as i32, &fc2);
+        Network::process_layer(&mut buf.fc1, &mut buf.fc2, &self.w2, &self.b2, true);
+        Network::hard_tanh(0 * Q as i32, 1 * Q as i32, &mut buf.fc2);
 
-        let fc3 = Network::process_layer(&fc2, &self.w3, &self.b3, true);
+        Network::process_layer(&mut buf.fc2, &mut buf.fc3, &self.w3, &self.b3, true);
 
-        let p = fc3[0];
+        let &p = &buf.fc3[0];
 
         // let cp = (700.0 * (p / (1.0 - p)).ln()) as i32;
-        (p * 400) >> QP as i32
+        (p * 400) >> QP
     }
 
     pub fn forward(&self, feature: &[i32]) -> i32 {
-        let fc1 = Network::process_layer(feature, &self.w1, &self.b1, false);
-        let fc1 = Network::hard_tanh(0 * Q as i32, 1 * Q as i32, &fc1);
+        let mut fc1: Vec<i32> = vec![0; HL1];
+        Network::process_layer(feature, &mut fc1, &self.w1, &self.b1, false);
+        Network::hard_tanh(0 * Q as i32, 1 * Q as i32, &mut fc1);
 
-        let fc2 = Network::process_layer(&fc1, &self.w2, &self.b2, true);
-        let fc2 = Network::hard_tanh(0 * Q as i32, 1 * Q as i32, &fc2);
+        let mut fc2: Vec<i32> = vec![0; HL2];
+        Network::process_layer(&fc1, &mut fc2, &self.w2, &self.b2, true);
+        Network::hard_tanh(0 * Q as i32, 1 * Q as i32, &mut fc2);
 
-        let fc3 = Network::process_layer(&fc2, &self.w3, &self.b3, true);
+        let mut fc3: Vec<i32> = vec![0; OUTPUT];
+        Network::process_layer(&fc2, &mut fc3, &self.w3, &self.b3, true);
         fc3[0]
     }
 
-    fn process_layer(layer: &[i32], weight: &[i16], bias: &[i32], to_quantize: bool) -> Vec<i32> {
-        let q = if to_quantize { QP as i32 } else { 0 };
-
-        let mut result = Vec::with_capacity(bias.len());
-        let input_len = layer.len();
-
+    fn process_layer(
+        inp_layer: &[i32],
+        out_layer: &mut [i32],
+        weight: &[i16],
+        bias: &[i32],
+        to_quantize: bool,
+    ) {
+        let input_len = inp_layer.len();
         for neuron_idx in 0..bias.len() {
             let mut dot = 0;
 
             for i in 0..input_len {
-                dot += layer[i] * weight[i + neuron_idx * input_len] as i32;
+                dot += inp_layer[i] * weight[i + neuron_idx * input_len] as i32;
             }
 
             let val = bias[neuron_idx]
                 + if to_quantize {
-                    (dot + (1 << (q - 1))) >> q
+                    (dot + (1 << (QP - 1))) >> QP
                 } else {
                     dot
                 };
 
-            result.push(val);
+            out_layer[neuron_idx] = val;
         }
-
-        result
     }
 
     #[allow(dead_code)]
@@ -195,14 +218,15 @@ impl Network {
     }
 
     #[allow(dead_code)]
-    fn hard_tanh(min: i32, max: i32, layer: &[i32]) -> Vec<i32> {
-        let mut res = Vec::with_capacity(layer.len());
+    fn hard_tanh(min: i32, max: i32, layer: &mut [i32]) {
+        let len = layer.len();
+        let mut idx = 0;
 
-        for &val in layer {
-            res.push(val.clamp(min, max));
+        while idx < len {
+            let val = layer[idx].clamp(min, max);
+            layer[idx] = val;
+            idx += 1;
         }
-
-        res
     }
 
     #[allow(dead_code)]
@@ -234,7 +258,7 @@ fn get_feature_idx(piece: PieceInfo, pos: usize) -> usize {
 }
 
 impl Engine {
-    pub fn setup_accumulator(&self) -> [i32; HL1] {
+    pub fn setup_accumulator(&mut self) {
         if let Some(nn) = NETWORK.get() {
             let mut feature: Vec<i32> = vec![0; INPUT];
 
@@ -251,10 +275,13 @@ impl Engine {
                 feature[INPUT - 1] = 1;
             }
 
-            let acc = Network::process_layer(&feature, &nn.w1, &nn.b1, false);
-            acc.try_into().unwrap()
-        } else {
-            [0; HL1]
+            Network::process_layer(
+                &feature,
+                &mut self.eval_buf.accumulators[0],
+                &nn.w1,
+                &nn.b1,
+                false,
+            );
         }
     }
 
@@ -263,8 +290,8 @@ impl Engine {
             return;
         };
 
-        self.accumulators[ply + 1] = self.accumulators[ply];
-        let acc = &mut self.accumulators[ply + 1];
+        self.eval_buf.accumulators[ply + 1] = self.eval_buf.accumulators[ply];
+        let acc = &mut self.eval_buf.accumulators[ply + 1];
 
         let (from, to, flag) = (mv.from(), mv.to(), mv.flag());
 
@@ -377,7 +404,7 @@ impl Engine {
             return;
         };
 
-        let acc = &mut self.accumulators[ply + 1];
+        let acc = &mut self.eval_buf.accumulators[ply + 1];
 
         for neuron in 0..HL1 {
             let mut delta = 0;

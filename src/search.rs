@@ -2,7 +2,6 @@ use crate::{
     board::{Board, mask},
     r#const::{BLACK_PAWN_ATTACKS, KING_ATTACKS, KNIGHT_ATTACKS, MAX_PLY, WHITE_PAWN_ATTACKS},
     engine::Engine,
-    evaluation::evaluate,
     items::{Color, Move, MoveFlag, MoveList, Piece, PieceInfo},
     square::Square,
     tt::{TTEntry, TTFlag},
@@ -38,7 +37,7 @@ impl Engine {
         };
 
         self.killers = [[Move::NULL; 2]; MAX_PLY];
-        self.accumulators[0] = self.setup_accumulator();
+        self.setup_accumulator();
 
         let mut last_complete_info = info.clone();
         for d in 1..=limits.depth.unwrap_or(MAX_DEPTH) {
@@ -218,7 +217,7 @@ impl Engine {
         }
 
         let in_check = self.board.in_check();
-        let static_eval = evaluate(&self.board, &self.accumulators[ply as usize]); // static evaluation
+        let static_eval = self.evaluate(ply as usize); // static evaluation
 
         ///// Reverse Futility Pruning (Static Null Move Pruning)
         if !in_check && depth <= 4 && beta.abs() < INF - 1000 {
@@ -373,7 +372,7 @@ impl Engine {
         if depth > 4
             && !self.board.in_check()
             && !self.board.is_endgame()
-            && evaluate(&self.board, &self.accumulators[ply as usize]) >= beta
+            && self.evaluate(ply as usize) >= beta
         {
             let r = 2 + depth / 6;
             let old_epsq = self.board.make_null_move();
@@ -482,7 +481,7 @@ impl Engine {
 
         // Stand pat
         let stand_pat = if !in_check {
-            evaluate(&self.board, &self.accumulators[ply as usize])
+            self.evaluate(ply as usize)
         } else {
             -INF
         };
