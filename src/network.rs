@@ -21,18 +21,18 @@ const QP: i32 = 9;
 pub const Q: f32 = (1 << QP) as f32; // 2 ^ QP
 
 pub struct EvalBuf {
-    fc1: Vec<i32>,
-    fc2: Vec<i32>,
-    fc3: Vec<i32>,
+    fc1: [i32; HL1],
+    fc2: [i32; HL2],
+    fc3: [i32; OUTPUT],
     pub accumulators: [[i32; HL1]; MAX_PLY],
 }
 
 impl EvalBuf {
     pub fn new() -> EvalBuf {
         EvalBuf {
-            fc1: vec![0; HL1],
-            fc2: vec![0; HL2],
-            fc3: vec![0; OUTPUT],
+            fc1: [0; HL1],
+            fc2: [0; HL2],
+            fc3: [0; OUTPUT],
             accumulators: [[0i32; HL1]; MAX_PLY],
         }
     }
@@ -141,10 +141,10 @@ impl Network {
     }
 
     pub fn evaluate_with_acc(&self, buf: &mut EvalBuf, ply: usize) -> i32 {
-        let acc = &mut buf.accumulators[ply];
-        Network::hard_tanh(0 * Q as i32, 1 * Q as i32, acc);
+        buf.fc1.copy_from_slice(&buf.accumulators[ply]);
+        Network::hard_tanh(0 * Q as i32, 1 * Q as i32, &mut buf.fc1);
 
-        Network::process_layer(&mut buf.fc1, &mut buf.fc2, &self.w2, &self.b2, true);
+        Network::process_layer(&buf.fc1, &mut buf.fc2, &self.w2, &self.b2, true);
         Network::hard_tanh(0 * Q as i32, 1 * Q as i32, &mut buf.fc2);
 
         Network::process_layer(&mut buf.fc2, &mut buf.fc3, &self.w3, &self.b3, true);
