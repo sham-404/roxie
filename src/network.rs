@@ -159,13 +159,19 @@ impl Network {
         let mut fc1: Vec<i32> = vec![0; HL1];
         Network::process_layer(feature, &mut fc1, &self.w1, &self.b1, false);
         Network::hard_tanh(0 * Q as i32, 1 * Q as i32, &mut fc1);
+        println!("Min fc1: {}", fc1.iter().min().unwrap());
+        println!("Max fc1: {}", fc1.iter().max().unwrap());
 
         let mut fc2: Vec<i32> = vec![0; HL2];
         Network::process_layer(&fc1, &mut fc2, &self.w2, &self.b2, true);
         Network::hard_tanh(0 * Q as i32, 1 * Q as i32, &mut fc2);
+        println!("Min fc2: {}", fc2.iter().min().unwrap());
+        println!("Max fc2: {}", fc2.iter().max().unwrap());
 
         let mut fc3: Vec<i32> = vec![0; OUTPUT];
         Network::process_layer(&fc2, &mut fc3, &self.w3, &self.b3, true);
+        println!("Min fc3: {}", fc3.iter().min().unwrap());
+        println!("Max fc3: {}", fc3.iter().max().unwrap());
         fc3[0]
     }
 
@@ -422,5 +428,53 @@ impl Engine {
 
             acc[neuron] += delta as i32;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        engine::Engine, evaluation::init_pesto_table, magics::init_magics, network::Network,
+        zobrist::init_zobrist,
+    };
+
+    #[test]
+    fn nn_check() {
+        init_zobrist();
+        init_pesto_table();
+        init_magics();
+        let nn = Network::load("roxie_v2.nn");
+
+        println!("Min w1: {}", nn.w1.iter().min().unwrap());
+        println!("Max w1: {}", nn.w1.iter().max().unwrap());
+
+        println!("Min b1: {}", nn.b1.iter().min().unwrap());
+        println!("Max b1: {}", nn.b1.iter().max().unwrap());
+
+        println!("Min w2: {}", nn.w2.iter().min().unwrap());
+        println!("Max w2: {}", nn.w2.iter().max().unwrap());
+
+        println!("Min b2: {}", nn.b2.iter().min().unwrap());
+        println!("Max b2: {}", nn.b2.iter().max().unwrap());
+
+        println!("Min w3: {}", nn.w3.iter().min().unwrap());
+        println!("Max w3: {}", nn.w3.iter().max().unwrap());
+
+        println!("Min b3: {}", nn.b3.iter().min().unwrap());
+        println!("Max b3: {}", nn.b3.iter().max().unwrap());
+
+        let engine = Engine::new();
+        nn.eval(&engine.board);
+
+        println!("During an eval:");
+
+        println!("Min i8 {}", i8::MIN);
+        println!("Max i8 {}", i8::MAX);
+
+        println!("Min i16 {}", i16::MIN);
+        println!("Max i16 {}", i16::MAX);
+
+        println!("Min i32 {}", i32::MIN);
+        println!("Max i32 {}", i32::MAX);
     }
 }
