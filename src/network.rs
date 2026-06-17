@@ -15,8 +15,8 @@ const INPUT: usize = 769;
 pub const HL1: usize = 1024;
 const HL2: usize = 64;
 const OUTPUT: usize = 1;
-const MAGIC: &[u8; 8] = b"ROXIE_V2";
-const NN_PATH: &'static str = "roxie_v2.nn";
+const MAGIC: &[u8; 8] = b"ROXIE_V3";
+const NN_PATH: &'static str = "/home/sham_404/coding/roxie/roxie_v3.nn";
 const QP: i32 = 9;
 pub const Q: f32 = (1 << QP) as f32; // 2 ^ QP
 
@@ -132,39 +132,45 @@ impl Network {
             feature[INPUT - 1] = 1;
         }
 
-        let normalized_cp = self.forward(&feature);
+        let y = (self.forward(&feature) as f32 / Q as f32).clamp(-0.99999, 0.99999);
 
-        // let cp = (700.0 * (normalized_cp / (1.0 - normalized_cp)).ln()) as i32;
-        let cp = (normalized_cp * 400) as i32;
 
-        cp >> QP
+        // let cp = (600.0 * ((y / (1 - y)) as f32).ln()) as i32;
+        // let cp = (normalized_cp * 400) as i32;
+
+        (600.0 * y.atanh()) as i32
     }
 
     pub fn evaluate_with_acc(&self, buf: &mut EvalBuf, ply: usize) -> i32 {
         buf.fc1.copy_from_slice(&buf.accumulators[ply]);
-        Network::hard_tanh(0 * Q as i32, 1 * Q as i32, &mut buf.fc1);
+        Network::hard_tanh(-1 * Q as i32, 1 * Q as i32, &mut buf.fc1);
 
         Network::process_layer(&buf.fc1, &mut buf.fc2, &self.w2, &self.b2, true);
-        Network::hard_tanh(0 * Q as i32, 1 * Q as i32, &mut buf.fc2);
+        Network::hard_tanh(-1 * Q as i32, 1 * Q as i32, &mut buf.fc2);
 
         Network::process_layer(&mut buf.fc2, &mut buf.fc3, &self.w3, &self.b3, true);
 
-        let &p = &buf.fc3[0];
+        let y = buf.fc3[0] as f32 / Q as f32;
+        let y = y.clamp(-0.99999, 0.99999);
 
-        // let cp = (700.0 * (p / (1.0 - p)).ln()) as i32;
-        (p * 400) >> QP
+        (600.0 * y.atanh()) as i32
+
+        // let cp = (600.0 * ((p / (1 - p)) as f32).ln()) as i32;
+        // cp >> QP
+
+        // (p * 400) >> QP
     }
 
     pub fn forward(&self, feature: &[i32]) -> i32 {
         let mut fc1: Vec<i32> = vec![0; HL1];
         Network::process_layer(feature, &mut fc1, &self.w1, &self.b1, false);
-        Network::hard_tanh(0 * Q as i32, 1 * Q as i32, &mut fc1);
+        Network::hard_tanh(-1 * Q as i32, 1 * Q as i32, &mut fc1);
         println!("Min fc1: {}", fc1.iter().min().unwrap());
         println!("Max fc1: {}", fc1.iter().max().unwrap());
 
         let mut fc2: Vec<i32> = vec![0; HL2];
         Network::process_layer(&fc1, &mut fc2, &self.w2, &self.b2, true);
-        Network::hard_tanh(0 * Q as i32, 1 * Q as i32, &mut fc2);
+        Network::hard_tanh(-1 * Q as i32, 1 * Q as i32, &mut fc2);
         println!("Min fc2: {}", fc2.iter().min().unwrap());
         println!("Max fc2: {}", fc2.iter().max().unwrap());
 
