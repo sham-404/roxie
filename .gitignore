@@ -8,4 +8,5 @@ releases/
 venv/
 
 *.nn
+*.nnue
 *.csv
