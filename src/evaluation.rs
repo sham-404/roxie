@@ -184,7 +184,7 @@ pub static EG_TABLE: OnceLock<[[i32; 64]; 12]> = OnceLock::new();
 pub static MG_TABLE: OnceLock<[[i32; 64]; 12]> = OnceLock::new();
 
 #[inline(always)]
-fn mirror(sq: usize) -> usize {
+pub fn mirror(sq: usize) -> usize {
     sq ^ 56
 }
 
@@ -594,8 +594,8 @@ impl Engine {
         let mut score = 0;
 
         if let Some(nn) = NETWORK.get() {
-            return nn.evaluate_with_acc(&mut self.eval_buf, ply);
-            // return nn.eval(&self.board);
+            // return nn.evaluate_with_acc(&mut self.eval_buf, ply);
+            return nn.eval_hkp(&self.board);
         }
 
         score += &self.board.get_pesto_score();

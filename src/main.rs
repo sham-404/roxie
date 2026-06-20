@@ -21,12 +21,9 @@ mod tests {
     use roxie::{
         board::Board,
         engine::Engine,
-        evaluation::init_pesto_table,
-        magics::init_magics,
-        network::{NETWORK, Network, init_nn},
+        network::{NETWORK, Network},
         perft::perft,
         search::SearchLimits,
-        zobrist::init_zobrist,
     };
     use std::time::Instant;
 
@@ -147,7 +144,7 @@ mod tests {
 
             let board = Board::load_fen(fen);
 
-            let quant_eval = nn.eval(&board);
+            let quant_eval = nn.eval_hkp(&board);
 
             let err = (expected - quant_eval).abs();
 
@@ -165,40 +162,34 @@ mod tests {
 
     #[test]
     fn nn_load() {
-        let _ = Network::load("roxie_v1.nn");
+        let _ = Network::load("blaze_v1.nnue");
     }
 
     #[test]
     fn nn_eval() {
-        init_zobrist();
-        init_pesto_table();
-        init_magics();
-        init_nn(true);
+        init_all();
+
         let fens = [
-            "r1bqkbnr/ppp3pp/2np4/4pp2/4P3/2NP1N1P/PPP2PP1/R1BQKB1R b KQkq - 1 5",
-            "r2qkbnr/p1pp1P2/1p2p3/6p1/2Pn3p/2N2Q1P/PP3PP1/R1B1KB1R b KQkq - 0 11",
-            "8/8/1K2pR2/4P3/4kP2/8/8/8 w - - 5 59",
-            "8/8/1p4R1/6b1/1PP3kp/P5p1/4K1B1/8 b - - 0 43",
-            "rn1q1bnr/pp2pk1p/3pb1p1/3p4/4P3/5N2/PPP2PPP/RNB1KB1R w KQ - 0 7",
+            "r2qkbr1/pb1nn3/1ppp3p/8/3P1p2/2PB1N1P/PPQN1PP1/2K1R2R w q - 2 15",
+            "r2qkb2/pb1nn3/1ppp2rp/8/3P1p2/2P2N1P/PPQN1PP1/2K1R2R w q - 0 16",
+            "r2qkbr1/pb1nn3/1ppp2Bp/8/3P1p2/2P2N1P/PPQN1PP1/2K1R2R b q - 3 15",
+            "8/7p/R5p1/2p1pkP1/7P/P4PK1/1r6/3q4 w - - 6 46",
+            "6k1/pp6/3p4/2p1p3/2P1P1q1/1P1P2pP/P5P1/5K2 w - - 0 31",
         ];
-        let mut engine = Engine::new();
         let nn = NETWORK.get().unwrap();
 
         let mut time = 0;
         for fen in fens {
-            engine.board = Board::load_fen(fen);
+            let board = Board::load_fen(fen);
             let start = Instant::now();
-            let eval = engine.search_ids(&SearchLimits::with_depth(2), |data| {
-                data.print();
-            });
+            let eval = nn.eval_hkp(&board);
             let duration = start.elapsed();
             let elapsed = duration.as_nanos();
 
             time += elapsed;
 
             println!("fen: {}", fen);
-            println!("roxie's nn eval: {}", nn.eval(&engine.board));
-            println!("roxie's nn eval for depth 2: {}", eval.score);
+            println!("roxie's nn eval: {}", eval);
             println!("eval duration: {}ns", elapsed);
             println!();
         }
