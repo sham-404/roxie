@@ -13,12 +13,12 @@ use crate::{
 };
 
 const INPUT: usize = 40960;
-pub const HL1: usize = 2048;
-const HL2: usize = 32;
-const HL3: usize = 32;
+pub const HL1: usize = 256;
+const HL2: usize = 16;
+const HL3: usize = 16;
 const OUTPUT: usize = 1;
-const MAGIC: &[u8; 8] = b"BLAZE_V!";
-const NN_PATH: &'static str = "/home/sham_404/coding/roxie/blaze_v1.nnue";
+const MAGIC: &[u8; 8] = b"BLAZE_V@";
+const NN_PATH: &'static str = "/home/sham_404/coding/roxie/blaze_v2.nnue";
 const QP: i32 = 10;
 pub const Q: f32 = (1 << QP) as f32; // 2 ^ QP
 
@@ -133,7 +133,46 @@ impl Network {
         quantized
     }
 
+    pub fn eval_hkp_with_acc(&self, buf: &mut EvalBuf, ply: usize) -> i32 {
+        buf.fc1.copy_from_slice(&buf.accumulators[ply]);
+        Network::hard_tanh(0 as i32, 1 * Q as i32, &mut buf.fc1);
+
+        Network::process_layer(&buf.fc1, &mut buf.fc2, &self.w2, &self.b2, true);
+        Network::hard_tanh(0 as i32, 1 * Q as i32, &mut buf.fc2);
+
+        Network::process_layer(&buf.fc2, &mut buf.fc3, &self.w3, &self.b3, true);
+        Network::hard_tanh(0 as i32, 1 * Q as i32, &mut buf.fc3);
+
+        Network::process_layer(&buf.fc3, &mut buf.fc4, &self.w4, &self.b4, true);
+
+        let y = buf.fc4[0] as f32 / Q as f32;
+        let y = y.clamp(-0.99999, 0.99999);
+
+        (600.0 * y.atanh()) as i32
+    }
+
     pub fn eval_hkp(&self, board: &Board) -> i32 {
+        let mut acc = self.build_acc(board);
+        Network::hard_tanh(0 as i32, 1 * Q as i32, &mut acc);
+
+        let mut fc2 = vec![0; HL2];
+        Network::process_layer(&acc, &mut fc2, &self.w2, &self.b2, true);
+        Network::hard_tanh(0 as i32, 1 * Q as i32, &mut fc2);
+
+        let mut fc3 = vec![0; HL3];
+        Network::process_layer(&fc2, &mut fc3, &self.w3, &self.b3, true);
+        Network::hard_tanh(0 as i32, 1 * Q as i32, &mut fc3);
+
+        let mut fc4 = vec![0; OUTPUT];
+        Network::process_layer(&fc3, &mut fc4, &self.w4, &self.b4, true);
+
+        let y = fc4[0] as f32 / Q as f32;
+        let y = y.clamp(-0.99999, 0.99999);
+
+        (600.0 * y.atanh()) as i32
+    }
+
+    fn build_acc(&self, board: &Board) -> [i32; HL1] {
         let mut white_feat = [50000usize; 30];
         let mut black_feat = [50000usize; 30];
 
@@ -166,45 +205,27 @@ impl Network {
             }
         }
 
-        let w_acc = self.build_acc(&white_feat[..feat_idx]);
-        let b_acc = self.build_acc(&black_feat[..feat_idx]);
+        let w_acc = self.fill_acc(&white_feat[..feat_idx]);
+        let b_acc = self.fill_acc(&black_feat[..feat_idx]);
 
-        let mut acc: Vec<i32> = Vec::with_capacity(w_acc.len() + b_acc.len());
+        let mut acc = [0; HL1];
 
         if board.side_to_move() == Color::White {
-            acc.extend(w_acc);
-            acc.extend(b_acc);
+            acc[..HL1 / 2].copy_from_slice(&w_acc);
+            acc[HL1 / 2..].copy_from_slice(&b_acc);
         } else {
-            acc.extend(b_acc);
-            acc.extend(w_acc);
+            acc[..HL1 / 2].copy_from_slice(&b_acc);
+            acc[HL1 / 2..].copy_from_slice(&w_acc);
         };
 
-        Network::hard_tanh(0 as i32, 1 * Q as i32, &mut acc);
-
-        let mut fc2 = vec![0; HL2];
-        Network::process_layer(&acc, &mut fc2, &self.w2, &self.b2, true);
-        Network::hard_tanh(0 as i32, 1 * Q as i32, &mut fc2);
-
-        let mut fc3 = vec![0; HL3];
-        Network::process_layer(&fc2, &mut fc3, &self.w3, &self.b3, true);
-        Network::hard_tanh(0 as i32, 1 * Q as i32, &mut fc3);
-
-        let mut fc4 = vec![0; OUTPUT];
-        Network::process_layer(&fc3, &mut fc4, &self.w4, &self.b4, true);
-
-        let y = fc4[0] as f32 / Q as f32;
-        let y = y.clamp(-0.99999, 0.99999);
-
-        (600.0 * y.atanh()) as i32
+        acc
     }
 
-    fn build_acc(&self, feature: &[usize]) -> Vec<i32> {
+    fn fill_acc(&self, feature: &[usize]) -> Vec<i32> {
         // Start the accumulator pre-loaded with the biases
         let mut acc = self.b1.clone();
 
-        // Loop over the active pieces first (much better for CPU cache)
         for &act_feat in feature {
-            // Find the start of this specific feature's 1024-dimension row
             let offset = act_feat * (HL1 / 2);
 
             for neuron_idx in 0..HL1 / 2 {
@@ -213,64 +234,6 @@ impl Network {
         }
 
         acc
-    }
-
-    pub fn eval(&self, board: &Board) -> i32 {
-        let mut feature: Vec<i32> = vec![0; INPUT];
-
-        for (idx, &bb) in board.get_bb().iter().enumerate() {
-            let mut cur_bb = bb;
-
-            while let Some(sq) = pop_lsb(&mut cur_bb) {
-                let feat_idx = sq * 12 + idx;
-                feature[feat_idx] = 1;
-            }
-        }
-
-        if board.side_to_move() == Color::White {
-            feature[INPUT - 1] = 1;
-        }
-
-        let y = (self.forward(&feature) as f32 / Q as f32).clamp(-0.99999, 0.99999);
-
-        // let cp = (600.0 * ((y / (1 - y)) as f32).ln()) as i32;
-        // let cp = (normalized_cp * 400) as i32;
-
-        (600.0 * y.atanh()) as i32
-    }
-
-    pub fn evaluate_with_acc(&self, buf: &mut EvalBuf, ply: usize) -> i32 {
-        buf.fc1.copy_from_slice(&buf.accumulators[ply]);
-        Network::hard_tanh(-1 * Q as i32, 1 * Q as i32, &mut buf.fc1);
-
-        Network::process_layer(&buf.fc1, &mut buf.fc2, &self.w2, &self.b2, true);
-        Network::hard_tanh(-1 * Q as i32, 1 * Q as i32, &mut buf.fc2);
-
-        Network::process_layer(&mut buf.fc2, &mut buf.fc3, &self.w3, &self.b3, true);
-
-        let y = buf.fc3[0] as f32 / Q as f32;
-        let y = y.clamp(-0.99999, 0.99999);
-
-        (600.0 * y.atanh()) as i32
-
-        // let cp = (600.0 * ((p / (1 - p)) as f32).ln()) as i32;
-        // cp >> QP
-
-        // (p * 400) >> QP
-    }
-
-    pub fn forward(&self, feature: &[i32]) -> i32 {
-        let mut fc1: Vec<i32> = vec![0; HL1];
-        Network::process_layer(feature, &mut fc1, &self.w1, &self.b1, false);
-        Network::hard_tanh(-1 * Q as i32, 1 * Q as i32, &mut fc1);
-
-        let mut fc2: Vec<i32> = vec![0; HL2];
-        Network::process_layer(&fc1, &mut fc2, &self.w2, &self.b2, true);
-        Network::hard_tanh(-1 * Q as i32, 1 * Q as i32, &mut fc2);
-
-        let mut fc3: Vec<i32> = vec![0; OUTPUT];
-        Network::process_layer(&fc2, &mut fc3, &self.w3, &self.b3, true);
-        fc3[0]
     }
 
     fn process_layer(
@@ -299,29 +262,6 @@ impl Network {
         }
     }
 
-    #[allow(dead_code)]
-    fn sigmoid_layer(layer: &[f32]) -> Vec<f32> {
-        let mut res = Vec::with_capacity(layer.len());
-
-        for i in 0..layer.len() {
-            res.push(Network::sigmoid(layer[i]));
-        }
-
-        res
-    }
-
-    #[allow(dead_code)]
-    fn relu_layer(layer: &[f32]) -> Vec<f32> {
-        let mut res = Vec::with_capacity(layer.len());
-
-        for i in 0..layer.len() {
-            res.push(Network::relu(layer[i]));
-        }
-
-        res
-    }
-
-    #[allow(dead_code)]
     fn hard_tanh(min: i32, max: i32, layer: &mut [i32]) {
         let len = layer.len();
         let mut idx = 0;
@@ -331,16 +271,6 @@ impl Network {
             layer[idx] = val;
             idx += 1;
         }
-    }
-
-    #[allow(dead_code)]
-    fn sigmoid(val: f32) -> f32 {
-        1.0 / (1.0 + (-val).exp())
-    }
-
-    #[allow(dead_code)]
-    fn relu(val: f32) -> f32 {
-        val.max(0.0)
     }
 
     fn read_f32(file: &mut File, size: usize) -> Vec<f32> {
@@ -357,11 +287,6 @@ impl Network {
     }
 }
 
-fn get_feature_idx(piece: PieceInfo, pos: usize) -> usize {
-    let piece_idx = Piece::to_idx(piece);
-    pos * 64 + piece_idx
-}
-
 fn get_hkp_feature_idx(king_pos: usize, piece_idx: usize, pos: usize) -> usize {
     king_pos * 640 + piece_idx * 64 + pos
 }
@@ -369,28 +294,7 @@ fn get_hkp_feature_idx(king_pos: usize, piece_idx: usize, pos: usize) -> usize {
 impl Engine {
     pub fn setup_accumulator(&mut self) {
         if let Some(nn) = NETWORK.get() {
-            let mut feature: Vec<i32> = vec![0; INPUT];
-
-            for (idx, &bb) in self.board.get_bb().iter().enumerate() {
-                let mut cur_bb = bb;
-
-                while let Some(sq) = pop_lsb(&mut cur_bb) {
-                    let feat_idx = sq * 12 + idx;
-                    feature[feat_idx] = 1;
-                }
-            }
-
-            if self.board.side_to_move() == Color::White {
-                feature[INPUT - 1] = 1;
-            }
-
-            Network::process_layer(
-                &feature,
-                &mut self.eval_buf.accumulators[0],
-                &nn.w1,
-                &nn.b1,
-                false,
-            );
+            self.eval_buf.accumulators[0] = nn.build_acc(&self.board)
         }
     }
 
@@ -398,141 +302,142 @@ impl Engine {
         let Some(nn) = NETWORK.get() else {
             return;
         };
-        return;
 
-        self.eval_buf.accumulators[ply + 1] = self.eval_buf.accumulators[ply];
-        let acc = &mut self.eval_buf.accumulators[ply + 1];
+        self.eval_buf.accumulators[ply + 1] = nn.build_acc(&self.board);
 
-        let (from, to, flag) = (mv.from(), mv.to(), mv.flag());
-
-        // board is already after make_move()
-        let moved_piece = self.board.piece_on(to);
-        let side = Piece::get_color(moved_piece);
-
-        let mut removed = [0usize; 4];
-        let mut added = [0usize; 3];
-
-        let mut r_cnt = 0;
-        let mut a_cnt = 0;
-
+        // let acc = &mut self.eval_buf.accumulators[ply + 1];
         //
-        // moved piece
+        // let (from, to, flag) = (mv.from(), mv.to(), mv.flag());
         //
-
-        removed[r_cnt] = if flag.is_promo() {
-            get_feature_idx(Piece::PAWN | side, from)
-        } else {
-            get_feature_idx(moved_piece, from)
-        };
-        r_cnt += 1;
-
-        added[a_cnt] = get_feature_idx(moved_piece, to);
-        a_cnt += 1;
-
+        // // board is already after make_move()
+        // let moved_piece = self.board.piece_on(to);
+        // let side = Piece::get_color(moved_piece);
         //
-        // captures
+        // let mut removed = [0usize; 4];
+        // let mut added = [0usize; 3];
         //
-
-        if flag.is_capture() {
-            let cap_sq = if flag == MoveFlag::EN_PASSANT {
-                if side == Piece::WHITE { to - 8 } else { to + 8 }
-            } else {
-                to
-            };
-
-            removed[r_cnt] = get_feature_idx(undo.captured, cap_sq);
-            r_cnt += 1;
-        }
-
+        // let mut r_cnt = 0;
+        // let mut a_cnt = 0;
         //
-        // castling rook movement
+        // //
+        // // moved piece
+        // //
         //
-
-        if flag.is_castle() {
-            let (rook_from, rook_to) = match flag {
-                MoveFlag::KING_CASTLE => {
-                    if side == Piece::WHITE {
-                        (63, 61)
-                    } else {
-                        (7, 5)
-                    }
-                }
-                MoveFlag::QUEEN_CASTLE => {
-                    if side == Piece::WHITE {
-                        (56, 59)
-                    } else {
-                        (0, 3)
-                    }
-                }
-                _ => unreachable!(),
-            };
-
-            let rook = Piece::ROOK | side;
-
-            removed[r_cnt] = get_feature_idx(rook, rook_from);
-            r_cnt += 1;
-
-            added[a_cnt] = get_feature_idx(rook, rook_to);
-            a_cnt += 1;
-        }
-
+        // removed[r_cnt] = if flag.is_promo() {
+        //     get_feature_idx(Piece::PAWN | side, from)
+        // } else {
+        //     get_feature_idx(moved_piece, from)
+        // };
+        // r_cnt += 1;
         //
-        // incremental accumulator update
+        // added[a_cnt] = get_feature_idx(moved_piece, to);
+        // a_cnt += 1;
         //
-
-        for neuron in 0..HL1 {
-            let mut delta = 0;
-
-            for r in 0..r_cnt {
-                delta -= nn.w1[removed[r] + neuron * INPUT];
-            }
-
-            for a in 0..a_cnt {
-                delta += nn.w1[added[a] + neuron * INPUT];
-            }
-
-            //
-            // side-to-move feature
-            //
-            // feature[768] = 1 when White to move
-            //
-
-            let stm_weight = nn.w1[(INPUT - 1) + neuron * INPUT];
-
-            if self.board.side_to_move() == Color::White {
-                delta += stm_weight;
-            } else {
-                delta -= stm_weight;
-            }
-
-            acc[neuron] += delta as i32;
-        }
+        // //
+        // // captures
+        // //
+        //
+        // if flag.is_capture() {
+        //     let cap_sq = if flag == MoveFlag::EN_PASSANT {
+        //         if side == Piece::WHITE { to - 8 } else { to + 8 }
+        //     } else {
+        //         to
+        //     };
+        //
+        //     removed[r_cnt] = get_feature_idx(undo.captured, cap_sq);
+        //     r_cnt += 1;
+        // }
+        //
+        // //
+        // // castling rook movement
+        // //
+        //
+        // if flag.is_castle() {
+        //     let (rook_from, rook_to) = match flag {
+        //         MoveFlag::KING_CASTLE => {
+        //             if side == Piece::WHITE {
+        //                 (63, 61)
+        //             } else {
+        //                 (7, 5)
+        //             }
+        //         }
+        //         MoveFlag::QUEEN_CASTLE => {
+        //             if side == Piece::WHITE {
+        //                 (56, 59)
+        //             } else {
+        //                 (0, 3)
+        //             }
+        //         }
+        //         _ => unreachable!(),
+        //     };
+        //
+        //     let rook = Piece::ROOK | side;
+        //
+        //     removed[r_cnt] = get_feature_idx(rook, rook_from);
+        //     r_cnt += 1;
+        //
+        //     added[a_cnt] = get_feature_idx(rook, rook_to);
+        //     a_cnt += 1;
+        // }
+        //
+        // //
+        // // incremental accumulator update
+        // //
+        //
+        // for neuron in 0..HL1 {
+        //     let mut delta = 0;
+        //
+        //     for r in 0..r_cnt {
+        //         delta -= nn.w1[removed[r] + neuron * INPUT];
+        //     }
+        //
+        //     for a in 0..a_cnt {
+        //         delta += nn.w1[added[a] + neuron * INPUT];
+        //     }
+        //
+        //     //
+        //     // side-to-move feature
+        //     //
+        //     // feature[768] = 1 when White to move
+        //     //
+        //
+        //     let stm_weight = nn.w1[(INPUT - 1) + neuron * INPUT];
+        //
+        //     if self.board.side_to_move() == Color::White {
+        //         delta += stm_weight;
+        //     } else {
+        //         delta -= stm_weight;
+        //     }
+        //
+        //     acc[neuron] += delta as i32;
+        // }
     }
 
     pub fn update_nnue_null_move(&mut self, ply: usize) {
         let Some(nn) = NETWORK.get() else {
             return;
         };
-        return;
 
-        let acc = &mut self.eval_buf.accumulators[ply + 1];
+        self.eval_buf.accumulators[ply + 1] = nn.build_acc(&self.board);
 
-        for neuron in 0..HL1 {
-            let mut delta = 0;
+        // let acc = &mut self.eval_buf.accumulators[ply + 1];
 
-            // side-to-move feature
-            // feature[768] = 1 when White to move
-
-            let stm_weight = nn.w1[(INPUT - 1) + neuron * INPUT];
-
-            if self.board.side_to_move() == Color::White {
-                delta += stm_weight;
-            } else {
-                delta -= stm_weight;
-            }
-
-            acc[neuron] += delta as i32;
-        }
+        // for neuron in 0..HL1 {
+        //     let mut delta = 0;
+        //
+        //     // side-to-move feature
+        //     // feature[768] = 1 when White to move
+        //
+        //     let stm_weight = nn.w1[(INPUT - 1) + neuron * INPUT];
+        //
+        //     if self.board.side_to_move() == Color::White {
+        //         delta += stm_weight;
+        //     } else {
+        //         delta -= stm_weight;
+        //     }
+        //
+        //     acc[neuron] += delta as i32;
+        // }
     }
 }
 
@@ -569,7 +474,7 @@ mod tests {
         println!("Max b3: {}", nn.b3.iter().max().unwrap());
 
         let engine = Engine::new();
-        nn.eval(&engine.board);
+        nn.eval_hkp(&engine.board);
 
         println!("During an eval:");
 

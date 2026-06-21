@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn nn_load() {
-        let _ = Network::load("blaze_v1.nnue");
+        let _ = Network::load("blaze_v2.nnue");
     }
 
     #[test]

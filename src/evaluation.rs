@@ -595,7 +595,7 @@ impl Engine {
 
         if let Some(nn) = NETWORK.get() {
             // return nn.evaluate_with_acc(&mut self.eval_buf, ply);
-            return nn.eval_hkp(&self.board);
+            return nn.eval_hkp_with_acc(&mut self.eval_buf, ply);
         }
 
         score += &self.board.get_pesto_score();
