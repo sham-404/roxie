@@ -2,11 +2,11 @@ use std::sync::OnceLock;
 
 use crate::{
     board::{Board, pop_lsb},
-    r#const::{BLACK_PASSED_MASKS, KING_ATTACKS, KNIGHT_ATTACKS, WHITE_PASSED_MASKS},
+    r#const::{BLACK, BLACK_PASSED_MASKS, KING_ATTACKS, KNIGHT_ATTACKS, WHITE, WHITE_PASSED_MASKS},
     engine::Engine,
     items::{Color, Piece},
     magics::{get_bishop_move_bits, get_rook_move_bits},
-    network::NETWORK,
+    network::{HL1, NETWORK},
 };
 
 // const SCORE: [i32; 5] = [100, 320, 330, 500, 900];
@@ -595,7 +595,19 @@ impl Engine {
 
         if let Some(nn) = NETWORK.get() {
             // return nn.evaluate_with_acc(&mut self.eval_buf, ply);
-            return nn.eval_hkp_with_acc(&mut self.eval_buf, ply);
+            let mut acc = [0; HL1];
+            match self.board.side_to_move() {
+                Color::White => {
+                    acc[..HL1 / 2].copy_from_slice(&self.accumulators[ply][WHITE]);
+                    acc[HL1 / 2..].copy_from_slice(&self.accumulators[ply][BLACK]);
+                }
+                Color::Black => {
+                    acc[..HL1 / 2].copy_from_slice(&self.accumulators[ply][BLACK]);
+                    acc[HL1 / 2..].copy_from_slice(&self.accumulators[ply][WHITE]);
+                }
+                
+            };
+            return nn.eval_hkp_with_acc(&mut self.eval_buf, &acc);
         }
 
         score += &self.board.get_pesto_score();

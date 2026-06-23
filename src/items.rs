@@ -74,6 +74,18 @@ impl Piece {
     }
 
     #[inline]
+    pub const fn to_hkp_idx(p: PieceInfo) -> usize {
+        // This maps:
+        // White (P, N, B, R, Q, K) -> 0, 1, 2, 3, 4, _
+        // Black (P, N, B, R, Q, K) -> 5, 6, 7, 8, 9, _
+        debug_assert!((p & 0b111) != 0);
+        let type_idx = (p & 0b111) as usize - 1;
+        let color_idx = if (p & 16) != 0 { 5 } else { 0 };
+        type_idx + color_idx
+    }
+
+
+    #[inline]
     pub fn enemy(color: PieceInfo) -> PieceInfo {
         debug_assert!(
             color == color & Self::COLOR_MASK,
@@ -402,7 +414,7 @@ impl History {
 }
 
 #[repr(u8)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Color {
     White,
     Black,

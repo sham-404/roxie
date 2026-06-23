@@ -6,10 +6,10 @@ use std::{
 
 use crate::{
     board::{Board, pop_lsb},
-    r#const::MAX_PLY,
+    r#const::{BLACK, MAX_PLY, WHITE},
     engine::Engine,
     evaluation::mirror,
-    items::{Color, Move, MoveFlag, Piece, PieceInfo, Undo},
+    items::{Color, Move, MoveFlag, Piece, Undo},
 };
 
 const INPUT: usize = 40960;
@@ -27,7 +27,7 @@ pub struct EvalBuf {
     fc2: [i32; HL2],
     fc3: [i32; HL3],
     fc4: [i32; OUTPUT],
-    pub accumulators: [[i32; HL1]; MAX_PLY],
+    pub accumulators: [[[i32; HL1 / 2]; 2]; MAX_PLY],
 }
 
 impl EvalBuf {
@@ -37,7 +37,7 @@ impl EvalBuf {
             fc2: [0; HL2],
             fc3: [0; HL3],
             fc4: [0; OUTPUT],
-            accumulators: [[0i32; HL1]; MAX_PLY],
+            accumulators: [[[0i32; HL1 / 2]; 2]; MAX_PLY],
         }
     }
 }
@@ -133,8 +133,8 @@ impl Network {
         quantized
     }
 
-    pub fn eval_hkp_with_acc(&self, buf: &mut EvalBuf, ply: usize) -> i32 {
-        buf.fc1.copy_from_slice(&buf.accumulators[ply]);
+    pub fn eval_hkp_with_acc(&self, buf: &mut EvalBuf, acc: &[i32]) -> i32 {
+        buf.fc1.copy_from_slice(&acc);
         Network::hard_tanh(0 as i32, 1 * Q as i32, &mut buf.fc1);
 
         Network::process_layer(&buf.fc1, &mut buf.fc2, &self.w2, &self.b2, true);
@@ -294,7 +294,14 @@ fn get_hkp_feature_idx(king_pos: usize, piece_idx: usize, pos: usize) -> usize {
 impl Engine {
     pub fn setup_accumulator(&mut self) {
         if let Some(nn) = NETWORK.get() {
-            self.eval_buf.accumulators[0] = nn.build_acc(&self.board)
+            let rebuild = nn.build_acc(&self.board);
+            if self.board.side_to_move() == Color::White {
+                self.accumulators[0][WHITE].copy_from_slice(&rebuild[..HL1 / 2]);
+                self.accumulators[0][BLACK].copy_from_slice(&rebuild[HL1 / 2..]);
+            } else {
+                self.accumulators[0][BLACK].copy_from_slice(&rebuild[..HL1 / 2]);
+                self.accumulators[0][WHITE].copy_from_slice(&rebuild[HL1 / 2..]);
+            };
         }
     }
 
@@ -303,141 +310,121 @@ impl Engine {
             return;
         };
 
-        self.eval_buf.accumulators[ply + 1] = nn.build_acc(&self.board);
+        // self.accumulators[ply + 1] = nn.build_acc(&self.board);
+        self.accumulators[ply + 1] = self.accumulators[ply];
 
-        // let acc = &mut self.eval_buf.accumulators[ply + 1];
+        let acc = &mut self.accumulators[ply + 1];
+
+        let (from, to, flag) = (mv.from(), mv.to(), mv.flag());
+
+        // board is already after make_move()
+        let moved_piece = self.board.piece_on(to);
+        if Piece::get_type(moved_piece) == Piece::KING {
+            let rebuild = nn.build_acc(&self.board);
+            if self.board.side_to_move() == Color::White {
+                acc[WHITE].copy_from_slice(&rebuild[..HL1 / 2]);
+                acc[BLACK].copy_from_slice(&rebuild[HL1 / 2..]);
+            } else {
+                acc[BLACK].copy_from_slice(&rebuild[..HL1 / 2]);
+                acc[WHITE].copy_from_slice(&rebuild[HL1 / 2..]);
+            };
+            return;
+        }
+        let side = Piece::get_color(moved_piece);
+
+        let (w_king, b_king) = (
+            self.board.bb(Piece::KING | Piece::WHITE).trailing_zeros() as usize,
+            self.board.bb(Piece::KING | Piece::BLACK).trailing_zeros() as usize,
+        );
+
+        let mut w_removed = [0usize; 5];
+        let mut w_added = [0usize; 5];
+
+        let mut b_removed = [0usize; 5];
+        let mut b_added = [0usize; 5];
+
+        let mut r_cnt = 0;
+        let mut a_cnt = 0;
+
         //
-        // let (from, to, flag) = (mv.from(), mv.to(), mv.flag());
+        // moved piece
         //
-        // // board is already after make_move()
-        // let moved_piece = self.board.piece_on(to);
-        // let side = Piece::get_color(moved_piece);
+
+        if flag.is_promo() {
+            w_removed[r_cnt] =
+                get_hkp_feature_idx(w_king, Piece::to_hkp_idx(Piece::PAWN | side), from);
+            b_removed[r_cnt] = get_hkp_feature_idx(
+                mirror(b_king),
+                (Piece::to_hkp_idx(Piece::PAWN | side) + 5) % 10,
+                mirror(from),
+            );
+        } else {
+            w_removed[r_cnt] = get_hkp_feature_idx(w_king, Piece::to_hkp_idx(moved_piece), from);
+            b_removed[r_cnt] = get_hkp_feature_idx(
+                mirror(b_king),
+                (Piece::to_hkp_idx(moved_piece) + 5) % 10,
+                mirror(from),
+            );
+        };
+        r_cnt += 1;
+
+        w_added[a_cnt] = get_hkp_feature_idx(w_king, Piece::to_hkp_idx(moved_piece), to);
+        b_added[a_cnt] = get_hkp_feature_idx(
+            mirror(b_king),
+            (Piece::to_hkp_idx(moved_piece) + 5) % 10,
+            mirror(to),
+        );
+        a_cnt += 1;
+
         //
-        // let mut removed = [0usize; 4];
-        // let mut added = [0usize; 3];
+        // captures
         //
-        // let mut r_cnt = 0;
-        // let mut a_cnt = 0;
+
+        if flag.is_capture() {
+            let cap_sq = if flag == MoveFlag::EN_PASSANT {
+                if side == Piece::WHITE { to - 8 } else { to + 8 }
+            } else {
+                to
+            };
+
+            w_removed[r_cnt] =
+                get_hkp_feature_idx(w_king, Piece::to_hkp_idx(undo.captured), cap_sq);
+            b_removed[r_cnt] = get_hkp_feature_idx(
+                mirror(b_king),
+                (Piece::to_hkp_idx(undo.captured) + 5) % 10,
+                mirror(cap_sq),
+            );
+            r_cnt += 1;
+        }
+
         //
-        // //
-        // // moved piece
-        // //
+        // incremental accumulator update
         //
-        // removed[r_cnt] = if flag.is_promo() {
-        //     get_feature_idx(Piece::PAWN | side, from)
-        // } else {
-        //     get_feature_idx(moved_piece, from)
-        // };
-        // r_cnt += 1;
-        //
-        // added[a_cnt] = get_feature_idx(moved_piece, to);
-        // a_cnt += 1;
-        //
-        // //
-        // // captures
-        // //
-        //
-        // if flag.is_capture() {
-        //     let cap_sq = if flag == MoveFlag::EN_PASSANT {
-        //         if side == Piece::WHITE { to - 8 } else { to + 8 }
-        //     } else {
-        //         to
-        //     };
-        //
-        //     removed[r_cnt] = get_feature_idx(undo.captured, cap_sq);
-        //     r_cnt += 1;
-        // }
-        //
-        // //
-        // // castling rook movement
-        // //
-        //
-        // if flag.is_castle() {
-        //     let (rook_from, rook_to) = match flag {
-        //         MoveFlag::KING_CASTLE => {
-        //             if side == Piece::WHITE {
-        //                 (63, 61)
-        //             } else {
-        //                 (7, 5)
-        //             }
-        //         }
-        //         MoveFlag::QUEEN_CASTLE => {
-        //             if side == Piece::WHITE {
-        //                 (56, 59)
-        //             } else {
-        //                 (0, 3)
-        //             }
-        //         }
-        //         _ => unreachable!(),
-        //     };
-        //
-        //     let rook = Piece::ROOK | side;
-        //
-        //     removed[r_cnt] = get_feature_idx(rook, rook_from);
-        //     r_cnt += 1;
-        //
-        //     added[a_cnt] = get_feature_idx(rook, rook_to);
-        //     a_cnt += 1;
-        // }
-        //
-        // //
-        // // incremental accumulator update
-        // //
-        //
-        // for neuron in 0..HL1 {
-        //     let mut delta = 0;
-        //
-        //     for r in 0..r_cnt {
-        //         delta -= nn.w1[removed[r] + neuron * INPUT];
-        //     }
-        //
-        //     for a in 0..a_cnt {
-        //         delta += nn.w1[added[a] + neuron * INPUT];
-        //     }
-        //
-        //     //
-        //     // side-to-move feature
-        //     //
-        //     // feature[768] = 1 when White to move
-        //     //
-        //
-        //     let stm_weight = nn.w1[(INPUT - 1) + neuron * INPUT];
-        //
-        //     if self.board.side_to_move() == Color::White {
-        //         delta += stm_weight;
-        //     } else {
-        //         delta -= stm_weight;
-        //     }
-        //
-        //     acc[neuron] += delta as i32;
-        // }
+
+        // Added features
+        for idx in 0..a_cnt {
+            let (w_act, b_act) = (w_added[idx], b_added[idx]);
+
+            for neuron in 0..HL1 / 2 {
+                acc[WHITE][neuron] += nn.w1[w_act * (HL1 / 2) + neuron] as i32;
+                acc[BLACK][neuron] += nn.w1[b_act * (HL1 / 2) + neuron] as i32;
+            }
+        }
+
+        // Removed features
+        for idx in 0..r_cnt {
+            let (w_act, b_act) = (w_removed[idx], b_removed[idx]);
+
+            for neuron in 0..HL1 / 2 {
+                acc[WHITE][neuron] -= nn.w1[w_act * (HL1 / 2) + neuron] as i32;
+                acc[BLACK][neuron] -= nn.w1[b_act * (HL1 / 2) + neuron] as i32;
+            }
+        }
     }
 
     pub fn update_nnue_null_move(&mut self, ply: usize) {
-        let Some(nn) = NETWORK.get() else {
-            return;
-        };
-
-        self.eval_buf.accumulators[ply + 1] = nn.build_acc(&self.board);
-
-        // let acc = &mut self.eval_buf.accumulators[ply + 1];
-
-        // for neuron in 0..HL1 {
-        //     let mut delta = 0;
-        //
-        //     // side-to-move feature
-        //     // feature[768] = 1 when White to move
-        //
-        //     let stm_weight = nn.w1[(INPUT - 1) + neuron * INPUT];
-        //
-        //     if self.board.side_to_move() == Color::White {
-        //         delta += stm_weight;
-        //     } else {
-        //         delta -= stm_weight;
-        //     }
-        //
-        //     acc[neuron] += delta as i32;
-        // }
+        self.accumulators[ply + 1] = self.accumulators[ply];
+        return;
     }
 }
 
