@@ -6,38 +6,36 @@ use std::{
 
 use crate::{
     board::{Board, pop_lsb},
-    r#const::{BLACK, MAX_PLY, WHITE},
+    r#const::{BLACK, WHITE},
     engine::Engine,
     evaluation::mirror,
     items::{Color, Move, MoveFlag, Piece, Undo},
 };
 
 const INPUT: usize = 40960;
-pub const HL1: usize = 256;
+pub const HL1: usize = 128;
 const HL2: usize = 16;
 const HL3: usize = 16;
 const OUTPUT: usize = 1;
 const MAGIC: &[u8; 8] = b"BLAZE_V@";
-const NN_PATH: &'static str = "/home/sham_404/coding/roxie/blaze_v2.nnue";
-const QP: i32 = 10;
+const NN_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/blaze_v2.nnue");
+const QP: i32 = 8;
 pub const Q: f32 = (1 << QP) as f32; // 2 ^ QP
 
 pub struct EvalBuf {
-    fc1: [i32; HL1],
+    fc1: [i32; HL1 * 2],
     fc2: [i32; HL2],
     fc3: [i32; HL3],
     fc4: [i32; OUTPUT],
-    pub accumulators: [[[i32; HL1 / 2]; 2]; MAX_PLY],
 }
 
 impl EvalBuf {
     pub fn new() -> EvalBuf {
         EvalBuf {
-            fc1: [0; HL1],
+            fc1: [0; HL1 * 2],
             fc2: [0; HL2],
             fc3: [0; HL3],
             fc4: [0; OUTPUT],
-            accumulators: [[[0i32; HL1 / 2]; 2]; MAX_PLY],
         }
     }
 }
@@ -74,13 +72,13 @@ impl Network {
         file.read_exact(&mut magic).unwrap();
         assert_eq!(&magic, MAGIC);
 
-        let w1 = Network::read_f32(&mut file, INPUT * HL1 / 2);
+        let w1 = Network::read_f32(&mut file, INPUT * HL1);
         let w1 = Network::quantize_to_i16(&w1);
 
-        let b1 = Network::read_f32(&mut file, HL1 / 2);
+        let b1 = Network::read_f32(&mut file, HL1);
         let b1 = Network::quantize_to_i32(&b1);
 
-        let w2 = Network::read_f32(&mut file, HL1 * HL2);
+        let w2 = Network::read_f32(&mut file, HL1 * 2 * HL2);
         let w2 = Network::quantize_to_i16(&w2);
 
         let b2 = Network::read_f32(&mut file, HL2);
@@ -172,7 +170,7 @@ impl Network {
         (600.0 * y.atanh()) as i32
     }
 
-    fn build_acc(&self, board: &Board) -> [i32; HL1] {
+    fn build_acc(&self, board: &Board) -> [i32; HL1 * 2] {
         let mut white_feat = [50000usize; 30];
         let mut black_feat = [50000usize; 30];
 
@@ -208,14 +206,14 @@ impl Network {
         let w_acc = self.fill_acc(&white_feat[..feat_idx]);
         let b_acc = self.fill_acc(&black_feat[..feat_idx]);
 
-        let mut acc = [0; HL1];
+        let mut acc = [0; HL1 * 2];
 
         if board.side_to_move() == Color::White {
-            acc[..HL1 / 2].copy_from_slice(&w_acc);
-            acc[HL1 / 2..].copy_from_slice(&b_acc);
+            acc[..HL1].copy_from_slice(&w_acc);
+            acc[HL1..].copy_from_slice(&b_acc);
         } else {
-            acc[..HL1 / 2].copy_from_slice(&b_acc);
-            acc[HL1 / 2..].copy_from_slice(&w_acc);
+            acc[..HL1].copy_from_slice(&b_acc);
+            acc[HL1..].copy_from_slice(&w_acc);
         };
 
         acc
@@ -226,9 +224,9 @@ impl Network {
         let mut acc = self.b1.clone();
 
         for &act_feat in feature {
-            let offset = act_feat * (HL1 / 2);
+            let offset = act_feat * (HL1);
 
-            for neuron_idx in 0..HL1 / 2 {
+            for neuron_idx in 0..HL1 {
                 acc[neuron_idx] += self.w1[offset + neuron_idx] as i32;
             }
         }
@@ -296,11 +294,11 @@ impl Engine {
         if let Some(nn) = NETWORK.get() {
             let rebuild = nn.build_acc(&self.board);
             if self.board.side_to_move() == Color::White {
-                self.accumulators[0][WHITE].copy_from_slice(&rebuild[..HL1 / 2]);
-                self.accumulators[0][BLACK].copy_from_slice(&rebuild[HL1 / 2..]);
+                self.accumulators[0][WHITE].copy_from_slice(&rebuild[..HL1]);
+                self.accumulators[0][BLACK].copy_from_slice(&rebuild[HL1..]);
             } else {
-                self.accumulators[0][BLACK].copy_from_slice(&rebuild[..HL1 / 2]);
-                self.accumulators[0][WHITE].copy_from_slice(&rebuild[HL1 / 2..]);
+                self.accumulators[0][BLACK].copy_from_slice(&rebuild[..HL1]);
+                self.accumulators[0][WHITE].copy_from_slice(&rebuild[HL1..]);
             };
         }
     }
@@ -322,11 +320,11 @@ impl Engine {
         if Piece::get_type(moved_piece) == Piece::KING {
             let rebuild = nn.build_acc(&self.board);
             if self.board.side_to_move() == Color::White {
-                acc[WHITE].copy_from_slice(&rebuild[..HL1 / 2]);
-                acc[BLACK].copy_from_slice(&rebuild[HL1 / 2..]);
+                acc[WHITE].copy_from_slice(&rebuild[..HL1]);
+                acc[BLACK].copy_from_slice(&rebuild[HL1..]);
             } else {
-                acc[BLACK].copy_from_slice(&rebuild[..HL1 / 2]);
-                acc[WHITE].copy_from_slice(&rebuild[HL1 / 2..]);
+                acc[BLACK].copy_from_slice(&rebuild[..HL1]);
+                acc[WHITE].copy_from_slice(&rebuild[HL1..]);
             };
             return;
         }
@@ -405,9 +403,9 @@ impl Engine {
         for idx in 0..a_cnt {
             let (w_act, b_act) = (w_added[idx], b_added[idx]);
 
-            for neuron in 0..HL1 / 2 {
-                acc[WHITE][neuron] += nn.w1[w_act * (HL1 / 2) + neuron] as i32;
-                acc[BLACK][neuron] += nn.w1[b_act * (HL1 / 2) + neuron] as i32;
+            for neuron in 0..HL1 {
+                acc[WHITE][neuron] += nn.w1[w_act * (HL1) + neuron] as i32;
+                acc[BLACK][neuron] += nn.w1[b_act * (HL1) + neuron] as i32;
             }
         }
 
@@ -415,9 +413,9 @@ impl Engine {
         for idx in 0..r_cnt {
             let (w_act, b_act) = (w_removed[idx], b_removed[idx]);
 
-            for neuron in 0..HL1 / 2 {
-                acc[WHITE][neuron] -= nn.w1[w_act * (HL1 / 2) + neuron] as i32;
-                acc[BLACK][neuron] -= nn.w1[b_act * (HL1 / 2) + neuron] as i32;
+            for neuron in 0..HL1 {
+                acc[WHITE][neuron] -= nn.w1[w_act * (HL1) + neuron] as i32;
+                acc[BLACK][neuron] -= nn.w1[b_act * (HL1) + neuron] as i32;
             }
         }
     }
@@ -431,7 +429,10 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use crate::{
-        engine::Engine, evaluation::init_pesto_table, magics::init_magics, network::Network,
+        engine::Engine,
+        evaluation::init_pesto_table,
+        magics::init_magics,
+        network::{NN_PATH, Network, QP},
         zobrist::init_zobrist,
     };
 
@@ -440,7 +441,9 @@ mod tests {
         init_zobrist();
         init_pesto_table();
         init_magics();
-        let nn = Network::load("roxie_v2.nn");
+        let nn = Network::load(NN_PATH);
+
+        println!("Quantized to 2 ^ {QP}");
 
         println!("Min w1: {}", nn.w1.iter().min().unwrap());
         println!("Max w1: {}", nn.w1.iter().max().unwrap());
@@ -460,10 +463,16 @@ mod tests {
         println!("Min b3: {}", nn.b3.iter().min().unwrap());
         println!("Max b3: {}", nn.b3.iter().max().unwrap());
 
+        println!("Min w4: {}", nn.w4.iter().min().unwrap());
+        println!("Max w4: {}", nn.w4.iter().max().unwrap());
+
+        println!("Min b4: {}", nn.b4.iter().min().unwrap());
+        println!("Max b4: {}", nn.b4.iter().max().unwrap());
+
         let engine = Engine::new();
+        println!("During an eval:");
         nn.eval_hkp(&engine.board);
 
-        println!("During an eval:");
 
         println!("Min i8 {}", i8::MIN);
         println!("Max i8 {}", i8::MAX);

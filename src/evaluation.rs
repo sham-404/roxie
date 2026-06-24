@@ -594,18 +594,16 @@ impl Engine {
         let mut score = 0;
 
         if let Some(nn) = NETWORK.get() {
-            // return nn.evaluate_with_acc(&mut self.eval_buf, ply);
-            let mut acc = [0; HL1];
+            let mut acc = [0; HL1 * 2];
             match self.board.side_to_move() {
                 Color::White => {
-                    acc[..HL1 / 2].copy_from_slice(&self.accumulators[ply][WHITE]);
-                    acc[HL1 / 2..].copy_from_slice(&self.accumulators[ply][BLACK]);
+                    acc[..HL1].copy_from_slice(&self.accumulators[ply][WHITE]);
+                    acc[HL1..].copy_from_slice(&self.accumulators[ply][BLACK]);
                 }
                 Color::Black => {
-                    acc[..HL1 / 2].copy_from_slice(&self.accumulators[ply][BLACK]);
-                    acc[HL1 / 2..].copy_from_slice(&self.accumulators[ply][WHITE]);
+                    acc[..HL1].copy_from_slice(&self.accumulators[ply][BLACK]);
+                    acc[HL1..].copy_from_slice(&self.accumulators[ply][WHITE]);
                 }
-                
             };
             return nn.eval_hkp_with_acc(&mut self.eval_buf, &acc);
         }
