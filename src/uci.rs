@@ -27,6 +27,7 @@ pub struct UCI {
     engine: Arc<Mutex<Engine>>,
     stop_signal: Arc<AtomicBool>,
     search_handle: Option<JoinHandle<()>>,
+    debug: bool,
 }
 
 impl UCI {
@@ -35,6 +36,7 @@ impl UCI {
             engine: Arc::new(Mutex::new(Engine::new())),
             stop_signal: Arc::new(AtomicBool::new(false)),
             search_handle: None,
+            debug: false,
         }
     }
 
@@ -51,6 +53,11 @@ impl UCI {
                         uci_print!("id name Roxie {}", env!("CARGO_PKG_VERSION"));
                         uci_print!("id author sham-404");
                         uci_print!("uciok");
+                    }
+
+                    "debug" => {
+                        uci_print!("Executing in debug mode");
+                        self.debug = true;
                     }
 
                     "isready" => {
@@ -108,11 +115,16 @@ impl UCI {
         self.stop_signal.store(false, Ordering::Relaxed);
 
         let thread_engine = Arc::clone(&self.engine);
+        let debug = self.debug;
 
         self.search_handle = Some(thread::spawn(move || {
             let mut engine_guard = thread_engine.lock().unwrap();
             let data = engine_guard.search_ids(&limits, |info| {
                 info.print();
+
+                if debug {
+                    info.stats.describe();
+                }
             });
 
             uci_print!("bestmove {}", data.best_move.to_coord());

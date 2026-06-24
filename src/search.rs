@@ -25,16 +25,7 @@ impl Engine {
     where
         F: FnMut(&SearchInfo),
     {
-        let mut info = SearchInfo {
-            start_time: Instant::now(),
-            best_move: Move::NULL,
-            depth: 0,
-            seldepth: 0,
-            score: 0,
-            nodes: 0,
-            abort: false,
-            is_mandatory: true,
-        };
+        let mut info = SearchInfo::new();
 
         self.killers = [[Move::NULL; 2]; MAX_PLY];
         self.setup_accumulator();
@@ -74,7 +65,9 @@ impl Engine {
                 best_score = -INF;
 
                 let mut tt_move = Move::NULL;
+                info.stats.tt_probes += 1;
                 if let Some(entry) = self.tt.probe(self.board.get_zob_key()) {
+                    info.stats.tt_hits += 1;
                     tt_move = entry.best_move;
                 }
 
@@ -182,8 +175,11 @@ impl Engine {
         // Probing the TT
         let key = self.board.get_zob_key();
         let mut tt_move = Move::NULL;
+        info.stats.tt_probes += 1;
 
         if let Some(entry) = self.tt.probe(key) {
+            info.stats.tt_hits += 1;
+
             tt_move = entry.best_move;
             let mut score = entry.score;
 
@@ -199,6 +195,7 @@ impl Engine {
             if entry.depth >= depth {
                 match entry.flag {
                     TTFlag::Exact => {
+                        info.stats.tt_exact_cutoffs += 1;
                         return score;
                     }
                     TTFlag::LowerBound => alpha = alpha.max(score),
@@ -206,6 +203,7 @@ impl Engine {
                 }
 
                 if alpha >= beta {
+                    info.stats.tt_bound_cutoffs += 1;
                     return score;
                 }
             }
@@ -221,9 +219,12 @@ impl Engine {
 
         ///// Reverse Futility Pruning (Static Null Move Pruning)
         if !in_check && depth <= 4 && beta.abs() < INF - 1000 {
+            info.stats.rfp_attempts += 1;
+
             let margin = depth as i32 * 120; // 120 cp per depth as margin
 
             if static_eval - margin >= beta {
+                info.stats.rfp_cutoffs += 1;
                 return static_eval; // Immediate static beta cutoff
             }
         }
@@ -267,11 +268,15 @@ impl Engine {
                 if static_eval + 150 <= alpha {
                     // We must verify the move doesn't give a check before skipping it
                     // for safeplay
+                    
+                    info.stats.futility_attempts += 1;
+
                     let undo = self.board.make_move(&mv);
                     let gives_check = self.board.in_check();
                     self.board.unmake_move(&mv, &undo);
 
                     if !gives_check {
+                        info.stats.futility_prunes += 1;
                         continue;
                     }
                 }
@@ -374,6 +379,8 @@ impl Engine {
             && !self.board.is_endgame()
             && self.evaluate(ply as usize) >= beta
         {
+            info.stats.nmp_attemps += 1;
+
             let r = 2 + depth / 6;
             let old_epsq = self.board.make_null_move();
             self.update_nnue_null_move(ply as usize);
@@ -384,6 +391,7 @@ impl Engine {
             self.board.unmake_null_move(old_epsq);
 
             if score >= beta {
+                info.stats.nmp_cutoffs += 1;
                 // Not returning mate scores from NMP as it can lead to false mates
                 return Some(if score >= INF - 1000 { beta } else { score });
             }
@@ -419,6 +427,8 @@ impl Engine {
             && !mv.flag().is_promo();
 
         let reduction = if can_reduce {
+            info.stats.lmr_attempts += 1;
+
             let mut r = 1 + (mv_idx as u16 / 4) + (depth / 6);
 
             if depth <= 5 {
@@ -442,6 +452,8 @@ impl Engine {
 
         // re-search if fail high
         if reduction > 0 && eval > alpha {
+            info.stats.lmr_research += 1;
+
             eval = -self.negamax(
                 depth - 1 + extension,
                 -alpha - 1,
@@ -475,6 +487,7 @@ impl Engine {
         }
 
         info.nodes += 1;
+        info.stats.q_nodes += 1;
         info.seldepth = info.seldepth.max(ply as u16);
 
         let in_check = self.board.in_check();
@@ -510,7 +523,9 @@ impl Engine {
         };
 
         let mut tt_move = Move::NULL;
+        info.stats.tt_probes += 1;
         if let Some(entry) = self.tt.probe(self.board.get_zob_key()) {
+            info.stats.tt_hits += 1;
             tt_move = entry.best_move;
         }
 
@@ -581,6 +596,75 @@ impl Engine {
 }
 
 #[derive(Clone, Copy)]
+pub struct SearchStats {
+    pub q_nodes: usize,
+
+    pub nmp_attemps: usize,
+    pub nmp_cutoffs: usize,
+
+    pub lmr_attempts: usize,
+    pub lmr_research: usize,
+
+    pub rfp_attempts: usize,
+    pub rfp_cutoffs: usize,
+
+    pub futility_attempts: usize,
+    pub futility_prunes: usize,
+
+    pub tt_probes: usize,
+    pub tt_hits: usize,
+    pub tt_exact_cutoffs: usize,
+    pub tt_bound_cutoffs: usize,
+}
+
+impl SearchStats {
+    pub fn new() -> SearchStats {
+        SearchStats {
+            q_nodes: 0,
+
+            nmp_attemps: 0,
+            nmp_cutoffs: 0,
+
+            lmr_attempts: 0,
+            lmr_research: 0,
+
+            rfp_attempts: 0,
+            rfp_cutoffs: 0,
+
+            futility_attempts: 0,
+            futility_prunes: 0,
+
+            tt_probes: 0,
+            tt_hits: 0,
+            tt_exact_cutoffs: 0,
+            tt_bound_cutoffs: 0,
+        }
+    }
+
+    pub fn describe(&self) {
+        println!("q nodes: {}", self.q_nodes);
+
+        println!("NMP attempted: {}", self.nmp_attemps);
+        println!("NMP cutoffs: {}", self.nmp_cutoffs);
+
+        println!("LMR attempted: {}", self.lmr_attempts);
+        println!("LMR researched: {}", self.lmr_research);
+
+        println!("RFP attempted: {}", self.rfp_attempts);
+        println!("RFP cutoffs: {}", self.rfp_cutoffs);
+
+        println!("Futility attempted: {}", self.futility_attempts);
+        println!("Futility pruned: {}", self.futility_prunes);
+
+        println!("TT Probes: {}", self.tt_probes);
+        println!("TT Hits: {}", self.tt_hits);
+        println!("TT exact cutoffs: {}", self.tt_exact_cutoffs);
+        println!("TT bound cutoffs: {}", self.tt_bound_cutoffs);
+        println!();
+    }
+}
+
+#[derive(Clone, Copy)]
 pub struct SearchInfo {
     pub start_time: Instant,
     pub depth: u16,
@@ -590,9 +674,25 @@ pub struct SearchInfo {
     pub nodes: u64,
     pub abort: bool,
     pub is_mandatory: bool,
+
+    pub stats: SearchStats,
 }
 
 impl SearchInfo {
+    pub fn new() -> SearchInfo {
+        SearchInfo {
+            start_time: Instant::now(),
+            best_move: Move::NULL,
+            depth: 0,
+            seldepth: 0,
+            score: 0,
+            nodes: 0,
+            abort: false,
+            is_mandatory: true,
+
+            stats: SearchStats::new(),
+        }
+    }
     pub fn print(&self) {
         uci_print!(
             "info depth {} seldepth {} score cp {} nodes {} nps {} time {} pv {}",
