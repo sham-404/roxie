@@ -17,6 +17,25 @@ use std::{
     time::{Duration, Instant},
 };
 
+use std::sync::LazyLock;
+
+pub const MAX_MOVES: usize = 256;
+
+pub static LMR_TABLE: LazyLock<[[i32; MAX_MOVES]; MAX_PLY]> = LazyLock::new(|| {
+    let mut table = [[0; MAX_MOVES]; MAX_PLY];
+
+    for depth in 1..MAX_PLY {
+        for mv_idx in 1..MAX_MOVES {
+            // The constants 1.0 and 1.5 tunable
+            let reduction = 1.5 + (depth as f64).ln() * (mv_idx as f64).ln() / 1.5;
+
+            table[depth][mv_idx] = reduction as i32;
+        }
+    }
+
+    table
+});
+
 const INF: i32 = 10000000;
 const MAX_HISTORY: i32 = 20000;
 
@@ -287,14 +306,15 @@ impl Engine {
                 }
             }
 
-            // // Late Move Pruning
-            // if !in_check && !is_promo && !is_capture {
+            // // late move pruning
+            // let is_non_pv = alpha + 1 == beta;
+            // if is_non_pv && !in_check && !is_promo && !is_capture {
             //     let lmp_threshold = 3 + (depth * depth) as usize / 2;
             //     if depth <= 5 && mv_idx >= lmp_threshold {
             //         continue;
             //     }
             // }
-            //
+
             let undo = self.board.make_move(&mv);
             self.update_nnue(&mv, &undo, ply as usize);
 
@@ -461,13 +481,22 @@ impl Engine {
         let reduction = if can_reduce {
             info.stats.lmr_attempts += 1;
 
-            let mut r = 1 + (mv_idx as u16 / 4) + (depth / 6);
+            // Safely fetch base reduction from table
+            let table_depth = (depth as usize).min(MAX_PLY - 1);
+            let table_idx = mv_idx.min(MAX_MOVES - 1);
+            let mut r = LMR_TABLE[table_depth][table_idx];
 
-            if depth <= 5 {
-                r = 1;
-            }
+            // Continuous history adjustment
+            // max adjustment of +/- 4 plies
+            let adjustment_fac = MAX_HISTORY / 4;
+            let stm = self.board.side_to_move().val();
+            let hist_score = self.history[stm][mv.from()][mv.to()];
+            let hist_adjustment = hist_score / adjustment_fac;
 
-            r.min(depth - 1)
+            r -= hist_adjustment;
+
+            // Minimum reduction of 1 ply, maximum of depth - 1 to avoid negative depths
+            r.clamp(1, depth as i32 - 1) as u16
         } else {
             0
         };
