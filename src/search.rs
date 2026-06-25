@@ -150,9 +150,20 @@ impl Engine {
             //     }
             // }
 
+            // Manual storing for root node in TT
+            let root_key = self.board.get_zob_key();
+            self.tt.store(TTEntry {
+                key: root_key,
+                depth: d,
+                score: best_score,
+                flag: TTFlag::Exact,
+                best_move,
+            });
+
             info.depth = d;
             info.score = best_score;
             info.best_move = best_move;
+            info.pv = self.gen_pv(d);
 
             last_complete_info = info.clone();
 
@@ -689,6 +700,47 @@ impl Engine {
             self.killers[ply][0] = mv;
         }
     }
+
+    fn gen_pv(&mut self, depth: u16) -> Vec<Move> {
+        let mut pv = Vec::new();
+        let mut undo_stack = Vec::new();
+        let mut visited_keys = Vec::with_capacity(depth as usize);
+
+        for _ in 0..depth {
+            let key = self.board.get_zob_key();
+            if let Some(entry) = self.tt.probe(key) {
+                let mv = entry.best_move;
+
+                // Stoping if the move is empty or we hit an infinite transposition cycle
+                if mv == Move::NULL || visited_keys.contains(&key) {
+                    break;
+                }
+
+                // Verify the TT move is actually valid in this position
+                // (needed due to rare hash collisions overwritings)
+                let moves = self.board.gen_moves();
+                if !moves.as_slice().contains(&mv) {
+                    break;
+                }
+
+                pv.push(mv);
+                visited_keys.push(key);
+
+                // Make the move on the board to advance the state and get the next Zobrist key
+                let undo = self.board.make_move(&mv);
+                undo_stack.push((mv, undo));
+            } else {
+                break;
+            }
+        }
+
+        // Unmake all moves in reverse order to restore the board state to the root
+        while let Some((mv, undo)) = undo_stack.pop() {
+            self.board.unmake_move(&mv, &undo);
+        }
+
+        pv
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -760,7 +812,7 @@ impl SearchStats {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct SearchInfo {
     pub start_time: Instant,
     pub depth: u16,
@@ -770,6 +822,7 @@ pub struct SearchInfo {
     pub nodes: u64,
     pub abort: bool,
     pub is_mandatory: bool,
+    pub pv: Vec<Move>,
 
     pub stats: SearchStats,
 }
@@ -785,11 +838,17 @@ impl SearchInfo {
             nodes: 0,
             abort: false,
             is_mandatory: true,
+            pv: Vec::new(),
 
             stats: SearchStats::new(),
         }
     }
     pub fn print(&self) {
+        let mut pv_str = String::new();
+        for mv in &self.pv {
+            pv_str.push_str(&format!("{} ", mv.to_coord()));
+        }
+
         uci_print!(
             "info depth {} seldepth {} score cp {} nodes {} nps {} time {} pv {}",
             self.depth,
@@ -798,7 +857,7 @@ impl SearchInfo {
             self.nodes,
             self.nps(),
             self.start_time.elapsed().as_millis(),
-            self.best_move.to_coord(),
+            pv_str,
         );
     }
 
