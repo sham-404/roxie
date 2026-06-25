@@ -1360,12 +1360,12 @@ impl Board {
         // ORDERING BASE SCORES USED
         // TT move            : 1_000_000_000 (handled on ordering)
         // winning captures   : 70_000_000
-        // killer 1           : 60_000_000
-        // killer 2           : 59_000_000
         // equal captures     : 50_000_000
+        // killer 1           : 40_000_000
+        // killer 2           : 39_000_000
         // promotions         : 30_000_000
         // quiets and castles : 10_000_000
-        // bad captures       : 0
+        // bad captures       : 5_000_000
 
         let flag = mv.flag();
         let from = mv.from();
@@ -1404,11 +1404,11 @@ impl Board {
 
             // Equal capture
             if see_score == 0 {
-                return 50_000_000 + score;
+                return 50_000_000 + score + see_score;
             }
 
             // Losing capture
-            return score;
+            return 5_000_000 + score + see_score;
         }
 
         // Promotions

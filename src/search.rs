@@ -52,6 +52,7 @@ impl Engine {
 
             // aspiration re-search loop
             loop {
+                info.nodes += 1;
                 let orig_alpha = alpha;
                 let orig_beta = beta;
 
@@ -76,7 +77,7 @@ impl Engine {
                     let mv = move_list.pick_move(mv_idx);
                     let undo = self.board.make_move(&mv);
                     self.update_nnue(&mv, &undo, 0);
-                    let score = -self.negamax(d - 1, -beta, -alpha, 1, &limits, &mut info);
+                    let score = -self.negamax(d - 1, -beta, -alpha, 1, 0, &limits, &mut info);
                     self.board.unmake_move(&mv, &undo);
 
                     if info.abort {
@@ -155,6 +156,7 @@ impl Engine {
         mut alpha: i32,
         mut beta: i32,
         ply: i32,
+        extension: u8,
         limits: &SearchLimits,
         info: &mut SearchInfo,
     ) -> i32 {
@@ -239,7 +241,7 @@ impl Engine {
         }
 
         // NULL move pruning
-        if let Some(cutoff_score) = self.nmp_search(depth, beta, ply, limits, info) {
+        if let Some(cutoff_score) = self.nmp_search(depth, beta, ply, extension, limits, info) {
             return cutoff_score;
         }
 
@@ -262,13 +264,16 @@ impl Engine {
             }
 
             // Futility Pruning
-            if depth == 1 && mv_idx > 0 && !is_capture && !is_promo && !in_check {
-                // If static eval + 150 margin can't even beat alpha,
+            if depth < 3 && mv_idx > 0 && !is_capture && !is_promo && !in_check {
+                // If static eval + margin can't even beat alpha,
                 // this quiet move is highly unlikely to change the node status.
-                if static_eval + 150 <= alpha {
+                // Margin scales up with depth: Depth 1 = 150cp, Depth 2 = 300cp, Depth 3 = 450cp
+
+                let futility_margin = depth as i32 * 150;
+                if static_eval + futility_margin <= alpha {
                     // We must verify the move doesn't give a check before skipping it
                     // for safeplay
-                    
+
                     info.stats.futility_attempts += 1;
 
                     let undo = self.board.make_move(&mv);
@@ -283,16 +288,20 @@ impl Engine {
             }
 
             // // Late Move Pruning
-            // if depth <= 5 && mv_idx > 4 + depth as usize * 3 && !in_check && !is_promo && !is_capture
-            // {
-            //     continue;
+            // if !in_check && !is_promo && !is_capture {
+            //     let lmp_threshold = 3 + (depth * depth) as usize / 2;
+            //     if depth <= 5 && mv_idx >= lmp_threshold {
+            //         continue;
+            //     }
             // }
-
+            //
             let undo = self.board.make_move(&mv);
             self.update_nnue(&mv, &undo, ply as usize);
 
             // Late Move Reduction (LMR)
-            let eval = self.pv_search(&mv, mv_idx, depth, alpha, beta, ply, limits, info);
+            let eval = self.pv_search(
+                &mv, mv_idx, depth, alpha, beta, ply, extension, limits, info,
+            );
 
             self.board.unmake_move(&mv, &undo);
 
@@ -370,6 +379,7 @@ impl Engine {
         depth: u16,
         beta: i32,
         ply: i32,
+        extensions: u8,
         limits: &SearchLimits,
         info: &mut SearchInfo,
     ) -> Option<i32> {
@@ -386,7 +396,15 @@ impl Engine {
             self.update_nnue_null_move(ply as usize);
 
             // Zero-window search
-            let score = -self.negamax(depth - 1 - r, -beta, -beta + 1, ply + 1, limits, info);
+            let score = -self.negamax(
+                depth - 1 - r,
+                -beta,
+                -beta + 1,
+                ply + 1,
+                extensions,
+                limits,
+                info,
+            );
 
             self.board.unmake_null_move(old_epsq);
 
@@ -408,20 +426,34 @@ impl Engine {
         alpha: i32,
         beta: i32,
         ply: i32,
+        extensions: u8,
         limits: &SearchLimits,
         info: &mut SearchInfo,
     ) -> i32 {
         let in_check = self.board.in_check();
-        let extension = if in_check { 1 } else { 0 };
+
+        let (extension, next_extensions) = if in_check && extensions < 2 {
+            (1, extensions + 1)
+        } else {
+            (0, extensions)
+        };
 
         // searching first move with full window
         if mv_idx == 0 {
-            return -self.negamax(depth - 1 + extension, -beta, -alpha, ply + 1, limits, info);
+            return -self.negamax(
+                depth - 1 + extension,
+                -beta,
+                -alpha,
+                ply + 1,
+                next_extensions,
+                limits,
+                info,
+            );
         }
 
         // checking whether lmr is applicable
-        let can_reduce = mv_idx > 3
-            && depth > 4
+        let can_reduce = mv_idx > 2
+            && depth > 3
             && !in_check
             && !mv.flag().is_capture()
             && !mv.flag().is_promo();
@@ -446,6 +478,7 @@ impl Engine {
             -alpha - 1,
             -alpha,
             ply + 1,
+            next_extensions,
             limits,
             info,
         );
@@ -459,6 +492,7 @@ impl Engine {
                 -alpha - 1,
                 -alpha,
                 ply + 1,
+                next_extensions,
                 limits,
                 info,
             );
@@ -466,7 +500,15 @@ impl Engine {
 
         // full window re-search if needed
         if eval > alpha && eval < beta {
-            eval = -self.negamax(depth - 1 + extension, -beta, -alpha, ply + 1, limits, info);
+            eval = -self.negamax(
+                depth - 1 + extension,
+                -beta,
+                -alpha,
+                ply + 1,
+                next_extensions,
+                limits,
+                info,
+            );
         }
 
         eval
@@ -475,7 +517,7 @@ impl Engine {
     fn quiescence(
         &mut self,
         mut alpha: i32,
-        beta: i32,
+        mut beta: i32,
         ply: i32,
         info: &mut SearchInfo,
         limits: &SearchLimits,
@@ -489,6 +531,38 @@ impl Engine {
         info.nodes += 1;
         info.stats.q_nodes += 1;
         info.seldepth = info.seldepth.max(ply as u16);
+
+        let mut tt_move = Move::NULL;
+        info.stats.tt_probes += 1;
+        if let Some(entry) = self.tt.probe(self.board.get_zob_key()) {
+            info.stats.tt_hits += 1;
+
+            tt_move = entry.best_move;
+            let mut score = entry.score;
+
+            // De-adjust mate score
+            if entry.score > INF - 1000 {
+                score -= ply;
+            }
+
+            if entry.score < -INF + 1000 {
+                score += ply;
+            }
+
+            match entry.flag {
+                TTFlag::Exact => {
+                    info.stats.tt_exact_cutoffs += 1;
+                    return score;
+                }
+                TTFlag::LowerBound => alpha = alpha.max(score),
+                TTFlag::UpperBound => beta = beta.min(score),
+            }
+
+            if alpha >= beta {
+                info.stats.tt_bound_cutoffs += 1;
+                return score;
+            }
+        }
 
         let in_check = self.board.in_check();
 
@@ -522,19 +596,12 @@ impl Engine {
             self.board.gen_cap_moves()
         };
 
-        let mut tt_move = Move::NULL;
-        info.stats.tt_probes += 1;
-        if let Some(entry) = self.tt.probe(self.board.get_zob_key()) {
-            info.stats.tt_hits += 1;
-            tt_move = entry.best_move;
-        }
-
         self.with_ordering(tt_move, ply as usize, &mut move_list);
         for mv_idx in 0..move_list.len() {
             let mv = move_list.pick_move(mv_idx);
             // soft delta pruning
             if !in_check {
-                if self.board.see(&mv) < -75 && !mv.flag().is_promo() {
+                if self.board.see(&mv) < 0 && !mv.flag().is_promo() {
                     continue;
                 }
             }
@@ -572,9 +639,9 @@ impl Engine {
                 // Give it a score higher than any possible capture/promotion
                 movelist.score[i] = 1_000_000_000;
             } else if mv == self.killers[ply][0] {
-                movelist.score[i] = 60_000_000;
+                movelist.score[i] = 40_000_000;
             } else if mv == self.killers[ply][1] {
-                movelist.score[i] = 59_000_000;
+                movelist.score[i] = 39_000_000;
             } else {
                 let mut score = self.board.score_move(mv);
                 if mv.flag().is_quiet() {
