@@ -19,7 +19,7 @@ impl Engine {
     pub fn new() -> Self {
         Self {
             board: Board::start_pos(),
-            tt: TranspositionTable::new(16),
+            tt: TranspositionTable::new(25),
             history: [[[0; 64]; 64]; 2],
             killers: [[Move::NULL; 2]; MAX_PLY],
             eval_buf: EvalBuf::new(),

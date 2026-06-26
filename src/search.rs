@@ -96,7 +96,16 @@ impl Engine {
                     let mv = move_list.pick_move(mv_idx);
                     let undo = self.board.make_move(&mv);
                     self.update_nnue(&mv, &undo, 0);
-                    let score = -self.negamax(d - 1, -beta, -alpha, 1, 0, &limits, &mut info);
+
+                    let params = SearchParams {
+                        depth: d - 1,
+                        alpha: -beta,
+                        beta: -alpha,
+                        ply: 1,
+                        extension: 0,
+                    };
+
+                    let score = -self.negamax(params, &limits, &mut info);
                     self.board.unmake_move(&mv, &undo);
 
                     if info.abort {
@@ -182,15 +191,19 @@ impl Engine {
 
     fn negamax(
         &mut self,
-        depth: u16,
-        mut alpha: i32,
-        mut beta: i32,
-        ply: i32,
-        extension: u8,
+        params: SearchParams,
         limits: &SearchLimits,
         info: &mut SearchInfo,
     ) -> i32 {
         info.check_limits(limits);
+
+        let SearchParams {
+            depth,
+            mut alpha,
+            mut beta,
+            ply,
+            extension,
+        } = params;
 
         if info.abort {
             return alpha;
@@ -243,7 +256,17 @@ impl Engine {
 
         // base case handling
         if depth == 0 {
-            return self.quiescence(alpha, beta, ply, info, limits);
+            return self.quiescence(
+                SearchParams {
+                    depth,
+                    alpha,
+                    beta,
+                    ply,
+                    extension,
+                },
+                info,
+                limits,
+            );
         }
 
         let in_check = self.board.in_check();
@@ -271,7 +294,17 @@ impl Engine {
         }
 
         // NULL move pruning
-        if let Some(cutoff_score) = self.nmp_search(depth, beta, ply, extension, limits, info) {
+        if let Some(cutoff_score) = self.nmp_search(
+            SearchParams {
+                depth,
+                alpha,
+                beta,
+                ply,
+                extension,
+            },
+            limits,
+            info,
+        ) {
             return cutoff_score;
         }
 
@@ -331,7 +364,17 @@ impl Engine {
 
             // Late Move Reduction (LMR)
             let eval = self.pv_search(
-                &mv, mv_idx, depth, alpha, beta, ply, extension, limits, info,
+                &mv,
+                mv_idx,
+                SearchParams {
+                    depth,
+                    alpha,
+                    beta,
+                    ply,
+                    extension,
+                },
+                limits,
+                info,
             );
 
             self.board.unmake_move(&mv, &undo);
@@ -407,32 +450,39 @@ impl Engine {
 
     fn nmp_search(
         &mut self,
-        depth: u16,
-        beta: i32,
-        ply: i32,
-        extensions: u8,
+        params: SearchParams,
         limits: &SearchLimits,
         info: &mut SearchInfo,
     ) -> Option<i32> {
+        let SearchParams {
+            depth,
+            beta,
+            ply,
+            extension,
+            ..
+        } = params;
+
         // Conditions for NMP
-        if depth > 4
+        if depth > 3
             && !self.board.in_check()
             && !self.board.is_endgame()
             && self.evaluate(ply as usize) >= beta
         {
             info.stats.nmp_attemps += 1;
 
-            let r = 2 + depth / 6;
+            let r = 3 + depth / 6;
             let old_epsq = self.board.make_null_move();
             self.update_nnue_null_move(ply as usize);
 
             // Zero-window search
             let score = -self.negamax(
-                depth - 1 - r,
-                -beta,
-                -beta + 1,
-                ply + 1,
-                extensions,
+                SearchParams {
+                    depth: depth - 1 - r,
+                    alpha: -beta,
+                    beta: -beta + 1,
+                    ply: ply + 1,
+                    extension: extension,
+                },
                 limits,
                 info,
             );
@@ -453,30 +503,38 @@ impl Engine {
         &mut self,
         mv: &Move,
         mv_idx: usize,
-        depth: u16,
-        alpha: i32,
-        beta: i32,
-        ply: i32,
-        extensions: u8,
+        params: SearchParams,
         limits: &SearchLimits,
         info: &mut SearchInfo,
     ) -> i32 {
+        info.check_limits(limits);
+
+        let SearchParams {
+            depth,
+            alpha,
+            beta,
+            ply,
+            extension,
+        } = params;
+
         let in_check = self.board.in_check();
 
-        let (extension, next_extensions) = if in_check && extensions < 2 {
-            (1, extensions + 1)
+        let (extension, next_extensions) = if in_check && extension < 2 {
+            (1, extension + 1)
         } else {
-            (0, extensions)
+            (0, extension)
         };
 
         // searching first move with full window
         if mv_idx == 0 {
             return -self.negamax(
-                depth - 1 + extension,
-                -beta,
-                -alpha,
-                ply + 1,
-                next_extensions,
+                SearchParams {
+                    depth: depth - 1 + extension,
+                    alpha: -beta,
+                    beta: -alpha,
+                    ply: ply + 1,
+                    extension: next_extensions,
+                },
                 limits,
                 info,
             );
@@ -514,11 +572,13 @@ impl Engine {
 
         // Null window search
         let mut eval = -self.negamax(
-            depth - 1 - reduction + extension,
-            -alpha - 1,
-            -alpha,
-            ply + 1,
-            next_extensions,
+            SearchParams {
+                depth: depth - 1 - reduction + extension,
+                alpha: -alpha - 1,
+                beta: -alpha,
+                ply: ply + 1,
+                extension: next_extensions,
+            },
             limits,
             info,
         );
@@ -528,11 +588,13 @@ impl Engine {
             info.stats.lmr_research += 1;
 
             eval = -self.negamax(
-                depth - 1 + extension,
-                -alpha - 1,
-                -alpha,
-                ply + 1,
-                next_extensions,
+                SearchParams {
+                    depth: depth - 1 + extension,
+                    alpha: -alpha - 1,
+                    beta: -alpha,
+                    ply: ply + 1,
+                    extension: next_extensions,
+                },
                 limits,
                 info,
             );
@@ -541,11 +603,13 @@ impl Engine {
         // full window re-search if needed
         if eval > alpha && eval < beta {
             eval = -self.negamax(
-                depth - 1 + extension,
-                -beta,
-                -alpha,
-                ply + 1,
-                next_extensions,
+                SearchParams {
+                    depth: depth - 1 + extension,
+                    alpha: -beta,
+                    beta: -alpha,
+                    ply: ply + 1,
+                    extension: next_extensions,
+                },
                 limits,
                 info,
             );
@@ -556,13 +620,18 @@ impl Engine {
 
     fn quiescence(
         &mut self,
-        mut alpha: i32,
-        mut beta: i32,
-        ply: i32,
+        params: SearchParams,
         info: &mut SearchInfo,
         limits: &SearchLimits,
     ) -> i32 {
         info.check_limits(limits);
+
+        let SearchParams {
+            mut alpha,
+            mut beta,
+            ply,
+            ..
+        } = params;
 
         if info.abort {
             return alpha;
@@ -649,7 +718,18 @@ impl Engine {
             let undo = self.board.make_move(&mv);
 
             self.update_nnue(&mv, &undo, ply as usize);
-            let score = -self.quiescence(-beta, -alpha, ply + 1, info, limits);
+
+            let score = -self.quiescence(
+                SearchParams {
+                    alpha: -beta,
+                    beta: -alpha,
+                    ply: ply + 1,
+                    ..params
+                },
+                info,
+                limits,
+            );
+
             self.board.unmake_move(&mv, &undo);
 
             if info.abort {
@@ -741,6 +821,15 @@ impl Engine {
 
         pv
     }
+}
+
+#[derive(Clone, Copy)]
+struct SearchParams {
+    depth: u16,
+    alpha: i32,
+    beta: i32,
+    ply: i32,
+    extension: u8,
 }
 
 #[derive(Clone, Copy)]
