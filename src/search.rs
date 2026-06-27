@@ -36,7 +36,7 @@ pub static LMR_TABLE: LazyLock<[[i32; MAX_MOVES]; MAX_PLY]> = LazyLock::new(|| {
     table
 });
 
-const INF: i32 = 10000000;
+const INF: i32 = 32_000;
 const MAX_HISTORY: i32 = 20000;
 
 impl Engine {
@@ -88,7 +88,7 @@ impl Engine {
                 info.stats.tt_probes += 1;
                 if let Some(entry) = self.tt.probe(self.board.get_zob_key()) {
                     info.stats.tt_hits += 1;
-                    tt_move = entry.best_move;
+                    tt_move = entry.best_move();
                 }
 
                 self.with_ordering(tt_move, 0, &mut move_list);
@@ -225,7 +225,7 @@ impl Engine {
         if let Some(entry) = self.tt.probe(key) {
             info.stats.tt_hits += 1;
 
-            tt_move = entry.best_move;
+            tt_move = entry.best_move();
             let mut score = entry.score;
 
             // De-adjust mate score
@@ -237,8 +237,8 @@ impl Engine {
                 score += ply;
             }
 
-            if entry.depth >= depth {
-                match entry.flag {
+            if entry.depth() >= depth {
+                match entry.flag() {
                     TTFlag::Exact => {
                         info.stats.tt_exact_cutoffs += 1;
                         return score;
@@ -646,7 +646,7 @@ impl Engine {
         if let Some(entry) = self.tt.probe(self.board.get_zob_key()) {
             info.stats.tt_hits += 1;
 
-            tt_move = entry.best_move;
+            tt_move = entry.best_move();
             let mut score = entry.score;
 
             // De-adjust mate score
@@ -658,7 +658,7 @@ impl Engine {
                 score += ply;
             }
 
-            match entry.flag {
+            match entry.flag() {
                 TTFlag::Exact => {
                     info.stats.tt_exact_cutoffs += 1;
                     return score;
@@ -789,7 +789,7 @@ impl Engine {
         for _ in 0..depth {
             let key = self.board.get_zob_key();
             if let Some(entry) = self.tt.probe(key) {
-                let mv = entry.best_move;
+                let mv = entry.best_move();
 
                 // Stoping if the move is empty or we hit an infinite transposition cycle
                 if mv == Move::NULL || visited_keys.contains(&key) {
