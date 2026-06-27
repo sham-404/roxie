@@ -1,5 +1,7 @@
 use crate::items::Move;
 
+const TT_SLOT_SIZE: usize = 3;
+
 #[repr(u8)]
 #[derive(Clone, Copy)]
 pub enum TTFlag {
@@ -103,7 +105,7 @@ impl TTPacked {
 
 #[derive(Clone, Copy)]
 pub struct TTBucket {
-    pub slots: [TTPacked; 2],
+    pub slots: [TTPacked; TT_SLOT_SIZE],
 }
 
 pub struct TranspositionTable {
@@ -123,14 +125,10 @@ impl TranspositionTable {
             num_buckets.next_power_of_two() / 2
         };
 
-        println!("bucket size: {bucket_size}");
-        println!("num buckets: {num_buckets}");
-        println!("size: {} mb", num_buckets * bucket_size / (1024 * 1024));
-
         Self {
             table: vec![
                 TTBucket {
-                    slots: [TTPacked::default(); 2]
+                    slots: [TTPacked::default(); TT_SLOT_SIZE]
                 };
                 num_buckets
             ],
@@ -142,13 +140,13 @@ impl TranspositionTable {
         let index = key as usize & self.mask;
         let bucket = &self.table[index];
 
-        if bucket.slots[0].key == key {
-            Some(&bucket.slots[0])
-        } else if bucket.slots[1].key == key {
-            Some(&bucket.slots[1])
-        } else {
-            None
+        for slot in &bucket.slots {
+            if slot.key == key {
+                return Some(slot);
+            }
         }
+
+        None
     }
 
     pub fn store(&mut self, new_entry: TTEntry) {
@@ -157,36 +155,51 @@ impl TranspositionTable {
         let index = new_entry.key as usize & self.mask;
         let bucket = &mut self.table[index];
 
-        // overwriting directly if the key is same
-        if bucket.slots[0].key == new_entry.key {
-            bucket.slots[0] = new_entry;
-            return;
-        }
-        if bucket.slots[1].key == new_entry.key {
-            bucket.slots[1] = new_entry;
-            return;
+        // updating the slot if key exist
+        for slot in &mut bucket.slots {
+            if slot.key == new_entry.key {
+                *slot = new_entry;
+                return;
+            }
         }
 
-        // finding relative score based on flag for replacements
-        let score_0 = replace_score(bucket.slots[0].depth(), bucket.slots[0].flag());
-        let score_new = replace_score(new_entry.depth(), new_entry.flag());
+        // updating if the slot is empty
+        for slot in &mut bucket.slots {
+            if slot.key == 0 {
+                *slot = new_entry;
+                return;
+            }
+        }
 
-        if bucket.slots[0].key == 0 || score_new > score_0 {
-            bucket.slots[1] = bucket.slots[0];
-            bucket.slots[0] = new_entry;
-        } else {
-            bucket.slots[1] = new_entry;
+        // if no key or empty exist, find the score and replace the least one
+        let mut victim = 0;
+        let mut victim_score = replace_score(bucket.slots[0].depth(), bucket.slots[0].flag());
+
+        for i in 1..bucket.slots.len() {
+            let score = replace_score(bucket.slots[i].depth(), bucket.slots[i].flag());
+
+            if score < victim_score {
+                victim = i;
+                victim_score = score;
+            }
+        }
+
+        // replace only if new entry is valuable
+        let new_score = replace_score(new_entry.depth(), new_entry.flag());
+
+        if new_score >= victim_score {
+            bucket.slots[victim] = new_entry;
         }
     }
 }
 
 fn replace_score(depth: u16, flag: TTFlag) -> i32 {
     let flag_bonus = match flag {
-        TTFlag::Exact => 3,      // PV nodes
-        TTFlag::LowerBound => 2, // Beta cutoffs
+        TTFlag::Exact => 16,     // PV nodes
+        TTFlag::LowerBound => 4, // Beta cutoffs
         TTFlag::UpperBound => 0, // Fail-low nodes
     };
 
     // Combine depth and flag quality
-    ((depth as i32) << 2) + flag_bonus
+    ((depth as i32) << 4) + flag_bonus
 }
