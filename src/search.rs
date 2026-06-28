@@ -98,15 +98,49 @@ impl Engine {
                     let undo = self.board.make_move(&mv);
                     self.update_nnue(&mv, &undo, 0);
 
-                    let params = SearchParams {
-                        depth: d - 1,
-                        alpha: -beta,
-                        beta: -alpha,
-                        ply: 1,
-                        extension: 0,
+                    // PV search //
+                    let score = if mv_idx == 0 {
+                        -self.negamax(
+                            SearchParams {
+                                depth: d - 1,
+                                alpha: -beta,
+                                beta: -alpha,
+                                ply: 1,
+                                extension: 0,
+                            },
+                            &limits,
+                            &mut info,
+                        )
+                    } else {
+                        let mut eval = -self.negamax(
+                            SearchParams {
+                                depth: d - 1,
+                                alpha: -alpha - 1,
+                                beta: -alpha,
+                                ply: 1,
+                                extension: 0,
+                            },
+                            &limits,
+                            &mut info,
+                        );
+
+                        if eval > alpha {
+                            eval = -self.negamax(
+                                SearchParams {
+                                    depth: d - 1,
+                                    alpha: -beta,
+                                    beta: -alpha,
+                                    ply: 1,
+                                    extension: 0,
+                                },
+                                &limits,
+                                &mut info,
+                            );
+                        }
+
+                        eval
                     };
 
-                    let score = -self.negamax(params, &limits, &mut info);
                     self.board.unmake_move(&mv, &undo);
 
                     if info.abort {
