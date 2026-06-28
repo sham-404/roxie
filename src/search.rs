@@ -36,7 +36,8 @@ pub static LMR_TABLE: LazyLock<[[i32; MAX_MOVES]; MAX_PLY]> = LazyLock::new(|| {
     table
 });
 
-const INF: i32 = 32_000;
+const MATE: i32 = 32_000;
+const INF: i32 = 35999;
 const MAX_HISTORY: i32 = 20000;
 
 impl Engine {
@@ -229,11 +230,11 @@ impl Engine {
             let mut score = entry.score;
 
             // De-adjust mate score
-            if entry.score > INF - 1000 {
+            if entry.score > MATE - MAX_PLY as i32 {
                 score -= ply;
             }
 
-            if entry.score < -INF + 1000 {
+            if entry.score < -MATE + MAX_PLY as i32 {
                 score += ply;
             }
 
@@ -273,7 +274,7 @@ impl Engine {
         let static_eval = self.evaluate(ply as usize); // static evaluation
 
         ///// Reverse Futility Pruning (Static Null Move Pruning)
-        if !in_check && depth <= 4 && beta.abs() < INF - 1000 {
+        if !in_check && depth <= 4 && beta.abs() < MATE - MAX_PLY as i32 {
             info.stats.rfp_attempts += 1;
 
             let margin = depth as i32 * 120; // 120 cp per depth as margin
@@ -290,7 +291,7 @@ impl Engine {
 
         // checking mates
         if move_list.len() == 0 {
-            return if in_check { -INF + ply } else { 0 };
+            return if in_check { -MATE + ply } else { 0 };
         }
 
         // NULL move pruning
@@ -428,10 +429,10 @@ impl Engine {
 
         // Adjusting for mate score
         let mut score_to_store = max_eval;
-        if score_to_store > INF - 1000 {
+        if score_to_store > MATE - MAX_PLY as i32 {
             score_to_store += ply;
         }
-        if score_to_store < -INF + 1000 {
+        if score_to_store < -MATE + MAX_PLY as i32 {
             score_to_store -= ply;
         }
 
@@ -492,7 +493,11 @@ impl Engine {
             if score >= beta {
                 info.stats.nmp_cutoffs += 1;
                 // Not returning mate scores from NMP as it can lead to false mates
-                return Some(if score >= INF - 1000 { beta } else { score });
+                return Some(if score >= MATE - MAX_PLY as i32 {
+                    beta
+                } else {
+                    score
+                });
             }
         }
 
@@ -650,11 +655,11 @@ impl Engine {
             let mut score = entry.score;
 
             // De-adjust mate score
-            if entry.score > INF - 1000 {
+            if entry.score > MATE - MAX_PLY as i32 {
                 score -= ply;
             }
 
-            if entry.score < -INF + 1000 {
+            if entry.score < -MATE + MAX_PLY as i32 {
                 score += ply;
             }
 
@@ -676,31 +681,31 @@ impl Engine {
         let in_check = self.board.in_check();
 
         // Stand pat
-        let stand_pat = if !in_check {
-            self.evaluate(ply as usize)
-        } else {
-            -INF
-        };
-
-        // beta cutoff
-        if stand_pat >= beta {
-            return beta;
-        }
-
-        // delta pruning
         if !in_check {
+            let stand_pat = self.evaluate(ply as usize);
+
+            // beta cutoff
+            if stand_pat >= beta {
+                return stand_pat;
+            }
+
+            // delta pruning
             const BIG_DELTA: i32 = 1100;
             if stand_pat < alpha - BIG_DELTA {
                 return alpha;
             }
-        }
 
-        if stand_pat > alpha {
-            alpha = stand_pat;
+            if stand_pat > alpha {
+                alpha = stand_pat;
+            }
         }
 
         let mut move_list = if in_check {
-            self.board.gen_moves()
+            let mv_list = self.board.gen_moves();
+            if mv_list.len() == 0 {
+                return -MATE + ply;
+            }
+            mv_list
         } else {
             self.board.gen_cap_moves()
         };
