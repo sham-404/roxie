@@ -563,7 +563,7 @@ impl Engine {
             // Continuous history adjustment
             // max adjustment of +/- 4 plies
             let adjustment_fac = MAX_HISTORY / 4;
-            let stm = self.board.side_to_move().val();
+            let stm = self.board.side_to_move().opponent().val();
             let hist_score = self.history[stm][mv.from()][mv.to()];
             let hist_adjustment = hist_score / adjustment_fac;
 
