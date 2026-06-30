@@ -67,8 +67,9 @@ impl TTPacked {
     const MOVE_MASK: u32 = ((1 << TTPacked::MOVE_BITS) - 1) << TTPacked::MOVE_SHIFT;
 
     pub fn new(entry: TTEntry) -> TTPacked {
-        let info =
-            ((entry.best_move.0 as u32) << 10) | ((entry.depth as u32) << 2) | (entry.flag as u32);
+        let info = ((entry.best_move.0 as u32) << TTPacked::MOVE_SHIFT)
+            | ((entry.depth as u32) << TTPacked::DEPTH_SHIFT)
+            | ((entry.flag as u32) << TTPacked::FLAG_SHIFT);
 
         TTPacked {
             key: entry.key,

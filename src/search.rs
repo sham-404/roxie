@@ -36,6 +36,10 @@ pub static LMR_TABLE: LazyLock<[[i32; MAX_MOVES]; MAX_PLY]> = LazyLock::new(|| {
     table
 });
 
+pub fn init_lmr_table() {
+    LazyLock::force(&LMR_TABLE);
+}
+
 const MATE: i32 = 32_000;
 const INF: i32 = 35999;
 const MAX_HISTORY: i32 = 20000;
@@ -51,6 +55,8 @@ impl Engine {
         self.setup_accumulator();
 
         let mut last_complete_info = info.clone();
+
+        // Iterative Deepening Search loop
         for d in 1..=limits.depth.unwrap_or(MAX_DEPTH) {
             let mut best_move: Move;
             let mut best_score: i32;
@@ -99,6 +105,7 @@ impl Engine {
                     self.update_nnue(&mv, &undo, 0);
 
                     // PV search //
+                    // full window search on first move (tt_move)
                     let score = if mv_idx == 0 {
                         -self.negamax(
                             SearchParams {
@@ -112,6 +119,7 @@ impl Engine {
                             &mut info,
                         )
                     } else {
+                        // Null window search
                         let mut eval = -self.negamax(
                             SearchParams {
                                 depth: d - 1,
@@ -124,6 +132,7 @@ impl Engine {
                             &mut info,
                         );
 
+                        // Research if the move looks promising
                         if eval > alpha {
                             eval = -self.negamax(
                                 SearchParams {
@@ -140,6 +149,7 @@ impl Engine {
 
                         eval
                     };
+                    // PV search //
 
                     self.board.unmake_move(&mv, &undo);
 
@@ -152,7 +162,9 @@ impl Engine {
                         best_move = mv;
                     }
 
-                    alpha = alpha.max(score);
+                    if score > alpha {
+                        alpha = score;
+                    }
                 }
 
                 if info.abort {
@@ -307,7 +319,7 @@ impl Engine {
         let in_check = self.board.in_check();
         let static_eval = self.evaluate(ply as usize); // static evaluation
 
-        ///// Reverse Futility Pruning (Static Null Move Pruning)
+        // Reverse Futility Pruning (Static Null Move Pruning) //
         if !in_check && depth <= 4 && beta.abs() < MATE - MAX_PLY as i32 {
             info.stats.rfp_attempts += 1;
 
@@ -318,10 +330,10 @@ impl Engine {
                 return static_eval; // Immediate static beta cutoff
             }
         }
+        // Reverse Futility Pruning (Static Null Move Pruning) //
 
         let mut move_list = self.board.gen_moves();
         let original_alpha = alpha;
-        let mut quiet_list = MoveList::new();
 
         // checking mates
         if move_list.len() == 0 {
@@ -342,10 +354,13 @@ impl Engine {
         ) {
             return cutoff_score;
         }
+        // NULL move pruning
 
         let mut max_eval = -INF;
         let mut best_move_this_node = Move::NULL;
         let mut fail_high = false;
+        let mut quiet_list = MoveList::new();
+        let mut quiet_searched = 0;
 
         // Actual searching loop
 
@@ -353,16 +368,30 @@ impl Engine {
         for mv_idx in 0..move_list.len() {
             let mv = move_list.pick_move(mv_idx);
             let flag = mv.flag();
-            let is_capture = flag.is_capture();
-            let is_promo = flag.is_promo();
             let is_quiet = flag.is_quiet();
 
             if is_quiet {
+                quiet_searched += 1;
                 quiet_list.push(mv);
+
+                // late move pruning //
+                let is_non_pv = alpha + 1 == beta;
+                let lmp_threshold = 3 + (depth * depth) as usize / 3;
+
+                if is_non_pv
+                    && !in_check
+                    && depth <= 5
+                    && quiet_searched > lmp_threshold
+                    && !self.killers[ply as usize].contains(&mv)
+                    && false
+                {
+                    continue;
+                }
+                // late move pruning //
             }
 
-            // Futility Pruning
-            if depth < 3 && mv_idx > 0 && !is_capture && !is_promo && !in_check {
+            // Futility Pruning //
+            if depth < 3 && mv_idx > 0 && is_quiet && !in_check {
                 // If static eval + margin can't even beat alpha,
                 // this quiet move is highly unlikely to change the node status.
                 // Margin scales up with depth: Depth 1 = 150cp, Depth 2 = 300cp, Depth 3 = 450cp
@@ -384,20 +413,11 @@ impl Engine {
                     }
                 }
             }
-
-            // // late move pruning
-            // let is_non_pv = alpha + 1 == beta;
-            // if is_non_pv && !in_check && !is_promo && !is_capture {
-            //     let lmp_threshold = 3 + (depth * depth) as usize / 2;
-            //     if depth <= 5 && mv_idx >= lmp_threshold {
-            //         continue;
-            //     }
-            // }
+            // Futility Pruning //
 
             let undo = self.board.make_move(&mv);
             self.update_nnue(&mv, &undo, ply as usize);
 
-            // Late Move Reduction (LMR)
             let eval = self.pv_search(
                 &mv,
                 mv_idx,
@@ -449,6 +469,7 @@ impl Engine {
                     *h += bonus;
                     *h = (*h).clamp(-MAX_HISTORY, MAX_HISTORY);
                 }
+
                 break;
             }
         }
@@ -586,6 +607,7 @@ impl Engine {
             && !mv.flag().is_capture()
             && !mv.flag().is_promo();
 
+        // Late move reduction //
         let reduction = if can_reduce {
             info.stats.lmr_attempts += 1;
 
@@ -608,6 +630,7 @@ impl Engine {
         } else {
             0
         };
+        // Late move reduction //
 
         // Null window search
         let mut eval = -self.negamax(

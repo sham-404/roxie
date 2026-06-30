@@ -1,12 +1,13 @@
 use roxie::{
-    evaluation::init_pesto_table, magics::init_magics, network::init_nn, uci::UCI,
-    zobrist::init_zobrist,
+    evaluation::init_pesto_table, magics::init_magics, network::init_nn, search::init_lmr_table,
+    uci::UCI, zobrist::init_zobrist,
 };
 
 fn init_all() {
     init_zobrist();
     init_pesto_table();
     init_magics();
+    init_lmr_table();
     init_nn(true);
 }
 
