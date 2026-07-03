@@ -590,7 +590,7 @@ fn king_safety_score(board: &Board) -> i32 {
 
 const TEMPO_BONUS: i32 = 10;
 impl Engine {
-    pub fn evaluate(&mut self, ply: usize) -> i32 {
+    pub fn evaluate(&mut self, ply: usize) -> i16 {
         let mut score = 0;
 
         if let Some(nn) = NETWORK.get() {
@@ -613,6 +613,6 @@ impl Engine {
         score += pawn_struct_score(&self.board);
         score += king_safety_score(&self.board);
 
-        (score + TEMPO_BONUS) * &self.board.side_to_move().fac()
+        ((score + TEMPO_BONUS) * &self.board.side_to_move().fac()) as i16
     }
 }

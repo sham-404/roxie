@@ -71,9 +71,9 @@ impl TTPacked {
     pub fn new(entry: TTEntry) -> TTPacked {
         // offsetting score as encoding direct negative values will be sign extended
         // leading to corrupt data
-        debug_assert!(entry.score < MATE && entry.score > -MATE);
+        debug_assert!((entry.score as i16) < MATE && (entry.score as i16) > -MATE);
 
-        let u16_score = (entry.score + MATE) as u16;
+        let u16_score = (entry.score + MATE as i32) as u16;
         let info = ((entry.best_move.0 as u64) << TTPacked::MOVE_SHIFT)
             | ((entry.depth as u64) << TTPacked::DEPTH_SHIFT)
             | ((entry.flag as u64) << TTPacked::FLAG_SHIFT)
@@ -103,10 +103,10 @@ impl TTPacked {
     }
 
     #[inline]
-    pub fn score(&self) -> i32 {
+    pub fn score(&self) -> i16 {
         let u16_score = ((self.info & TTPacked::SCORE_MASK) >> TTPacked::SCORE_SHIFT) as u16;
-        let de_offset_score = u16_score as i32 - MATE;
-        de_offset_score
+        let de_offset_score = u16_score as i32 - MATE as i32;
+        de_offset_score as i16
     }
 
     fn default() -> Self {

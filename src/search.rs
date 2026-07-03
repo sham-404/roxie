@@ -40,8 +40,8 @@ pub fn init_lmr_table() {
     LazyLock::force(&LMR_TABLE);
 }
 
-pub const MATE: i32 = 32_000;
-const INF: i32 = 35999;
+pub const MATE: i16 = 27_000;
+const INF: i16 = 27_500;
 const MAX_HISTORY: i32 = 20000;
 
 impl Engine {
@@ -59,14 +59,14 @@ impl Engine {
         // Iterative Deepening Search loop
         for d in 1..=limits.depth.unwrap_or(MAX_DEPTH) {
             let mut best_move: Move;
-            let mut best_score: i32;
+            let mut best_score: i16;
 
             // making the search of depth 1 completely mandatory
             // as it guarentees us to return a valid move
             info.is_mandatory = 1 == d;
 
             // Aspiration window setup
-            let mut delta = 50;
+            let mut delta = 50i16;
             let mut alpha = -INF;
             let mut beta = INF;
 
@@ -211,7 +211,7 @@ impl Engine {
             self.tt.store(TTEntry {
                 key: root_key,
                 depth: d,
-                score: best_score,
+                score: best_score as i32,
                 flag: TTFlag::Exact,
                 best_move,
             });
@@ -241,7 +241,7 @@ impl Engine {
         params: SearchParams,
         limits: &SearchLimits,
         info: &mut SearchInfo,
-    ) -> i32 {
+    ) -> i16 {
         info.check_limits(limits);
 
         let SearchParams {
@@ -260,8 +260,8 @@ impl Engine {
         info.seldepth = info.seldepth.max(ply as u16);
 
         // Mate Distance Pruning //
-        alpha = alpha.max(-MATE + ply);
-        beta = beta.min(MATE - ply);
+        alpha = alpha.max(-MATE + ply as i16);
+        beta = beta.min(MATE - ply as i16);
 
         // Prune if mate score is found and it cannot be improved 
         if alpha >= beta {
@@ -286,12 +286,12 @@ impl Engine {
             let mut score = entry.score();
 
             // De-adjust mate score
-            if entry.score() > MATE - MAX_PLY as i32 {
-                score -= ply;
+            if entry.score() > MATE - MAX_PLY as i16 {
+                score -= ply as i16;
             }
 
-            if entry.score() < -MATE + MAX_PLY as i32 {
-                score += ply;
+            if entry.score() < -MATE + MAX_PLY as i16 {
+                score += ply as i16;
             }
 
             if entry.depth() >= depth {
@@ -330,10 +330,10 @@ impl Engine {
         let static_eval = self.evaluate(ply as usize); // static evaluation
 
         // Reverse Futility Pruning (Static Null Move Pruning) //
-        if !in_check && depth <= 4 && beta.abs() < MATE - MAX_PLY as i32 {
+        if !in_check && depth <= 4 && beta.abs() < MATE - MAX_PLY as i16 {
             info.stats.rfp_attempts += 1;
 
-            let margin = depth as i32 * 120; // 120 cp per depth as margin
+            let margin = depth as i16 * 120; // 120 cp per depth as margin
 
             if static_eval - margin >= beta {
                 info.stats.rfp_cutoffs += 1;
@@ -347,7 +347,7 @@ impl Engine {
 
         // checking mates
         if move_list.len() == 0 {
-            return if in_check { -MATE + ply } else { 0 };
+            return if in_check { -MATE + ply as i16 } else { 0 };
         }
 
         // NULL move pruning
@@ -406,7 +406,7 @@ impl Engine {
                 // this quiet move is highly unlikely to change the node status.
                 // Margin scales up with depth: Depth 1 = 150cp, Depth 2 = 300cp, Depth 3 = 450cp
 
-                let futility_margin = depth as i32 * 150;
+                let futility_margin = depth as i16 * 150;
                 if static_eval + futility_margin <= alpha {
                     // We must verify the move doesn't give a check before skipping it
                     // for safeplay
@@ -494,18 +494,18 @@ impl Engine {
 
         // Adjusting for mate score
         let mut score_to_store = max_eval;
-        if score_to_store > MATE - MAX_PLY as i32 {
-            score_to_store += ply;
+        if score_to_store > MATE - MAX_PLY as i16 {
+            score_to_store += ply as i16;
         }
-        if score_to_store < -MATE + MAX_PLY as i32 {
-            score_to_store -= ply;
+        if score_to_store < -MATE + MAX_PLY as i16 {
+            score_to_store -= ply as i16;
         }
 
         if !info.abort {
             self.tt.store(TTEntry {
                 key,
                 depth: depth,
-                score: score_to_store,
+                score: score_to_store as i32,
                 flag,
                 best_move: best_move_this_node,
             });
@@ -519,7 +519,7 @@ impl Engine {
         params: SearchParams,
         limits: &SearchLimits,
         info: &mut SearchInfo,
-    ) -> Option<i32> {
+    ) -> Option<i16> {
         let SearchParams {
             depth,
             beta,
@@ -558,7 +558,7 @@ impl Engine {
             if score >= beta {
                 info.stats.nmp_cutoffs += 1;
                 // Not returning mate scores from NMP as it can lead to false mates
-                return Some(if score >= MATE - MAX_PLY as i32 {
+                return Some(if score >= MATE - MAX_PLY as i16 {
                     beta
                 } else {
                     score
@@ -576,7 +576,7 @@ impl Engine {
         params: SearchParams,
         limits: &SearchLimits,
         info: &mut SearchInfo,
-    ) -> i32 {
+    ) -> i16 {
         info.check_limits(limits);
 
         let SearchParams {
@@ -695,7 +695,7 @@ impl Engine {
         params: SearchParams,
         info: &mut SearchInfo,
         limits: &SearchLimits,
-    ) -> i32 {
+    ) -> i16 {
         info.check_limits(limits);
 
         let SearchParams {
@@ -722,12 +722,12 @@ impl Engine {
             let mut score = entry.score();
 
             // De-adjust mate score
-            if entry.score() > MATE - MAX_PLY as i32 {
-                score -= ply;
+            if entry.score() > MATE - MAX_PLY as i16 {
+                score -= ply as i16;
             }
 
-            if entry.score() < -MATE + MAX_PLY as i32 {
-                score += ply;
+            if entry.score() < -MATE + MAX_PLY as i16 {
+                score += ply as i16;
             }
 
             match entry.flag() {
@@ -757,7 +757,7 @@ impl Engine {
             }
 
             // delta pruning
-            const BIG_DELTA: i32 = 1100;
+            const BIG_DELTA: i16 = 1100;
             if stand_pat < alpha - BIG_DELTA {
                 return alpha;
             }
@@ -770,7 +770,7 @@ impl Engine {
         let mut move_list = if in_check {
             let mv_list = self.board.gen_moves();
             if mv_list.len() == 0 {
-                return -MATE + ply;
+                return -MATE + ply as i16;
             }
             mv_list
         } else {
@@ -898,8 +898,8 @@ impl Engine {
 #[derive(Clone, Copy)]
 struct SearchParams {
     depth: u16,
-    alpha: i32,
-    beta: i32,
+    alpha: i16,
+    beta: i16,
     ply: i32,
     extension: u8,
 }
@@ -978,7 +978,7 @@ pub struct SearchInfo {
     pub start_time: Instant,
     pub depth: u16,
     pub seldepth: u16,
-    pub score: i32,
+    pub score: i16,
     pub best_move: Move,
     pub nodes: u64,
     pub abort: bool,
@@ -1010,7 +1010,7 @@ impl SearchInfo {
             pv_str.push_str(&format!("{} ", mv.to_coord()));
         }
 
-        let score = if self.score.abs() > MATE - MAX_PLY as i32 {
+        let score = if self.score.abs() > MATE - MAX_PLY as i16 {
             format!("mate {}", MATE - self.score)
         } else {
             format!("cp {}", self.score)

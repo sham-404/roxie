@@ -131,7 +131,7 @@ impl Network {
         quantized
     }
 
-    pub fn eval_hkp_with_acc(&self, buf: &mut EvalBuf, acc: &[i32]) -> i32 {
+    pub fn eval_hkp_with_acc(&self, buf: &mut EvalBuf, acc: &[i32]) -> i16 {
         buf.fc1.copy_from_slice(&acc);
         Network::hard_tanh(0 as i32, 1 * Q as i32, &mut buf.fc1);
 
@@ -146,7 +146,7 @@ impl Network {
         let y = buf.fc4[0] as f32 / Q as f32;
         let y = y.clamp(-0.99999, 0.99999);
 
-        (600.0 * y.atanh()) as i32
+        (600.0 * y.atanh()) as i16
     }
 
     pub fn eval_hkp(&self, board: &Board) -> i32 {
