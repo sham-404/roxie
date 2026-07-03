@@ -1000,11 +1000,17 @@ impl SearchInfo {
             pv_str.push_str(&format!("{} ", mv.to_coord()));
         }
 
+        let score = if self.score.abs() > MATE - MAX_PLY as i32 {
+            format!("mate {}", MATE - self.score)
+        } else {
+            format!("cp {}", self.score)
+        };
+
         uci_print!(
-            "info depth {} seldepth {} score cp {} nodes {} nps {} time {} pv {}",
+            "info depth {} seldepth {} score {} nodes {} nps {} time {} pv {}",
             self.depth,
             self.seldepth,
-            self.score,
+            score,
             self.nodes,
             self.nps(),
             self.start_time.elapsed().as_millis(),
