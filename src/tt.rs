@@ -1,4 +1,4 @@
-use crate::items::Move;
+use crate::{items::Move, search::MATE};
 
 const TT_SLOT_SIZE: usize = 3;
 
@@ -46,34 +46,41 @@ pub struct TTEntry {
 #[derive(Clone, Copy)]
 pub struct TTPacked {
     key: u64,
-    pub score: i32,
-    info: u32,
+    info: u64,
     // NOTE: info is masked as follows:
-    // 000000   0000 0000 0000 0000    0000 0000    00
-    // unused   |--- best_move ---|    | depth |  |flag|
+    // 0000 0....  0000 0000 0000 0000   0000 0000 0000 0000    0000 0000    00
+    // |-unused-|  |----- score -----|   |--- best_move ---|    | depth |  |flag|
 }
 
 impl TTPacked {
-    const FLAG_BITS: u32 = 2;
-    const DEPTH_BITS: u32 = 8;
-    const MOVE_BITS: u32 = 16;
+    const FLAG_BITS: u64 = 2;
+    const DEPTH_BITS: u64 = 8;
+    const MOVE_BITS: u64 = 16;
+    const SCORE_BITS: u64 = 16;
 
-    const FLAG_SHIFT: u32 = 0;
-    const DEPTH_SHIFT: u32 = 2;
-    const MOVE_SHIFT: u32 = 10;
+    const FLAG_SHIFT: u64 = 0;
+    const DEPTH_SHIFT: u64 = 2;
+    const MOVE_SHIFT: u64 = 10;
+    const SCORE_SHIFT: u64 = 26;
 
-    const FLAG_MASK: u32 = ((1 << TTPacked::FLAG_BITS) - 1) << TTPacked::FLAG_SHIFT;
-    const DEPTH_MASK: u32 = ((1 << TTPacked::DEPTH_BITS) - 1) << TTPacked::DEPTH_SHIFT;
-    const MOVE_MASK: u32 = ((1 << TTPacked::MOVE_BITS) - 1) << TTPacked::MOVE_SHIFT;
+    const FLAG_MASK: u64 = ((1 << TTPacked::FLAG_BITS) - 1) << TTPacked::FLAG_SHIFT;
+    const DEPTH_MASK: u64 = ((1 << TTPacked::DEPTH_BITS) - 1) << TTPacked::DEPTH_SHIFT;
+    const MOVE_MASK: u64 = ((1 << TTPacked::MOVE_BITS) - 1) << TTPacked::MOVE_SHIFT;
+    const SCORE_MASK: u64 = ((1 << TTPacked::SCORE_BITS) - 1) << TTPacked::SCORE_SHIFT;
 
     pub fn new(entry: TTEntry) -> TTPacked {
-        let info = ((entry.best_move.0 as u32) << TTPacked::MOVE_SHIFT)
-            | ((entry.depth as u32) << TTPacked::DEPTH_SHIFT)
-            | ((entry.flag as u32) << TTPacked::FLAG_SHIFT);
+        // offsetting score as encoding direct negative values will be sign extended
+        // leading to corrupt data
+        debug_assert!(entry.score < MATE && entry.score > -MATE);
+
+        let u16_score = (entry.score + MATE) as u16;
+        let info = ((entry.best_move.0 as u64) << TTPacked::MOVE_SHIFT)
+            | ((entry.depth as u64) << TTPacked::DEPTH_SHIFT)
+            | ((entry.flag as u64) << TTPacked::FLAG_SHIFT)
+            | ((u16_score as u64) << TTPacked::SCORE_SHIFT);
 
         TTPacked {
             key: entry.key,
-            score: entry.score,
             info: info,
         }
     }
@@ -95,12 +102,15 @@ impl TTPacked {
         Move(mv)
     }
 
+    #[inline]
+    pub fn score(&self) -> i32 {
+        let u16_score = ((self.info & TTPacked::SCORE_MASK) >> TTPacked::SCORE_SHIFT) as u16;
+        let de_offset_score = u16_score as i32 - MATE;
+        de_offset_score
+    }
+
     fn default() -> Self {
-        Self {
-            score: 0,
-            key: 0,
-            info: 0,
-        }
+        Self { key: 0, info: 0 }
     }
 }
 
@@ -125,6 +135,11 @@ impl TranspositionTable {
         } else {
             num_buckets.next_power_of_two() / 2
         };
+
+        println!("no of buckets: {num_buckets}");
+        println!("bucket size: {bucket_size}");
+        println!("entry size: {}", bucket_size / TT_SLOT_SIZE);
+        println!("tt size: {}mb", num_buckets * bucket_size / (1024 * 1024));
 
         Self {
             table: vec![

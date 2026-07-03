@@ -40,7 +40,7 @@ pub fn init_lmr_table() {
     LazyLock::force(&LMR_TABLE);
 }
 
-const MATE: i32 = 32_000;
+pub const MATE: i32 = 32_000;
 const INF: i32 = 35999;
 const MAX_HISTORY: i32 = 20000;
 
@@ -259,6 +259,16 @@ impl Engine {
         info.nodes += 1;
         info.seldepth = info.seldepth.max(ply as u16);
 
+        // Mate Distance Pruning //
+        alpha = alpha.max(-MATE + ply);
+        beta = beta.min(MATE - ply);
+
+        // Prune if mate score is found and it cannot be improved 
+        if alpha >= beta {
+            return alpha;
+        }
+        // Mate Distance Pruning //
+
         // Checking draws
         if self.board.is_threefold() || self.board.is_50_rule() {
             return 0;
@@ -273,14 +283,14 @@ impl Engine {
             info.stats.tt_hits += 1;
 
             tt_move = entry.best_move();
-            let mut score = entry.score;
+            let mut score = entry.score();
 
             // De-adjust mate score
-            if entry.score > MATE - MAX_PLY as i32 {
+            if entry.score() > MATE - MAX_PLY as i32 {
                 score -= ply;
             }
 
-            if entry.score < -MATE + MAX_PLY as i32 {
+            if entry.score() < -MATE + MAX_PLY as i32 {
                 score += ply;
             }
 
@@ -709,14 +719,14 @@ impl Engine {
             info.stats.tt_hits += 1;
 
             tt_move = entry.best_move();
-            let mut score = entry.score;
+            let mut score = entry.score();
 
             // De-adjust mate score
-            if entry.score > MATE - MAX_PLY as i32 {
+            if entry.score() > MATE - MAX_PLY as i32 {
                 score -= ply;
             }
 
-            if entry.score < -MATE + MAX_PLY as i32 {
+            if entry.score() < -MATE + MAX_PLY as i32 {
                 score += ply;
             }
 
