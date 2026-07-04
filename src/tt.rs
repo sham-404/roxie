@@ -147,10 +147,10 @@ impl TranspositionTable {
             num_buckets.next_power_of_two() / 2
         };
 
-        println!("no of buckets: {num_buckets}");
-        println!("bucket size: {bucket_size}");
-        println!("entry size: {}", bucket_size / TT_SLOT_SIZE);
-        println!("tt size: {}mb", num_buckets * bucket_size / (1024 * 1024));
+        // println!("no of buckets: {num_buckets}");
+        // println!("bucket size: {bucket_size}");
+        // println!("entry size: {}", bucket_size / TT_SLOT_SIZE);
+        // println!("tt size: {}mb", num_buckets * bucket_size / (1024 * 1024));
 
         Self {
             table: vec![
