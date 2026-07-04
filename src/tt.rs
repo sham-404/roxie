@@ -178,46 +178,40 @@ impl TranspositionTable {
     }
 
     pub fn store(&mut self, new_entry: TTEntry) {
-        let new_entry = TTPacked::new(new_entry);
-
-        let index = new_entry.key as usize & self.mask;
+        let new_packed = TTPacked::new(new_entry);
+        let index = new_packed.key as usize & self.mask;
         let bucket = &mut self.table[index];
 
-        // updating the slot if key exist
-        for slot in &mut bucket.slots {
-            if slot.key == new_entry.key {
-                *slot = new_entry;
-                return;
-            }
-        }
+        let mut victim_idx = 0;
+        let mut lowest_score = i32::MAX;
 
-        // updating if the slot is empty
-        for slot in &mut bucket.slots {
+        for i in 0..TT_SLOT_SIZE {
+            let slot = &bucket.slots[i];
+
+            // filling empty slots immediately
             if slot.key == 0 {
-                *slot = new_entry;
+                bucket.slots[i] = new_packed;
                 return;
             }
-        }
 
-        // if no key or empty exist, find the score and replace the least one
-        let mut victim = 0;
-        let mut victim_score = replace_score(&bucket.slots[0], self.generation);
+            // exact key match
+            if slot.key == new_packed.key {
+                if new_packed.depth() >= slot.depth() {
+                    bucket.slots[i] = new_packed;
+                }
+                return;
+            }
 
-        for i in 1..bucket.slots.len() {
-            let score = replace_score(&bucket.slots[i], self.generation);
-
-            if score < victim_score {
-                victim = i;
-                victim_score = score;
+            // track the victim
+            let score = replace_score(slot, self.generation);
+            if score < lowest_score {
+                lowest_score = score;
+                victim_idx = i;
             }
         }
 
-        // replace only if new entry is valuable
-        let new_score = replace_score(&new_entry, self.generation);
-
-        if new_score >= victim_score {
-            bucket.slots[victim] = new_entry;
-        }
+        // Overwrite the worst node in the bucket
+        bucket.slots[victim_idx] = new_packed;
     }
 
     #[inline]
@@ -231,15 +225,18 @@ impl TranspositionTable {
     }
 }
 
+const AGE_PENALTY: i32 = 12;
 fn replace_score(entry: &TTPacked, cur_gen: u8) -> i32 {
+    let age = cur_gen.wrapping_sub(entry.age());
+
     let flag_bonus = match entry.flag() {
         TTFlag::Exact => 16,     // PV nodes
         TTFlag::LowerBound => 4, // Beta cutoffs
         TTFlag::UpperBound => 0, // Fail-low nodes
     };
 
-    let age_pen = cur_gen.wrapping_sub(entry.age());
+    let age_pen = age as i32 * AGE_PENALTY;
 
-    // Combine depth and flag quality
-    ((entry.depth() as i32) << 4) + flag_bonus - age_pen as i32
+    // Combine depth, flag quality, and age penalty
+    ((entry.depth() as i32) << 4) + flag_bonus - age_pen
 }

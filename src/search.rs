@@ -41,7 +41,7 @@ pub fn init_lmr_table() {
 }
 
 pub const MATE: i16 = 27_000;
-const INF: i16 = 27_500;
+pub const INF: i16 = 27_500;
 const MAX_HISTORY: i32 = 20000;
 
 impl Engine {
