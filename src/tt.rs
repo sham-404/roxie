@@ -29,6 +29,7 @@ pub struct TTEntry {
     pub score: i32,
     pub flag: TTFlag,
     pub best_move: Move,
+    pub age: u8,
 }
 
 // impl TTEntry {
@@ -57,16 +58,19 @@ impl TTPacked {
     const DEPTH_BITS: u64 = 8;
     const MOVE_BITS: u64 = 16;
     const SCORE_BITS: u64 = 16;
+    const AGE_BITS: u64 = 8;
 
     const FLAG_SHIFT: u64 = 0;
     const DEPTH_SHIFT: u64 = 2;
     const MOVE_SHIFT: u64 = 10;
     const SCORE_SHIFT: u64 = 26;
+    const AGE_SHIFT: u64 = 42;
 
     const FLAG_MASK: u64 = ((1 << TTPacked::FLAG_BITS) - 1) << TTPacked::FLAG_SHIFT;
     const DEPTH_MASK: u64 = ((1 << TTPacked::DEPTH_BITS) - 1) << TTPacked::DEPTH_SHIFT;
     const MOVE_MASK: u64 = ((1 << TTPacked::MOVE_BITS) - 1) << TTPacked::MOVE_SHIFT;
     const SCORE_MASK: u64 = ((1 << TTPacked::SCORE_BITS) - 1) << TTPacked::SCORE_SHIFT;
+    const AGE_MASK: u64 = ((1 << TTPacked::AGE_BITS) - 1) << TTPacked::AGE_SHIFT;
 
     pub fn new(entry: TTEntry) -> TTPacked {
         // offsetting score as encoding direct negative values will be sign extended
@@ -77,7 +81,8 @@ impl TTPacked {
         let info = ((entry.best_move.0 as u64) << TTPacked::MOVE_SHIFT)
             | ((entry.depth as u64) << TTPacked::DEPTH_SHIFT)
             | ((entry.flag as u64) << TTPacked::FLAG_SHIFT)
-            | ((u16_score as u64) << TTPacked::SCORE_SHIFT);
+            | ((u16_score as u64) << TTPacked::SCORE_SHIFT)
+            | ((entry.age as u64) << TTPacked::AGE_SHIFT);
 
         TTPacked {
             key: entry.key,
@@ -109,6 +114,11 @@ impl TTPacked {
         de_offset_score as i16
     }
 
+    #[inline]
+    pub fn age(&self) -> u8 {
+        ((self.info & TTPacked::AGE_MASK) >> TTPacked::AGE_SHIFT) as u8
+    }
+
     fn default() -> Self {
         Self { key: 0, info: 0 }
     }
@@ -121,6 +131,7 @@ pub struct TTBucket {
 
 pub struct TranspositionTable {
     table: Vec<TTBucket>,
+    generation: u8,
     mask: usize,
 }
 
@@ -148,6 +159,7 @@ impl TranspositionTable {
                 };
                 num_buckets
             ],
+            generation: 0,
             mask: num_buckets - 1,
         }
     }
@@ -189,10 +201,10 @@ impl TranspositionTable {
 
         // if no key or empty exist, find the score and replace the least one
         let mut victim = 0;
-        let mut victim_score = replace_score(bucket.slots[0].depth(), bucket.slots[0].flag());
+        let mut victim_score = replace_score(&bucket.slots[0], self.generation);
 
         for i in 1..bucket.slots.len() {
-            let score = replace_score(bucket.slots[i].depth(), bucket.slots[i].flag());
+            let score = replace_score(&bucket.slots[i], self.generation);
 
             if score < victim_score {
                 victim = i;
@@ -201,21 +213,33 @@ impl TranspositionTable {
         }
 
         // replace only if new entry is valuable
-        let new_score = replace_score(new_entry.depth(), new_entry.flag());
+        let new_score = replace_score(&new_entry, self.generation);
 
         if new_score >= victim_score {
             bucket.slots[victim] = new_entry;
         }
     }
+
+    #[inline]
+    pub fn inc_generation(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    #[inline]
+    pub fn get_generation(&self) -> u8 {
+        self.generation
+    }
 }
 
-fn replace_score(depth: u16, flag: TTFlag) -> i32 {
-    let flag_bonus = match flag {
+fn replace_score(entry: &TTPacked, cur_gen: u8) -> i32 {
+    let flag_bonus = match entry.flag() {
         TTFlag::Exact => 16,     // PV nodes
         TTFlag::LowerBound => 4, // Beta cutoffs
         TTFlag::UpperBound => 0, // Fail-low nodes
     };
 
+    let age_pen = cur_gen.wrapping_sub(entry.age());
+
     // Combine depth and flag quality
-    ((depth as i32) << 4) + flag_bonus
+    ((entry.depth() as i32) << 4) + flag_bonus - age_pen as i32
 }

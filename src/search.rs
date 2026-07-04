@@ -53,6 +53,7 @@ impl Engine {
 
         self.killers = [[Move::NULL; 2]; MAX_PLY];
         self.setup_accumulator();
+        self.tt.inc_generation();
 
         let mut last_complete_info = info.clone();
 
@@ -214,6 +215,7 @@ impl Engine {
                 score: best_score as i32,
                 flag: TTFlag::Exact,
                 best_move,
+                age: self.tt.get_generation(),
             });
 
             info.depth = d;
@@ -508,6 +510,7 @@ impl Engine {
                 score: score_to_store as i32,
                 flag,
                 best_move: best_move_this_node,
+                age: self.tt.get_generation(),
             });
         }
 
