@@ -10,3 +10,5 @@ venv/
 *.nn
 *.nnue
 *.csv
+
+!src/*.nnue
