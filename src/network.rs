@@ -18,7 +18,7 @@ const HL2: usize = 16;
 const HL3: usize = 16;
 const OUTPUT: usize = 1;
 const MAGIC: &[u8; 8] = b"BLAZE_V@";
-const NN_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/blaze_v2.nnue");
+const NN_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/blaze.nnue");
 const QP: i32 = 8;
 pub const Q: f32 = (1 << QP) as f32; // 2 ^ QP
 
@@ -64,7 +64,42 @@ pub struct Network {
 }
 
 impl Network {
-    pub fn load(path: &str) -> Network {
+    fn load(path: &str) -> Network {
+        let mut file = File::open(path).unwrap();
+        let file_size = metadata(path).unwrap().len();
+
+        let mut magic = [0u8; MAGIC.len()];
+        file.read_exact(&mut magic).unwrap();
+        assert_eq!(&magic, MAGIC);
+
+        let w1 = Network::read_i16(&mut file, INPUT * HL1);
+        let b1 = Network::read_i32(&mut file, HL1);
+
+        let w2 = Network::read_i16(&mut file, HL1 * 2 * HL2);
+        let b2 = Network::read_i32(&mut file, HL2);
+
+        let w3 = Network::read_i16(&mut file, HL2 * HL3);
+        let b3 = Network::read_i32(&mut file, HL3);
+
+        let w4 = Network::read_i16(&mut file, HL3 * OUTPUT);
+        let b4 = Network::read_i32(&mut file, OUTPUT);
+
+        let pos = file.stream_position().unwrap();
+        assert_eq!(file_size, pos); // validating that we have reached the EOF
+
+        Network {
+            w1,
+            b1,
+            w2,
+            b2,
+            w3,
+            b3,
+            w4,
+            b4,
+        }
+    }
+    
+    pub fn load_unquantized(path: &str) -> Network {
         let mut file = File::open(path).unwrap();
         let file_size = metadata(path).unwrap().len();
 
@@ -283,6 +318,32 @@ impl Network {
 
         out
     }
+
+    fn read_i16(file: &mut File, size: usize) -> Vec<i16> {
+        let mut bytes = vec![0u8; size * 2];
+        file.read_exact(&mut bytes).unwrap();
+
+        let mut out = Vec::with_capacity(size);
+
+        for chunk in bytes.chunks_exact(2) {
+            out.push(i16::from_le_bytes([chunk[0], chunk[1]]));
+        }
+
+        out
+    }
+
+    fn read_i32(file: &mut File, size: usize) -> Vec<i32> {
+        let mut bytes = vec![0u8; size * 4];
+        file.read_exact(&mut bytes).unwrap();
+
+        let mut out = Vec::with_capacity(size);
+
+        for chunk in bytes.chunks_exact(4) {
+            out.push(i32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+        }
+
+        out
+    }
 }
 
 fn get_hkp_feature_idx(king_pos: usize, piece_idx: usize, pos: usize) -> usize {
@@ -472,7 +533,6 @@ mod tests {
         let engine = Engine::new();
         println!("During an eval:");
         nn.eval_hkp(&engine.board);
-
 
         println!("Min i8 {}", i8::MIN);
         println!("Max i8 {}", i8::MAX);

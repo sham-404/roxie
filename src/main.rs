@@ -20,11 +20,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use roxie::{
-        board::Board,
-        engine::Engine,
-        network::{NETWORK, Network},
-        perft::perft,
-        search::SearchLimits,
+        board::Board, engine::Engine, network::NETWORK, perft::perft, search::SearchLimits,
     };
     use std::time::Instant;
 
@@ -159,11 +155,6 @@ mod tests {
         println!("Q = {}", Q);
         println!("mae: {:.2}", total_err as f64 / count as f64);
         println!("max error: {}", max_err);
-    }
-
-    #[test]
-    fn nn_load() {
-        let _ = Network::load("blaze_v2.nnue");
     }
 
     #[test]
