@@ -9,9 +9,12 @@ use std::{
     thread::{self, JoinHandle},
 };
 
-use crate::{board::Board, engine::Engine, items::Move, perft::perft_divide, search::SearchLimits};
+use crate::{
+    board::Board, r#const::MAX_PLY, engine::Engine, items::Move, perft::perft_divide,
+    search::SearchLimits,
+};
 
-pub const MAX_DEPTH: u16 = 50;
+pub const MAX_DEPTH: u16 = MAX_PLY as u16;
 
 #[macro_export]
 macro_rules! uci_print {
@@ -182,6 +185,8 @@ pub struct GoControl {
     pub movestogo: Option<u64>,
     pub depth: Option<u16>,
     pub movetime: Option<u64>,
+    pub nodes: Option<u64>,
+    pub mate: Option<u64>,
     pub infinite: bool,
 }
 
@@ -196,6 +201,8 @@ impl GoControl {
                 "binc" => ctrl.binc = commands.next().and_then(|s| s.parse().ok()),
                 "movestogo" => ctrl.movestogo = commands.next().and_then(|s| s.parse().ok()),
                 "depth" => ctrl.depth = commands.next().and_then(|s| s.parse().ok()),
+                "nodes" => ctrl.nodes = commands.next().and_then(|s| s.parse().ok()),
+                "mate" => ctrl.mate = commands.next().and_then(|s| s.parse().ok()),
                 "movetime" => ctrl.movetime = commands.next().and_then(|s| s.parse().ok()),
                 "infinite" => ctrl.infinite = true,
                 _ => {}

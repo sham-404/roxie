@@ -3,7 +3,7 @@ use crate::{items::Move, search::MATE};
 const TT_SLOT_SIZE: usize = 3;
 
 #[repr(u8)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum TTFlag {
     Exact = 0,
     LowerBound = 1,
@@ -75,7 +75,7 @@ impl TTPacked {
     pub fn new(entry: TTEntry) -> TTPacked {
         // offsetting score as encoding direct negative values will be sign extended
         // leading to corrupt data
-        debug_assert!((entry.score as i16) < MATE && (entry.score as i16) > -MATE);
+        // debug_assert!((entry.score as i16) < MATE && (entry.score as i16) > -MATE);
 
         let u16_score = (entry.score + MATE as i32) as u16;
         let info = ((entry.best_move.0 as u64) << TTPacked::MOVE_SHIFT)

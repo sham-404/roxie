@@ -67,14 +67,14 @@ impl Engine {
             info.is_mandatory = 1 == d;
 
             // Aspiration window setup
-            let mut delta = 50i16;
+            let mut delta = 50i32; // Use i32 for safe math
             let mut alpha = -INF;
             let mut beta = INF;
 
             // using aspiration window only on relatively higher depths
             if d > 5 {
-                alpha = last_complete_info.score - delta;
-                beta = last_complete_info.score + delta;
+                alpha = (last_complete_info.score as i32 - delta).max(-INF as i32) as i16;
+                beta = (last_complete_info.score as i32 + delta).min(INF as i32) as i16;
             }
 
             // aspiration re-search loop
@@ -174,19 +174,17 @@ impl Engine {
 
                 // aspiration failed low
                 if best_score <= orig_alpha {
-                    alpha = orig_alpha - delta;
+                    alpha = (orig_alpha as i32 - delta).max(-INF as i32) as i16;
                     beta = orig_beta;
-
-                    delta *= 2;
+                    delta = (delta * 2).min(INF as i32); // clamp delta
                     continue;
                 }
 
                 // aspiration failed high
                 if best_score >= orig_beta {
                     alpha = orig_alpha;
-                    beta = orig_beta + delta;
-
-                    delta *= 2;
+                    beta = (orig_beta as i32 + delta).min(INF as i32) as i16;
+                    delta = (delta * 2).min(INF as i32); // clamp delta
                     continue;
                 }
 
@@ -194,8 +192,16 @@ impl Engine {
                 break;
             }
 
-            // if aborted, dont update the result
+            // if aborted, dont update the whole result
             if info.abort {
+                last_complete_info.nodes = info.nodes;
+                last_complete_info.seldepth = info.seldepth;
+                last_complete_info.stats = info.stats.clone();
+                last_complete_info.depth = d;
+                last_complete_info.pv = self.gen_pv(d);
+
+                // last info print if search is aborted midway
+                on_iteration(&last_complete_info);
                 break;
             }
 
@@ -265,7 +271,7 @@ impl Engine {
         alpha = alpha.max(-MATE + ply as i16);
         beta = beta.min(MATE - ply as i16);
 
-        // Prune if mate score is found and it cannot be improved 
+        // Prune if mate score is found and it cannot be improved
         if alpha >= beta {
             return alpha;
         }
@@ -716,22 +722,36 @@ impl Engine {
         info.stats.q_nodes += 1;
         info.seldepth = info.seldepth.max(ply as u16);
 
+        // Mate Distance Pruning //
+        alpha = alpha.max(-MATE + ply as i16);
+        beta = beta.min(MATE - ply as i16);
+
+        // Prune if mate score is found and it cannot be improved
+        if alpha >= beta {
+            return alpha;
+        }
+        // Mate Distance Pruning //
+
         let mut tt_move = Move::NULL;
+        let mut tt_score = None;
+        let mut tt_flag = None;
+
         info.stats.tt_probes += 1;
         if let Some(entry) = self.tt.probe(self.board.get_zob_key()) {
             info.stats.tt_hits += 1;
-
             tt_move = entry.best_move();
-            let mut score = entry.score();
 
+            let mut score = entry.score();
             // De-adjust mate score
             if entry.score() > MATE - MAX_PLY as i16 {
                 score -= ply as i16;
             }
-
             if entry.score() < -MATE + MAX_PLY as i16 {
                 score += ply as i16;
             }
+
+            tt_score = Some(score);
+            tt_flag = Some(entry.flag());
 
             match entry.flag() {
                 TTFlag::Exact => {
@@ -749,20 +769,26 @@ impl Engine {
         }
 
         let in_check = self.board.in_check();
+        let mut best_score = -INF;
 
         // Stand pat
+        let mut stand_pat = self.evaluate(ply as usize);
         if !in_check {
-            let stand_pat = self.evaluate(ply as usize);
+            // Cap the stand_pat score using TT bounds
+            if let Some(score) = tt_score {
+                if tt_flag == Some(TTFlag::UpperBound) && stand_pat > score {
+                    stand_pat = score;
+                }
+                if tt_flag == Some(TTFlag::LowerBound) && stand_pat < score {
+                    stand_pat = score;
+                }
+            }
+
+            best_score = stand_pat;
 
             // beta cutoff
             if stand_pat >= beta {
-                return stand_pat;
-            }
-
-            // delta pruning
-            const BIG_DELTA: i16 = 1100;
-            if stand_pat < alpha - BIG_DELTA {
-                return alpha;
+                return beta;
             }
 
             if stand_pat > alpha {
@@ -783,11 +809,12 @@ impl Engine {
         self.with_ordering(tt_move, ply as usize, &mut move_list);
         for mv_idx in 0..move_list.len() {
             let mv = move_list.pick_move(mv_idx);
-            // soft delta pruning
-            if !in_check {
-                if self.board.see(&mv) < 0 && !mv.flag().is_promo() {
+            if !in_check && !mv.flag().is_promo() {
+                // soft delta pruning (see pruning) //
+                if self.board.see(&mv) < 0 {
                     continue;
                 }
+                // soft delta pruning (see pruning) //
             }
 
             let undo = self.board.make_move(&mv);
@@ -808,11 +835,15 @@ impl Engine {
             self.board.unmake_move(&mv, &undo);
 
             if info.abort {
-                return alpha;
+                return best_score;
+            }
+
+            if score > best_score {
+                best_score = score;
             }
 
             if score >= beta {
-                return beta;
+                return score;
             }
 
             if score > alpha {
@@ -820,7 +851,7 @@ impl Engine {
             }
         }
 
-        alpha
+        best_score
     }
 }
 
@@ -1007,14 +1038,25 @@ impl SearchInfo {
             stats: SearchStats::new(),
         }
     }
+
+    pub fn get_mate_depth(&self) -> Option<i16> {
+        if self.score > MATE - MAX_PLY as i16 {
+            return Some((MATE - self.score + 1) / 2);
+        } else if self.score < -MATE + MAX_PLY as i16 {
+            return Some(-((MATE + self.score + 1) / 2));
+        } else {
+            return None;
+        };
+    }
+
     pub fn print(&self) {
         let mut pv_str = String::new();
         for mv in &self.pv {
             pv_str.push_str(&format!("{} ", mv.to_coord()));
         }
 
-        let score = if self.score.abs() > MATE - MAX_PLY as i16 {
-            format!("mate {}", MATE - self.score)
+        let score = if let Some(mate) = self.get_mate_depth() {
+            format!("mate {}", mate)
         } else {
             format!("cp {}", self.score)
         };
@@ -1048,8 +1090,24 @@ impl SearchInfo {
             return;
         }
 
+        // checking if mate depth is enabled and reached
+        if let Some(mate) = limits.mate {
+            match self.get_mate_depth() {
+                Some(m) if m > 0 && m <= mate as i16 => {
+                    self.abort = true;
+                }
+                _ => {}
+            }
+        }
+
         // checking once in a while if the time limit is reached
         if self.nodes & 2047 == 0 {
+            if let Some(nodes) = limits.nodes {
+                if self.nodes >= nodes {
+                    self.abort = true;
+                }
+            }
+
             if let Some(limit) = limits.hard_time {
                 if self.start_time.elapsed() >= limit {
                     self.abort = true;
@@ -1062,6 +1120,8 @@ impl SearchInfo {
 #[derive(Debug)]
 pub struct SearchLimits {
     pub depth: Option<u16>,
+    pub nodes: Option<u64>,
+    pub mate: Option<u16>,
     pub hard_time: Option<Duration>,
     pub soft_time: Option<Duration>,
     pub infinite: bool,
@@ -1076,6 +1136,8 @@ impl Default for SearchLimits {
             soft_time: None,
             hard_time: None,
             depth: None,
+            nodes: None,
+            mate: None,
             infinite: false,
             start_time: Instant::now(),
             stop_signal: Arc::new(AtomicBool::new(false)),
@@ -1090,6 +1152,18 @@ impl SearchLimits {
         limits.infinite = ctrl.infinite;
 
         if ctrl.infinite {
+            return limits;
+        }
+
+        // Fixed Nodes
+        if let Some(nodes) = ctrl.nodes {
+            limits.nodes = Some(nodes);
+            return limits;
+        }
+
+        // Fixed mate depth
+        if let Some(mate) = ctrl.mate {
+            limits.mate = Some(mate as u16);
             return limits;
         }
 
