@@ -711,6 +711,7 @@ impl Engine {
             mut alpha,
             mut beta,
             ply,
+            depth,
             ..
         } = params;
 
@@ -806,6 +807,10 @@ impl Engine {
             self.board.gen_cap_moves()
         };
 
+        let mut fail_high = false;
+        let orig_alpha = alpha;
+        let mut best_move_this_node = Move::NULL;
+
         self.with_ordering(tt_move, ply as usize, &mut move_list);
         for mv_idx in 0..move_list.len() {
             let mv = move_list.pick_move(mv_idx);
@@ -815,6 +820,20 @@ impl Engine {
                     continue;
                 }
                 // soft delta pruning (see pruning) //
+
+                // delta pruning //
+                let gain = if mv.flag() == MoveFlag::EN_PASSANT {
+                    100
+                } else {
+                    let cap_piece = self.board.piece_on(mv.to());
+                    self.board.get_see_value(cap_piece)
+                } as i16;
+
+                const DELTA: i16 = 200;
+                if stand_pat + gain + DELTA < alpha {
+                    continue;
+                }
+                // delta pruning //
             }
 
             let undo = self.board.make_move(&mv);
@@ -839,16 +858,46 @@ impl Engine {
             }
 
             if score > best_score {
+                best_move_this_node = mv;
                 best_score = score;
             }
 
             if score >= beta {
-                return score;
+                fail_high = true;
+                break;
             }
 
             if score > alpha {
                 alpha = score;
             }
+        }
+
+        let flag = if fail_high {
+            TTFlag::LowerBound
+        } else if best_score <= orig_alpha {
+            TTFlag::UpperBound
+        } else {
+            TTFlag::Exact
+        };
+
+        // Adjusting for mate score
+        let mut score_to_store = best_score;
+        if score_to_store > MATE - MAX_PLY as i16 {
+            score_to_store += ply as i16;
+        }
+        if score_to_store < -MATE + MAX_PLY as i16 {
+            score_to_store -= ply as i16;
+        }
+
+        if !info.abort {
+            self.tt.store(TTEntry {
+                key: self.board.get_zob_key(),
+                depth: depth,
+                score: score_to_store as i32,
+                flag,
+                best_move: best_move_this_node,
+                age: self.tt.get_generation(),
+            });
         }
 
         best_score
