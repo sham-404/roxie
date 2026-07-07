@@ -350,14 +350,6 @@ impl Engine {
         }
         // Reverse Futility Pruning (Static Null Move Pruning) //
 
-        let mut move_list = self.board.gen_moves();
-        let original_alpha = alpha;
-
-        // checking mates
-        if move_list.len() == 0 {
-            return if in_check { -MATE + ply as i16 } else { 0 };
-        }
-
         // NULL move pruning
         if let Some(cutoff_score) = self.nmp_search(
             SearchParams {
@@ -373,6 +365,14 @@ impl Engine {
             return cutoff_score;
         }
         // NULL move pruning
+
+        let mut move_list = self.board.gen_moves();
+        let original_alpha = alpha;
+
+        // checking mates
+        if move_list.len() == 0 {
+            return if in_check { -MATE + ply as i16 } else { 0 };
+        }
 
         let mut max_eval = -INF;
         let mut best_move_this_node = Move::NULL;
@@ -406,6 +406,18 @@ impl Engine {
                     continue;
                 }
                 // late move pruning //
+            } else {
+                // SEE pruning //
+                let is_non_pv = alpha + 1 == beta;
+
+                if depth <= 5 && is_non_pv && !in_check && mv != tt_move && flag.is_capture() {
+                    let margin = depth as i32 * 80;
+
+                    if self.board.see(&mv) < -margin {
+                        continue;
+                    }
+                }
+                // SEE pruning //
             }
 
             // Futility Pruning //
@@ -439,6 +451,7 @@ impl Engine {
             let eval = self.pv_search(
                 &mv,
                 mv_idx,
+                quiet_searched,
                 SearchParams {
                     depth,
                     alpha,
@@ -582,6 +595,7 @@ impl Engine {
         &mut self,
         mv: &Move,
         mv_idx: usize,
+        quiet_searched: usize,
         params: SearchParams,
         limits: &SearchLimits,
         info: &mut SearchInfo,
@@ -620,7 +634,7 @@ impl Engine {
         }
 
         // checking whether lmr is applicable
-        let can_reduce = mv_idx > 2
+        let can_reduce = quiet_searched > 1
             && depth > 3
             && !in_check
             && !mv.flag().is_capture()
@@ -711,7 +725,6 @@ impl Engine {
             mut alpha,
             mut beta,
             ply,
-            depth,
             ..
         } = params;
 
@@ -892,7 +905,7 @@ impl Engine {
         if !info.abort {
             self.tt.store(TTEntry {
                 key: self.board.get_zob_key(),
-                depth: depth,
+                depth: 0,
                 score: score_to_store as i32,
                 flag,
                 best_move: best_move_this_node,
