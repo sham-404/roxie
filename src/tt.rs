@@ -49,8 +49,8 @@ pub struct TTPacked {
     key: u64,
     info: u64,
     // NOTE: info is masked as follows:
-    // 0000 0....  0000 0000 0000 0000   0000 0000 0000 0000    0000 0000    00
-    // |-unused-|  |----- score -----|   |--- best_move ---|    | depth |  |flag|
+    // 0000 0....  0000 0000  0000 0000 0000 0000   0000 0000 0000 0000    0000 0000    00
+    // |-unused-|  |--age--|  |----- score -----|   |--- best_move ---|    | depth |  |flag|
 }
 
 impl TTPacked {
@@ -75,7 +75,6 @@ impl TTPacked {
     pub fn new(entry: TTEntry) -> TTPacked {
         // offsetting score as encoding direct negative values will be sign extended
         // leading to corrupt data
-        // debug_assert!((entry.score as i16) < MATE && (entry.score as i16) > -MATE);
 
         let u16_score = (entry.score + MATE as i32) as u16;
         let info = ((entry.best_move.0 as u64) << TTPacked::MOVE_SHIFT)

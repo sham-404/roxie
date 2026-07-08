@@ -198,7 +198,7 @@ impl Engine {
                 last_complete_info.seldepth = info.seldepth;
                 last_complete_info.stats = info.stats.clone();
                 last_complete_info.depth = d;
-                last_complete_info.pv = self.gen_pv(d);
+                last_complete_info.pv = self.gen_pv();
 
                 // last info print if search is aborted midway
                 on_iteration(&last_complete_info);
@@ -227,7 +227,7 @@ impl Engine {
             info.depth = d;
             info.score = best_score;
             info.best_move = best_move;
-            info.pv = self.gen_pv(d);
+            info.pv = self.gen_pv();
 
             last_complete_info = info.clone();
 
@@ -802,7 +802,8 @@ impl Engine {
 
             // beta cutoff
             if stand_pat >= beta {
-                return beta;
+                self.q_tt_store(TTFlag::LowerBound, stand_pat, Move::NULL, ply);
+                return stand_pat;
             }
 
             if stand_pat > alpha {
@@ -813,14 +814,15 @@ impl Engine {
         let mut move_list = if in_check {
             let mv_list = self.board.gen_moves();
             if mv_list.len() == 0 {
-                return -MATE + ply as i16;
+                let score = -MATE + ply as i16;
+                self.q_tt_store(TTFlag::Exact, score, Move::NULL, ply);
+                return score;
             }
             mv_list
         } else {
             self.board.gen_cap_moves()
         };
 
-        let mut fail_high = false;
         let orig_alpha = alpha;
         let mut best_move_this_node = Move::NULL;
 
@@ -876,8 +878,8 @@ impl Engine {
             }
 
             if score >= beta {
-                fail_high = true;
-                break;
+                self.q_tt_store(TTFlag::LowerBound, score, mv, ply);
+                return score;
             }
 
             if score > alpha {
@@ -885,16 +887,22 @@ impl Engine {
             }
         }
 
-        let flag = if fail_high {
-            TTFlag::LowerBound
-        } else if best_score <= orig_alpha {
+        let flag = if best_score <= orig_alpha {
             TTFlag::UpperBound
         } else {
             TTFlag::Exact
         };
 
+        if !info.abort {
+            self.q_tt_store(flag, best_score, best_move_this_node, ply);
+        }
+
+        best_score
+    }
+
+    fn q_tt_store(&mut self, flag: TTFlag, score: i16, mv: Move, ply: i32) {
         // Adjusting for mate score
-        let mut score_to_store = best_score;
+        let mut score_to_store = score;
         if score_to_store > MATE - MAX_PLY as i16 {
             score_to_store += ply as i16;
         }
@@ -902,18 +910,14 @@ impl Engine {
             score_to_store -= ply as i16;
         }
 
-        if !info.abort {
-            self.tt.store(TTEntry {
-                key: self.board.get_zob_key(),
-                depth: 0,
-                score: score_to_store as i32,
-                flag,
-                best_move: best_move_this_node,
-                age: self.tt.get_generation(),
-            });
-        }
-
-        best_score
+        self.tt.store(TTEntry {
+            key: self.board.get_zob_key(),
+            depth: 0,
+            score: score_to_store as i32,
+            flag,
+            best_move: mv,
+            age: self.tt.get_generation(),
+        });
     }
 }
 
@@ -949,12 +953,12 @@ impl Engine {
         }
     }
 
-    fn gen_pv(&mut self, depth: u16) -> Vec<Move> {
+    fn gen_pv(&mut self) -> Vec<Move> {
         let mut pv = Vec::new();
         let mut undo_stack = Vec::new();
-        let mut visited_keys = Vec::with_capacity(depth as usize);
+        let mut visited_keys = Vec::new();
 
-        for _ in 0..depth {
+        loop {
             let key = self.board.get_zob_key();
             if let Some(entry) = self.tt.probe(key) {
                 let mv = entry.best_move();
