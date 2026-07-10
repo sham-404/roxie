@@ -525,6 +525,118 @@ impl Board {
         )
     }
 
+    pub fn gives_check(&mut self, mv: Move) -> bool {
+        debug_assert!(self.occupancy[BOTH] & (1u64 << mv.from()) != 0);
+
+        let color = match self.side_to_move {
+            Color::White => Piece::WHITE,
+            Color::Black => Piece::BLACK,
+        };
+
+        let mut gives_check = false;
+
+        let from = mv.from();
+        let to = mv.to();
+        let flag = mv.flag();
+        let cur_piece = self.piece_on(from);
+
+        // Detecting captures
+        let mut captured_sq = to;
+        if flag == MoveFlag::EN_PASSANT {
+            captured_sq = if color == Piece::WHITE {
+                to - 8
+            } else {
+                to + 8
+            };
+        }
+        let captured = self.piece_on(captured_sq);
+
+        // Handling captures
+        if captured != Piece::NONE {
+            self.remove_piece_on_bb(captured, captured_sq);
+        }
+
+        // Moving the piece on the board
+        self.move_piece_on_bb(cur_piece, from, to);
+
+        // Handling Special Moves
+        let mut promo_piece = Piece::NONE;
+        if flag.is_promo() {
+            self.remove_piece_on_bb(cur_piece, to);
+            // Note: piece is already XORed out of 'from', so we just XOR the promo piece into 'to'
+            let promo_type = flag.0 & MoveFlag::PIECE_BIT;
+            let promo_pieces = [Piece::KNIGHT, Piece::BISHOP, Piece::ROOK, Piece::QUEEN];
+            promo_piece = color | promo_pieces[promo_type as usize];
+
+            self.add_piece_on_bb(promo_piece, to);
+        }
+
+        // castling
+        if flag.is_castle() {
+            let is_black = (cur_piece & Piece::BLACK) != 0;
+            let king_pos = if is_black { BK_START_POS } else { WK_START_POS };
+            let rook = Piece::ROOK | color;
+
+            if flag == MoveFlag::KING_CASTLE {
+                self.move_piece_on_bb(rook, king_pos + 3, king_pos + 1);
+            } else {
+                self.move_piece_on_bb(rook, king_pos - 4, king_pos - 1);
+            }
+        }
+
+        let enemy_col = match self.side_to_move() {
+            Color::White => Piece::BLACK,
+            Color::Black => Piece::WHITE,
+        };
+
+        if self.is_square_atacked(
+            pop_lsb(&mut self.bb(enemy_col | Piece::KING)).unwrap(),
+            &self.side_to_move().opponent(),
+        ) {
+            gives_check = true;
+        }
+
+        //// undoing ////
+        // move piece back
+        self.move_piece_on_bb(cur_piece, to, from);
+
+        // handle captures
+        if flag.is_capture() {
+            debug_assert!(captured != Piece::NONE, "Capture without captured piece");
+            self.add_piece_on_bb(captured, captured_sq);
+        }
+
+        // Handling Promotions
+        if flag.is_promo() {
+            // restore pawn
+            let pawn = if (cur_piece & Piece::WHITE) != 0 {
+                Piece::WHITE | Piece::PAWN
+            } else {
+                Piece::BLACK | Piece::PAWN
+            };
+
+            // Removing the Promoted piece from mv.from
+            // (cuz it got added when we try to undo the move
+            self.remove_piece_on_bb(promo_piece, from);
+            // adding the relevent pawn on Promotion moves
+            self.add_piece_on_bb(pawn, from);
+        }
+
+        // castling
+        if flag.is_castle() {
+            let rook = Piece::ROOK | color;
+            if flag == MoveFlag::KING_CASTLE {
+                // rook: f -> h
+                self.move_piece_on_bb(rook, to - 1, to + 1);
+            } else if flag == MoveFlag::QUEEN_CASTLE {
+                // rook: d -> a
+                self.move_piece_on_bb(rook, to + 1, to - 2);
+            }
+        }
+
+        gives_check
+    }
+
     pub fn is_threefold(&self) -> bool {
         let cur = self.zobrist_key;
         let mut count = 1;
@@ -663,6 +775,43 @@ impl Board {
 
         *self.mut_bb(piece) |= pos_mask;
         self.mailbox[pos] = piece;
+
+        let color = Piece::get_color_idx(piece);
+        self.occupancy[color] |= pos_mask;
+        self.occupancy[BOTH] |= pos_mask;
+    }
+
+    #[inline]
+    fn move_piece_on_bb(&mut self, piece: PieceInfo, from: usize, to: usize) {
+        let (from_mask, to_mask) = (mask(from), mask(to));
+
+        debug_assert!(piece != Piece::NONE, "There ain't no piece in from");
+
+        let piece_bb = self.mut_bb(piece);
+        *piece_bb &= !from_mask;
+        *piece_bb |= to_mask;
+
+        let color = Piece::get_color_idx(piece);
+        self.occupancy[color] ^= from_mask | to_mask;
+        self.occupancy[BOTH] ^= from_mask | to_mask;
+    }
+
+    #[inline]
+    fn remove_piece_on_bb(&mut self, piece: PieceInfo, pos: usize) {
+        let pos_mask = mask(pos);
+
+        *self.mut_bb(piece) &= !pos_mask;
+
+        let color = Piece::get_color_idx(piece);
+        self.occupancy[color] &= !pos_mask;
+        self.occupancy[BOTH] &= !pos_mask;
+    }
+
+    #[inline]
+    fn add_piece_on_bb(&mut self, piece: PieceInfo, pos: usize) {
+        let pos_mask = mask(pos);
+
+        *self.mut_bb(piece) |= pos_mask;
 
         let color = Piece::get_color_idx(piece);
         self.occupancy[color] |= pos_mask;
