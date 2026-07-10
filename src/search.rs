@@ -417,7 +417,13 @@ impl Engine {
                 // SEE pruning //
                 let is_non_pv = alpha + 1 == beta;
 
-                if depth <= 5 && is_non_pv && !in_check && mv != tt_move && flag.is_capture() {
+                if depth <= 5
+                    && is_non_pv
+                    && !in_check
+                    && mv != tt_move
+                    && flag.is_capture()
+                    && !self.board.gives_check(mv)
+                {
                     let margin = depth as i32 * 80;
 
                     if self.board.see(&mv) < -margin {
@@ -440,11 +446,7 @@ impl Engine {
 
                     info.stats.futility_attempts += 1;
 
-                    let undo = self.board.make_move(&mv);
-                    let gives_check = self.board.in_check();
-                    self.board.unmake_move(&mv, &undo);
-
-                    if !gives_check {
+                    if !self.board.gives_check(mv) {
                         info.stats.futility_prunes += 1;
                         continue;
                     }
@@ -651,8 +653,7 @@ impl Engine {
         let can_reduce = quiet_searched > 1
             && depth > 3
             && !in_check
-            && !mv.flag().is_capture()
-            && !mv.flag().is_promo();
+            && mv.flag().is_quiet();
 
         // Late move reduction //
         let reduction = if can_reduce {
@@ -674,6 +675,11 @@ impl Engine {
 
             // Counter move adjustment
             if mv == self.counter_moves.get(prev_move) {
+                r -= 1;
+            }
+
+            // killer move adjustment
+            if self.killers[ply as usize].contains(&mv) {
                 r -= 1;
             }
 
@@ -854,7 +860,7 @@ impl Engine {
             let mv = move_list.pick_move(mv_idx);
             if !in_check && !mv.flag().is_promo() {
                 // soft delta pruning (see pruning) //
-                if self.board.see(&mv) < 0 {
+                if self.board.see(&mv) < 0 && !self.board.gives_check(mv) {
                     continue;
                 }
                 // soft delta pruning (see pruning) //
