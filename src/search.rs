@@ -99,7 +99,7 @@ impl Engine {
                     tt_move = entry.best_move();
                 }
 
-                self.with_ordering(tt_move, 0, &mut move_list);
+                self.with_ordering(tt_move, Move::NULL, 0, &mut move_list);
                 for mv_idx in 0..move_list.len() {
                     let mv = move_list.pick_move(mv_idx);
                     let undo = self.board.make_move(&mv);
@@ -115,6 +115,7 @@ impl Engine {
                                 beta: -alpha,
                                 ply: 1,
                                 extension: 0,
+                                prev_move: mv,
                             },
                             &limits,
                             &mut info,
@@ -128,6 +129,7 @@ impl Engine {
                                 beta: -alpha,
                                 ply: 1,
                                 extension: 0,
+                                prev_move: mv,
                             },
                             &limits,
                             &mut info,
@@ -142,6 +144,7 @@ impl Engine {
                                     beta: -alpha,
                                     ply: 1,
                                     extension: 0,
+                                    prev_move: mv,
                                 },
                                 &limits,
                                 &mut info,
@@ -258,6 +261,7 @@ impl Engine {
             mut beta,
             ply,
             extension,
+            prev_move,
         } = params;
 
         if info.abort {
@@ -328,6 +332,7 @@ impl Engine {
                     beta,
                     ply,
                     extension,
+                    prev_move,
                 },
                 info,
                 limits,
@@ -358,6 +363,7 @@ impl Engine {
                 beta,
                 ply,
                 extension,
+                prev_move,
             },
             limits,
             info,
@@ -382,7 +388,7 @@ impl Engine {
 
         // Actual searching loop
 
-        self.with_ordering(tt_move, ply as usize, &mut move_list);
+        self.with_ordering(tt_move, prev_move, ply as usize, &mut move_list);
         for mv_idx in 0..move_list.len() {
             let mv = move_list.pick_move(mv_idx);
             let flag = mv.flag();
@@ -396,12 +402,13 @@ impl Engine {
                 let is_non_pv = alpha + 1 == beta;
                 let lmp_threshold = 3 + (depth * depth) as usize / 3;
 
+                // disabled currently!
                 if is_non_pv
+                    && false
                     && !in_check
                     && depth <= 5
                     && quiet_searched > lmp_threshold
                     && !self.killers[ply as usize].contains(&mv)
-                    && false
                 {
                     continue;
                 }
@@ -449,7 +456,7 @@ impl Engine {
             self.update_nnue(&mv, &undo, ply as usize);
 
             let eval = self.pv_search(
-                &mv,
+                mv,
                 mv_idx,
                 quiet_searched,
                 SearchParams {
@@ -458,6 +465,7 @@ impl Engine {
                     beta,
                     ply,
                     extension,
+                    prev_move,
                 },
                 limits,
                 info,
@@ -499,6 +507,9 @@ impl Engine {
                     let h = &mut self.history[stm][mv.from()][mv.to()];
                     *h += bonus;
                     *h = (*h).clamp(-MAX_HISTORY, MAX_HISTORY);
+
+                    // counter moves storing
+                    self.counter_moves.store(prev_move, mv);
                 }
 
                 break;
@@ -570,6 +581,7 @@ impl Engine {
                     beta: -beta + 1,
                     ply: ply + 1,
                     extension: extension,
+                    prev_move: Move::NULL,
                 },
                 limits,
                 info,
@@ -593,7 +605,7 @@ impl Engine {
 
     fn pv_search(
         &mut self,
-        mv: &Move,
+        mv: Move,
         mv_idx: usize,
         quiet_searched: usize,
         params: SearchParams,
@@ -608,6 +620,7 @@ impl Engine {
             beta,
             ply,
             extension,
+            prev_move,
         } = params;
 
         let in_check = self.board.in_check();
@@ -627,6 +640,7 @@ impl Engine {
                     beta: -alpha,
                     ply: ply + 1,
                     extension: next_extensions,
+                    prev_move: mv,
                 },
                 limits,
                 info,
@@ -658,6 +672,11 @@ impl Engine {
 
             r -= hist_adjustment;
 
+            // Counter move adjustment
+            if mv == self.counter_moves.get(prev_move) {
+                r -= 1;
+            }
+
             // Minimum reduction of 1 ply, maximum of depth - 1 to avoid negative depths
             r.clamp(1, depth as i32 - 1) as u16
         } else {
@@ -673,6 +692,7 @@ impl Engine {
                 beta: -alpha,
                 ply: ply + 1,
                 extension: next_extensions,
+                prev_move: mv,
             },
             limits,
             info,
@@ -689,6 +709,7 @@ impl Engine {
                     beta: -alpha,
                     ply: ply + 1,
                     extension: next_extensions,
+                    prev_move: mv,
                 },
                 limits,
                 info,
@@ -704,6 +725,7 @@ impl Engine {
                     beta: -alpha,
                     ply: ply + 1,
                     extension: next_extensions,
+                    prev_move: mv,
                 },
                 limits,
                 info,
@@ -725,6 +747,7 @@ impl Engine {
             mut alpha,
             mut beta,
             ply,
+            prev_move,
             ..
         } = params;
 
@@ -826,7 +849,7 @@ impl Engine {
         let orig_alpha = alpha;
         let mut best_move_this_node = Move::NULL;
 
-        self.with_ordering(tt_move, ply as usize, &mut move_list);
+        self.with_ordering(tt_move, prev_move, ply as usize, &mut move_list);
         for mv_idx in 0..move_list.len() {
             let mv = move_list.pick_move(mv_idx);
             if !in_check && !mv.flag().is_promo() {
@@ -899,6 +922,42 @@ impl Engine {
 
         best_score
     }
+}
+
+impl Engine {
+    #[inline]
+    pub fn with_ordering(
+        &mut self,
+        tt_move: Move,
+        prev_move: Move,
+        ply: usize,
+        movelist: &mut MoveList,
+    ) {
+        let counter_mv = self.counter_moves.get(prev_move);
+        for i in 0..movelist.len() {
+            let mv = movelist.moves[i];
+
+            if mv == tt_move {
+                // Give it a score higher than any possible capture/promotion
+                movelist.score[i] = 1_000_000_000;
+            } else if mv == self.killers[ply][0] {
+                movelist.score[i] = 40_000_000;
+            } else if mv == self.killers[ply][1] {
+                movelist.score[i] = 39_000_000;
+            } else {
+                let mut score = self.board.score_move(mv);
+                if mv.flag().is_quiet() {
+                    if mv == counter_mv {
+                        score = 38_000_000;
+                    } else {
+                        score += self.history[self.board.side_to_move().val()][mv.from()][mv.to()];
+                    }
+                }
+
+                movelist.score[i] = score;
+            }
+        }
+    }
 
     fn q_tt_store(&mut self, flag: TTFlag, score: i16, mv: Move, ply: i32) {
         // Adjusting for mate score
@@ -918,31 +977,6 @@ impl Engine {
             best_move: mv,
             age: self.tt.get_generation(),
         });
-    }
-}
-
-impl Engine {
-    #[inline]
-    pub fn with_ordering(&mut self, tt_move: Move, ply: usize, movelist: &mut MoveList) {
-        for i in 0..movelist.len() {
-            let mv = movelist.moves[i];
-
-            if mv == tt_move {
-                // Give it a score higher than any possible capture/promotion
-                movelist.score[i] = 1_000_000_000;
-            } else if mv == self.killers[ply][0] {
-                movelist.score[i] = 40_000_000;
-            } else if mv == self.killers[ply][1] {
-                movelist.score[i] = 39_000_000;
-            } else {
-                let mut score = self.board.score_move(mv);
-                if mv.flag().is_quiet() {
-                    score += self.history[self.board.side_to_move().val()][mv.from()][mv.to()];
-                }
-
-                movelist.score[i] = score;
-            }
-        }
     }
 
     #[inline]
@@ -1002,6 +1036,7 @@ struct SearchParams {
     beta: i16,
     ply: i32,
     extension: u8,
+    prev_move: Move,
 }
 
 #[derive(Clone, Copy)]

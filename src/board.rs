@@ -1359,11 +1359,13 @@ impl Board {
     pub fn score_move(&self, mv: Move) -> i32 {
         // ORDERING BASE SCORES USED
         // TT move            : 1_000_000_000 (handled on ordering)
+        // capture promotions : 80_000_000
         // winning captures   : 70_000_000
+        // promotions         : 60_000_000
         // equal captures     : 50_000_000
         // killer 1           : 40_000_000
         // killer 2           : 39_000_000
-        // promotions         : 30_000_000
+        // counter_move       : 38_000_000
         // quiets and castles : 10_000_000
         // bad captures       : 5_000_000
 
@@ -1382,38 +1384,36 @@ impl Board {
                 return 50_000_000;
             }
 
+            // Capture promotions updation
+            if flag.is_promo() {
+                return 80_000_000 + flag.get_promo_value() as i32;
+            }
+
             let v_val = self.get_value(victim);
             let a_val = self.get_value(attacker);
 
             // MVV-LVA
             let mvv_lva = (v_val * 10) - a_val;
 
-            let mut score = mvv_lva;
-
-            // Promotions updation
-            if flag.is_promo() {
-                score += 30_000_000 + flag.get_promo_value() as i32;
-            }
-
             let see_score = self.see(&mv);
 
             // Winning capture
             if see_score > 0 {
-                return 70_000_000 + score + see_score;
+                return 70_000_000 + mvv_lva + see_score;
             }
 
             // Equal capture
             if see_score == 0 {
-                return 50_000_000 + score + see_score;
+                return 50_000_000 + mvv_lva + see_score;
             }
 
             // Losing capture
-            return 5_000_000 + score + see_score;
+            return 5_000_000 + mvv_lva + see_score;
         }
 
         // Promotions
         if flag.is_promo() {
-            return 30_000_000 + flag.get_promo_value() as i32;
+            return 60_000_000 + flag.get_promo_value() as i32;
         }
 
         // Quiets and castles
