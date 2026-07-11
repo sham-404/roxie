@@ -36,7 +36,7 @@ Roxie is continuously tested against established engines using automated tournam
 One example is the tactical victory shown below, where Roxie defeated **lambergar (~3500 Elo)** in a **10+0.1** rapid game.
 
 <p align="center">
-    <img src="assets/roxie_vs_lambergar.png" width="700">
+    <img src="assets/roxie_vs_lambergar.png" width="500">
 </p>
 
 The full game can be found in [`assets/roxie_vs_lambergar.pgn`](assets/roxie_vs_lambergar.pgn).
