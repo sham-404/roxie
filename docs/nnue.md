@@ -73,4 +73,4 @@ The `blaze.nnue` model was trained using custom supervised learning pipelines. F
 * **Training Notebook:** [https://www.kaggle.com/code/shamsujith/halfkp-train]
 * **NNUE Binary Extracting:** [https://www.kaggle.com/code/shamsujith/nnue-extract]
 
-# NOTE: The nnue is not quantized here, it is quantized after the extraction process
+**NOTE: The nnue is not quantized here, it is quantized after the extraction process**
