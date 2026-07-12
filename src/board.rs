@@ -1588,7 +1588,7 @@ impl Board {
         // killer 2           : 39_000_000
         // counter_move       : 38_000_000
         // quiets and castles : 10_000_000
-        // bad captures       : 5_000_000
+        // bad captures       : 1_000_000
 
         let flag = mv.flag();
         let from = mv.from();
@@ -1629,7 +1629,7 @@ impl Board {
             }
 
             // Losing capture
-            return 5_000_000 + mvv_lva + see_score;
+            return 1_000_000 + mvv_lva + see_score;
         }
 
         // Promotions
@@ -1644,7 +1644,7 @@ impl Board {
         if let Some(mg_table) = MG_TABLE.get() {
             let pst_delta = mg_table[p_idx][to] - mg_table[p_idx][from];
 
-            return (10_000_000 + pst_delta).max(0);
+            return 10_000_000 + pst_delta;
         }
 
         0

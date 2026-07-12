@@ -650,10 +650,7 @@ impl Engine {
         }
 
         // checking whether lmr is applicable
-        let can_reduce = quiet_searched > 1
-            && depth > 3
-            && !in_check
-            && mv.flag().is_quiet();
+        let can_reduce = quiet_searched > 1 && depth > 3 && !in_check && mv.flag().is_quiet();
 
         // Late move reduction //
         let reduction = if can_reduce {
@@ -940,27 +937,33 @@ impl Engine {
         movelist: &mut MoveList,
     ) {
         let counter_mv = self.counter_moves.get(prev_move);
+        let killer_1 = self.killers[ply][0];
+        let killer_2 = self.killers[ply][1];
+
         for i in 0..movelist.len() {
             let mv = movelist.moves[i];
 
             if mv == tt_move {
                 // Give it a score higher than any possible capture/promotion
                 movelist.score[i] = 1_000_000_000;
-            } else if mv == self.killers[ply][0] {
-                movelist.score[i] = 40_000_000;
-            } else if mv == self.killers[ply][1] {
-                movelist.score[i] = 39_000_000;
-            } else {
-                let mut score = self.board.score_move(mv);
-                if mv.flag().is_quiet() {
-                    if mv == counter_mv {
-                        score = 38_000_000;
-                    } else {
-                        score += self.history[self.board.side_to_move().val()][mv.from()][mv.to()];
-                    }
+            } else if mv.flag().is_quiet() {
+                if mv == killer_1 {
+                    movelist.score[i] = 40_000_000;
+                    continue;
+                } else if mv == killer_2 {
+                    movelist.score[i] = 39_000_000;
+                    continue;
+                } else if mv == counter_mv {
+                    movelist.score[i] = 38_000_000;
+                    continue;
                 }
 
+                let mut score = self.board.score_move(mv);
+                score += self.history[self.board.side_to_move().val()][mv.from()][mv.to()] << 6;
+
                 movelist.score[i] = score;
+            } else {
+                movelist.score[i] = self.board.score_move(mv);
             }
         }
     }
