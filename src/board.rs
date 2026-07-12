@@ -584,10 +584,7 @@ impl Board {
             }
         }
 
-        let enemy_col = match self.side_to_move() {
-            Color::White => Piece::BLACK,
-            Color::Black => Piece::WHITE,
-        };
+        let enemy_col = Piece::enemy(color);
 
         if self.is_square_atacked(
             pop_lsb(&mut self.bb(enemy_col | Piece::KING)).unwrap(),
@@ -597,29 +594,21 @@ impl Board {
         }
 
         //// undoing ////
-        // move piece back
-        self.move_piece_on_bb(cur_piece, to, from);
+
+        // Handling Promotions
+        if flag.is_promo() {
+            // restore pawn
+            self.remove_piece_on_bb(promo_piece, to);
+            self.add_piece_on_bb(cur_piece, from); // adding the pawn
+        } else {
+            // move piece back
+            self.move_piece_on_bb(cur_piece, to, from);
+        }
 
         // handle captures
         if flag.is_capture() {
             debug_assert!(captured != Piece::NONE, "Capture without captured piece");
             self.add_piece_on_bb(captured, captured_sq);
-        }
-
-        // Handling Promotions
-        if flag.is_promo() {
-            // restore pawn
-            let pawn = if (cur_piece & Piece::WHITE) != 0 {
-                Piece::WHITE | Piece::PAWN
-            } else {
-                Piece::BLACK | Piece::PAWN
-            };
-
-            // Removing the Promoted piece from mv.from
-            // (cuz it got added when we try to undo the move
-            self.remove_piece_on_bb(promo_piece, from);
-            // adding the relevent pawn on Promotion moves
-            self.add_piece_on_bb(pawn, from);
         }
 
         // castling
@@ -1431,32 +1420,115 @@ impl Board {
         move_bits
     }
 
-    fn filter_illegal(&mut self, moves: &mut MoveList) {
-        let color = if self.side_to_move == Color::White {
-            Piece::WHITE
-        } else {
-            Piece::BLACK
+    pub fn is_legal_mv(&mut self, pseudo_legal_mv: Move) -> bool {
+        debug_assert!(self.occupancy[BOTH] & (1u64 << pseudo_legal_mv.from()) != 0);
+
+        let stm = self.side_to_move();
+
+        let color = match stm {
+            Color::White => Piece::WHITE,
+            Color::Black => Piece::BLACK,
         };
 
-        let king = color | Piece::KING;
-        let our_col = self.side_to_move;
+        let mut is_legal = true;
+
+        let from = pseudo_legal_mv.from();
+        let to = pseudo_legal_mv.to();
+        let flag = pseudo_legal_mv.flag();
+        let cur_piece = self.piece_on(from);
+
+        // Detecting captures
+        let mut captured_sq = to;
+        if flag == MoveFlag::EN_PASSANT {
+            captured_sq = if color == Piece::WHITE {
+                to - 8
+            } else {
+                to + 8
+            };
+        }
+        let captured = self.piece_on(captured_sq);
+
+        // Handling captures
+        if captured != Piece::NONE {
+            self.remove_piece_on_bb(captured, captured_sq);
+        }
+
+        // Moving the piece on the board
+        self.move_piece_on_bb(cur_piece, from, to);
+
+        // Handling Special Moves
+        let mut promo_piece = Piece::NONE;
+        if flag.is_promo() {
+            self.remove_piece_on_bb(cur_piece, to);
+            // Note: piece is already XORed out of 'from', so we just XOR the promo piece into 'to'
+            let promo_type = flag.0 & MoveFlag::PIECE_BIT;
+            let promo_pieces = [Piece::KNIGHT, Piece::BISHOP, Piece::ROOK, Piece::QUEEN];
+            promo_piece = color | promo_pieces[promo_type as usize];
+
+            self.add_piece_on_bb(promo_piece, to);
+        }
+
+        // castling
+        if flag.is_castle() {
+            let is_black = (cur_piece & Piece::BLACK) != 0;
+            let king_pos = if is_black { BK_START_POS } else { WK_START_POS };
+            let rook = Piece::ROOK | color;
+
+            if flag == MoveFlag::KING_CASTLE {
+                self.move_piece_on_bb(rook, king_pos + 3, king_pos + 1);
+            } else {
+                self.move_piece_on_bb(rook, king_pos - 4, king_pos - 1);
+            }
+        }
+
+        let mut king_bb = self.bb(color | Piece::KING);
+        if self.is_square_atacked(pop_lsb(&mut king_bb).unwrap(), &stm) {
+            is_legal = false;
+        }
+
+        //// undoing ////
+
+        // Handling Promotions
+        if flag.is_promo() {
+            // restore pawn
+            self.remove_piece_on_bb(promo_piece, to);
+            self.add_piece_on_bb(cur_piece, from); // adding the pawn
+        } else {
+            // move piece back for normal moves
+            self.move_piece_on_bb(cur_piece, to, from);
+        }
+
+        // handle captures
+        if flag.is_capture() {
+            debug_assert!(captured != Piece::NONE, "Capture without captured piece");
+            self.add_piece_on_bb(captured, captured_sq);
+        }
+
+        // castling
+        if flag.is_castle() {
+            let rook = Piece::ROOK | color;
+            if flag == MoveFlag::KING_CASTLE {
+                // rook: f -> h
+                self.move_piece_on_bb(rook, to - 1, to + 1);
+            } else if flag == MoveFlag::QUEEN_CASTLE {
+                // rook: d -> a
+                self.move_piece_on_bb(rook, to + 1, to - 2);
+            }
+        }
+
+        is_legal
+    }
+
+    fn filter_illegal(&mut self, moves: &mut MoveList) {
         let mut last_legal_mv_idx: isize = -1;
 
         for idx in 0..moves.len() {
             let mv = moves.moves[idx];
 
-            let undo = self.make_move(&mv);
-
-            let mut king_bb = self.bb(king);
-            let king_pos = pop_lsb(&mut king_bb).expect("There is no King!!!");
-
-            // after make_move, side_to_move is opponent
-            if !self.is_square_atacked(king_pos, &our_col) {
+            if self.is_legal_mv(mv) {
                 moves.moves[(last_legal_mv_idx + 1) as usize] = mv;
                 last_legal_mv_idx += 1;
             }
-
-            self.unmake_move(&mv, &undo);
         }
         moves.len = (last_legal_mv_idx + 1) as usize;
     }
