@@ -1,6 +1,6 @@
 use std::{
     fs::{File, metadata},
-    io::{Read, Seek},
+    io::{Cursor, Read, Seek},
     sync::OnceLock,
 };
 
@@ -18,7 +18,7 @@ const HL2: usize = 16;
 const HL3: usize = 16;
 const OUTPUT: usize = 1;
 const MAGIC: &[u8; 8] = b"BLAZE_V@";
-const NN_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/blaze.nnue");
+const NN_DATA: &[u8] = include_bytes!("blaze.nnue");
 const QP: i32 = 8;
 pub const Q: f32 = (1 << QP) as f32; // 2 ^ QP
 
@@ -46,7 +46,12 @@ pub fn init_nn(is_needed: bool) {
     if !is_needed {
         return;
     }
-    NETWORK.get_or_init(|| Network::load(NN_PATH));
+    NETWORK.get_or_init(|| {
+        let mut reader = Cursor::new(NN_DATA);
+        let nn = Network::load(&mut reader);
+        assert_eq!(reader.position() as usize, NN_DATA.len()); // ensures we read all the bytes
+        nn
+    });
 }
 
 pub struct Network {
@@ -64,28 +69,22 @@ pub struct Network {
 }
 
 impl Network {
-    fn load(path: &str) -> Network {
-        let mut file = File::open(path).unwrap();
-        let file_size = metadata(path).unwrap().len();
-
+    fn load(reader: &mut impl Read) -> Network {
         let mut magic = [0u8; MAGIC.len()];
-        file.read_exact(&mut magic).unwrap();
+        reader.read_exact(&mut magic).unwrap();
         assert_eq!(&magic, MAGIC);
 
-        let w1 = Network::read_i16(&mut file, INPUT * HL1);
-        let b1 = Network::read_i32(&mut file, HL1);
+        let w1 = Network::read_i16(reader, INPUT * HL1);
+        let b1 = Network::read_i32(reader, HL1);
 
-        let w2 = Network::read_i16(&mut file, HL1 * 2 * HL2);
-        let b2 = Network::read_i32(&mut file, HL2);
+        let w2 = Network::read_i16(reader, HL1 * 2 * HL2);
+        let b2 = Network::read_i32(reader, HL2);
 
-        let w3 = Network::read_i16(&mut file, HL2 * HL3);
-        let b3 = Network::read_i32(&mut file, HL3);
+        let w3 = Network::read_i16(reader, HL2 * HL3);
+        let b3 = Network::read_i32(reader, HL3);
 
-        let w4 = Network::read_i16(&mut file, HL3 * OUTPUT);
-        let b4 = Network::read_i32(&mut file, OUTPUT);
-
-        let pos = file.stream_position().unwrap();
-        assert_eq!(file_size, pos); // validating that we have reached the EOF
+        let w4 = Network::read_i16(reader, HL3 * OUTPUT);
+        let b4 = Network::read_i32(reader, OUTPUT);
 
         Network {
             w1,
@@ -98,7 +97,7 @@ impl Network {
             b4,
         }
     }
-    
+
     pub fn load_unquantized(path: &str) -> Network {
         let mut file = File::open(path).unwrap();
         let file_size = metadata(path).unwrap().len();
@@ -319,7 +318,7 @@ impl Network {
         out
     }
 
-    fn read_i16(file: &mut File, size: usize) -> Vec<i16> {
+    fn read_i16(file: &mut impl Read, size: usize) -> Vec<i16> {
         let mut bytes = vec![0u8; size * 2];
         file.read_exact(&mut bytes).unwrap();
 
@@ -332,7 +331,7 @@ impl Network {
         out
     }
 
-    fn read_i32(file: &mut File, size: usize) -> Vec<i32> {
+    fn read_i32(file: &mut impl Read, size: usize) -> Vec<i32> {
         let mut bytes = vec![0u8; size * 4];
         file.read_exact(&mut bytes).unwrap();
 
@@ -489,11 +488,13 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
     use crate::{
         engine::Engine,
         evaluation::init_pesto_table,
         magics::init_magics,
-        network::{NN_PATH, Network, QP},
+        network::{NN_DATA, Network, QP},
         zobrist::init_zobrist,
     };
 
@@ -502,7 +503,9 @@ mod tests {
         init_zobrist();
         init_pesto_table();
         init_magics();
-        let nn = Network::load(NN_PATH);
+
+        let mut cursor = Cursor::new(NN_DATA);
+        let nn = Network::load(&mut cursor);
 
         println!("Quantized to 2 ^ {QP}");
 
