@@ -9,37 +9,37 @@ Currently playing at <b>3000+ Elo</b>, with the long-term goal of reaching <b>35
 
 ## About
 
-**Roxie** is a hobby chess engine developed entirely from scratch in **Rust**, focusing on strong search, efficient evaluation, and modern engine design.
+**Roxie** is a hobby chess engine written entirely from scratch in **Rust**, focusing on modern search techniques, efficient evaluation, and clean engineering.
 
-What started as a personal learning project has gradually evolved into a competitive chess engine through continuous experimentation, profiling, tuning, and thousands of self-play and engine-vs-engine games.
+The project began as a way to learn how chess engines work. Over time, it evolved into a serious long-term project through continuous experimentation, profiling, tuning, and thousands of self-play and engine-vs-engine games.
 
-Today, Roxie has surpassed the **3000 Elo** milestone and continues to improve with every iteration.
+Today, Roxie has surpassed the **3000 Elo** milestone and continues to improve with every release.
 
 ---
 
 ## Highlights
 
-- ♟️ UCI compatible
-- ⚡ Written entirely in Rust
-- 🧠 Quantized HalfKP NNUE evaluation
-- 🚀 Magic Bitboard move generation
-- 🔍 Modern alpha-beta search with advanced pruning and move ordering
-- 📈 Continuously tuned through thousands of self-play and engine matches
-- 💻 Optimized builds for Native, AVX2 and AVX-512 processors
+* ♟️ UCI compatible
+* ⚡ Written entirely in Rust
+* 🧠 Quantized HalfKP NNUE evaluation
+* 🚀 Magic Bitboard move generation
+* 🔍 Modern alpha-beta search with advanced pruning and move ordering
+* 📈 Continuously tuned through thousands of self-play and engine matches
+* 💻 Optimized builds for Native, AVX2 and AVX-512 processors
 
 ---
 
 ## Performance
 
-Roxie is continuously tested against established engines using automated tournaments and self-play to measure playing strength and identify areas for improvement.
+Roxie is continuously tested against established engines using automated tournaments and self-play to measure playing strength and evaluate new ideas.
 
-One example is the tactical victory shown below, where Roxie defeated **lambergar (~3500 Elo)** in a **10+0.1** rapid game.
+One memorable game is shown below, where Roxie managed to defeat **Lambergar (~3500 Elo)** in a **10+0.1** rapid game.
 
 <p align="center">
     <img src="assets/roxie_vs_lambergar.png" width="500">
 </p>
 
-The full game can be found in [`assets/roxie_vs_lambergar.pgn`](assets/roxie_vs_lambergar.pgn).
+The full game is available in [`assets/roxie_vs_lambergar.pgn`](assets/roxie_vs_lambergar.pgn).
 
 ---
 
@@ -49,31 +49,31 @@ The full game can be found in [`assets/roxie_vs_lambergar.pgn`](assets/roxie_vs_
 
 Roxie uses a modern alpha-beta search framework designed to search deeper while minimizing unnecessary work.
 
-- Principal Variation Search (PVS)
-- Iterative Deepening
-- Aspiration Windows
-- Quiescence Search
-- Transposition Tables
-- Advanced pruning and reduction techniques
-- Efficient move ordering heuristics
+* Principal Variation Search (PVS)
+* Iterative Deepening
+* Aspiration Windows
+* Quiescence Search
+* Transposition Tables
+* Advanced pruning and reduction techniques
+* Efficient move ordering heuristics
 
 ### 🧠 Evaluation
 
-- Quantized **HalfKP NNUE** evaluation
-- Efficient neural inference for positional evaluation
-- Classical evaluation terms blended with neural evaluation
+* Quantized **HalfKP NNUE** evaluation
+* Efficient neural inference for positional evaluation
+* Classical evaluation terms blended with neural evaluation
 
 ### ⚡ Move Generation
 
-- Magic Bitboards
-- Optimized make/unmake move implementation
-- Zobrist hashing for transposition and repetition detection
+* Magic Bitboards
+* Optimized make/unmake move implementation
+* Zobrist hashing for transposition and repetition detection
 
 ### 🚀 Performance
 
-- Native CPU optimizations
-- AVX2 and AVX-512 builds
-- Profile Guided Optimization (PGO) support
+* Native CPU optimizations
+* AVX2 and AVX-512 optimized builds
+* Profile Guided Optimization (PGO) support
 
 ---
 
@@ -81,18 +81,19 @@ Roxie uses a modern alpha-beta search framework designed to search deeper while 
 
 ### Requirements
 
-- Rust (stable toolchain)
-- Cargo
-- GNU Make
+* Rust (stable toolchain)
+* Cargo
+* GNU Make
 
-Clone the repository and build Roxie using one of the following targets.
+Clone the repository:
 
 ```bash
 git clone https://github.com/sham-404/roxie.git
 cd roxie
 ```
 
-Build the binary using any one of the following
+Build Roxie using one of the following targets:
+
 ```bash
 # Optimized for your current CPU
 make native
@@ -117,7 +118,7 @@ make clean
 
 ## Usage
 
-After building, the engine executable will be located at the current dir (name differes based on the build):
+After building, the engine executable will be available in the project directory (the filename depends on the selected build target).
 
 ```text
 ./roxie*
@@ -125,15 +126,13 @@ After building, the engine executable will be located at the current dir (name d
 
 ### Running from the Terminal
 
-Roxie speaks the **Universal Chess Interface (UCI)** protocol.
-
-Start the engine with:
+Roxie implements the **Universal Chess Interface (UCI)** protocol.
 
 ```bash
 ./roxie*
 ```
 
-Example UCI session:
+Example session:
 
 ```text
 uci
@@ -143,7 +142,7 @@ position startpos
 go depth 12
 ```
 
-or search a custom position:
+Or search a custom position:
 
 ```text
 position startpos moves e2e4 e7e5 g1f3
@@ -152,18 +151,18 @@ go movetime 5000
 
 ### Using a Chess GUI
 
-Roxie is compatible with any **UCI-compatible** chess GUI, including:
+Roxie works with any UCI-compatible GUI, including:
 
-- Arena
-- Cute Chess
-- Banksia GUI
-- Nibbler
+* Arena
+* Cute Chess
+* Banksia GUI
+* Nibbler
 
-Simply add the compiled `roxie` executable as a new UCI engine from your GUI's engine manager.
+Simply add the compiled executable as a new UCI engine.
 
 ### Engine Matches
 
-Roxie can also be used with tournament managers such as **cutechess-cli** for automated engine-vs-engine matches and self-play testing.
+Roxie can also be used with tournament managers such as **cutechess-cli** for engine matches and automated self-play testing.
 
 ---
 
@@ -171,26 +170,39 @@ Roxie can also be used with tournament managers such as **cutechess-cli** for au
 
 Current focus:
 
-- Improve NNUE playing strength through larger training datasets
-- Continue search tuning and evaluation improvements
-- Stronger endgame play
-- Better time management
-- Multi-threaded search (SMP)
+* Improve NNUE playing strength using larger and higher-quality training datasets
+* Continue search tuning and evaluation improvements
+* Stronger endgame play
+* Better time management
+* Multi-threaded search (SMP)
 
-Ultimate goal:
+Long-term goal:
 
 > Reach **3500 Elo** while remaining a clean, educational, and highly optimized open-source chess engine.
 
 ---
 
+## Acknowledgements
+
+Roxie was developed independently from scratch, but several resources and projects encouraged and inspired me throughout its development.
+
+Special thanks to:
+
+* **[Sebastian Lague](https://www.youtube.com/@SebastianLague)** for the *Coding Adventure: Chess* series, which inspired me to begin writing my own chess engine.
+* The **[Chess Programming Wiki](https://www.chessprogramming.org/)** for providing an excellent introduction to many chess programming concepts and serving as a handy reference during development.
+* The many authors of open-source chess engines whose work and discussions continue to advance the chess programming community.
+* **[Lambergar](https://github.com/jabolcni/Lambergar)**, whose impressive playing strength and steady progress motivated me to keep pushing Roxie further whenever I felt like stopping.
+
+---
+
 ## Development
 
-Roxie is under active development, with every improvement tracked through detailed version history and benchmarks.
+Roxie is actively developed, with every significant improvement documented through version history, testing, and benchmarking.
 
-For a complete record of engine evolution and newly added features, see:
+For additional information, see:
 
-- **CHANGELOG.md** *(development history)*
-- **docs/nnue.md** *(NNUE architecture and implementation details)*
+* **CHANGELOG.md** for the complete development history.
+* **docs/nnue.md** for details about Roxie's NNUE architecture and implementation.
 
 ---
 
