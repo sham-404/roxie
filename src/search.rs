@@ -42,7 +42,7 @@ pub fn init_lmr_table() {
 
 pub const MATE: i16 = 27_000;
 pub const INF: i16 = 27_500;
-const MAX_HISTORY: i32 = 20000;
+pub const MAX_HISTORY: i32 = 20000;
 
 impl Engine {
     pub fn search_ids<F>(&mut self, limits: &SearchLimits, mut on_iteration: F) -> SearchInfo
@@ -500,15 +500,24 @@ impl Engine {
                             continue;
                         }
 
+                        // for history
                         let h = &mut self.history[stm][q_mv.from()][q_mv.to()];
                         *h -= bonus / 8;
                         *h = (*h).clamp(-MAX_HISTORY, MAX_HISTORY);
+
+                        // for continuation history
+                        self.continuation_history
+                            .update(&self.board, prev_move, *q_mv, -bonus);
                     }
 
                     // history bonus scoring
                     let h = &mut self.history[stm][mv.from()][mv.to()];
                     *h += bonus;
                     *h = (*h).clamp(-MAX_HISTORY, MAX_HISTORY);
+
+                    // continuation history scoring
+                    self.continuation_history
+                        .update(&self.board, prev_move, mv, bonus);
 
                     // counter moves storing
                     self.counter_moves.store(prev_move, mv);
@@ -665,7 +674,13 @@ impl Engine {
             // max adjustment of +/- 4 plies
             let adjustment_fac = MAX_HISTORY / 4;
             let stm = self.board.side_to_move().opponent().val();
-            let hist_score = self.history[stm][mv.from()][mv.to()];
+            let cont_hist = if prev_move != Move::NULL {
+                self.continuation_history.get_after_mv(&self.board, prev_move, mv) as i32
+            } else {
+                0
+            };
+            let hist_score = self.history[stm][mv.from()][mv.to()] + cont_hist;
+
             let hist_adjustment = hist_score / adjustment_fac;
 
             r -= hist_adjustment;
@@ -886,6 +901,7 @@ impl Engine {
                     alpha: -beta,
                     beta: -alpha,
                     ply: ply + 1,
+                    prev_move: mv,
                     ..params
                 },
                 info,
@@ -960,6 +976,7 @@ impl Engine {
 
                 let mut score = self.board.score_move(mv);
                 score += self.history[self.board.side_to_move().val()][mv.from()][mv.to()] << 6;
+                score += (self.continuation_history.get(&self.board, prev_move, mv) << 6) as i32;
 
                 movelist.score[i] = score;
             } else {

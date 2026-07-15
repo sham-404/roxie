@@ -1,8 +1,9 @@
 use crate::{
     board::Board,
     r#const::MAX_PLY,
-    items::Move,
+    items::{Move, Piece},
     network::{EvalBuf, HL1},
+    search::MAX_HISTORY,
     tt::TranspositionTable,
 };
 
@@ -10,6 +11,7 @@ pub struct Engine {
     pub board: Board,
     pub tt: TranspositionTable,
     pub history: [[[i32; 64]; 64]; 2],
+    pub continuation_history: ContinuationHistory,
     pub counter_moves: CountermoveTable,
     pub killers: [[Move; 2]; MAX_PLY],
     pub eval_buf: EvalBuf,
@@ -22,6 +24,7 @@ impl Engine {
             board: Board::start_pos(),
             tt: TranspositionTable::new(25),
             history: [[[0; 64]; 64]; 2],
+            continuation_history: ContinuationHistory::new(),
             counter_moves: CountermoveTable::new(),
             killers: [[Move::NULL; 2]; MAX_PLY],
             eval_buf: EvalBuf::new(),
@@ -50,5 +53,59 @@ impl CountermoveTable {
 
     pub fn get(&self, prev_mv: Move) -> Move {
         self.table[prev_mv.from()][prev_mv.to()]
+    }
+}
+
+pub struct ContinuationHistory {
+    // table[piece_idx * 64 + prev_mv.to][piece_idx * 64 + cur_mv.to]
+    pub table: Box<[[i16; 768]; 768]>,
+}
+
+impl ContinuationHistory {
+    pub fn new() -> Self {
+        let table = vec![[0i16; 768]; 768];
+        Self {
+            table: table.into_boxed_slice().try_into().unwrap(),
+        }
+    }
+
+    #[inline]
+    pub fn get_after_mv(&self, board: &Board, prev_mv: Move, cur_mv: Move) -> i16 {
+        if prev_mv == Move::NULL || cur_mv == Move::NULL {
+            return 0;
+        }
+
+        let prev_idx = Piece::to_idx(board.piece_on(prev_mv.to())) * 64 + prev_mv.to();
+        let cur_idx = Piece::to_idx(board.piece_on(cur_mv.to())) * 64 + cur_mv.to();
+
+        self.table[prev_idx][cur_idx]
+    }
+
+    #[inline]
+    pub fn get(&self, board: &Board, prev_mv: Move, cur_mv: Move) -> i16 {
+        if prev_mv == Move::NULL || cur_mv == Move::NULL {
+            return 0;
+        }
+
+        let prev_idx = Piece::to_idx(board.piece_on(prev_mv.to())) * 64 + prev_mv.to();
+        let cur_idx = Piece::to_idx(board.piece_on(cur_mv.from())) * 64 + cur_mv.to();
+
+        self.table[prev_idx][cur_idx]
+    }
+
+    #[inline]
+    pub fn update(&mut self, board: &Board, prev_mv: Move, cur_mv: Move, bonus: i32) {
+        if prev_mv == Move::NULL || cur_mv == Move::NULL {
+            return;
+        }
+
+        // index = piece_idx * 64 + mv.to
+        let prev_idx = Piece::to_idx(board.piece_on(prev_mv.to())) * 64 + prev_mv.to();
+        let cur_idx = Piece::to_idx(board.piece_on(cur_mv.from())) * 64 + cur_mv.to();
+
+        let cur_val = self.table[prev_idx][cur_idx];
+        let new_val = (cur_val as i32) + bonus - (cur_val as i32 * bonus.abs() / MAX_HISTORY);
+
+        self.table[prev_idx][cur_idx] = new_val.clamp(-MAX_HISTORY, MAX_HISTORY) as i16;
     }
 }
