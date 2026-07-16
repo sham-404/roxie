@@ -492,7 +492,7 @@ impl Engine {
                     self.store_killer(mv, ply as usize);
 
                     let stm = self.board.side_to_move().val();
-                    let bonus = (depth * depth) as i32;
+                    let bonus = (depth * depth).min(400) as i32;
 
                     // history maluses
                     for q_mv in quiet_list.as_slice() {
@@ -502,12 +502,12 @@ impl Engine {
 
                         // for history
                         let h = &mut self.history[stm][q_mv.from()][q_mv.to()];
-                        *h -= bonus / 8;
+                        *h -= bonus >> 2;
                         *h = (*h).clamp(-MAX_HISTORY, MAX_HISTORY);
 
                         // for continuation history
                         self.continuation_history
-                            .update(&self.board, prev_move, *q_mv, -bonus);
+                            .update(&self.board, prev_move, *q_mv, -bonus >> 2);
                     }
 
                     // history bonus scoring
@@ -674,11 +674,9 @@ impl Engine {
             // max adjustment of +/- 4 plies
             let adjustment_fac = MAX_HISTORY / 4;
             let stm = self.board.side_to_move().opponent().val();
-            let cont_hist = if prev_move != Move::NULL {
-                self.continuation_history.get_after_mv(&self.board, prev_move, mv) as i32
-            } else {
-                0
-            };
+            let cont_hist = self
+                .continuation_history
+                .get_after_mv(&self.board, prev_move, mv) as i32;
             let hist_score = self.history[stm][mv.from()][mv.to()] + cont_hist;
 
             let hist_adjustment = hist_score / adjustment_fac;
