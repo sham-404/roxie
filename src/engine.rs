@@ -83,7 +83,8 @@ impl ContinuationHistory {
 
     #[inline]
     pub fn get(&self, board: &Board, prev_mv: Move, cur_mv: Move) -> i16 {
-        if prev_mv == Move::NULL || cur_mv == Move::NULL {
+        debug_assert_ne!(cur_mv, Move::NULL); // cur_mv is expected to be a valid move
+        if prev_mv == Move::NULL {
             return 0;
         }
 
@@ -95,7 +96,8 @@ impl ContinuationHistory {
 
     #[inline]
     pub fn update(&mut self, board: &Board, prev_mv: Move, cur_mv: Move, bonus: i32) {
-        if prev_mv == Move::NULL || cur_mv == Move::NULL {
+        debug_assert_ne!(cur_mv, Move::NULL); // cur_mv is expected to be a valid move
+        if prev_mv == Move::NULL {
             return;
         }
 
