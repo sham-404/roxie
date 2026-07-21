@@ -1,4 +1,4 @@
-use crate::{items::Move, search::MATE};
+use crate::{items::Move, search::MATE, uci_print};
 
 const TT_SLOT_SIZE: usize = 3;
 
@@ -161,6 +161,16 @@ impl TranspositionTable {
             generation: 0,
             mask: num_buckets - 1,
         }
+    }
+
+    #[inline]
+    pub fn info(&self) {
+        let bucket_size = std::mem::size_of::<TTBucket>();
+        uci_print!(
+            "info string Hash Table initialized with {} entries taking {} MB space",
+            self.table.len() * TT_SLOT_SIZE,
+            self.table.len() * bucket_size / (1024 * 1024)
+        );
     }
 
     pub fn probe(&self, key: u64) -> Option<&TTPacked> {

@@ -506,8 +506,12 @@ impl Engine {
                         *h = (*h).clamp(-MAX_HISTORY, MAX_HISTORY);
 
                         // for continuation history
-                        self.continuation_history
-                            .update(&self.board, prev_move, *q_mv, -bonus >> 2);
+                        self.continuation_history.update(
+                            &self.board,
+                            prev_move,
+                            *q_mv,
+                            -bonus >> 2,
+                        );
                     }
 
                     // history bonus scoring

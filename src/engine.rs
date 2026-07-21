@@ -4,7 +4,7 @@ use crate::{
     items::{Move, Piece},
     network::{EvalBuf, HL1},
     search::MAX_HISTORY,
-    tt::TranspositionTable,
+    tt::TranspositionTable, uci_print,
 };
 
 pub struct Engine {
@@ -30,6 +30,12 @@ impl Engine {
             eval_buf: EvalBuf::new(),
             accumulators: [[[0i32; HL1]; 2]; MAX_PLY],
         }
+    }
+
+    #[inline]
+    pub fn info(&self) {
+        uci_print!("Roxie v{}\n", env!("CARGO_PKG_VERSION"));
+        self.tt.info();
     }
 }
 

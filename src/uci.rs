@@ -11,7 +11,7 @@ use std::{
 
 use crate::{
     board::Board, r#const::MAX_PLY, engine::Engine, items::Move, perft::perft_divide,
-    search::SearchLimits,
+    search::SearchLimits, tt::TranspositionTable,
 };
 
 pub const MAX_DEPTH: u16 = MAX_PLY as u16;
@@ -43,7 +43,13 @@ impl UCI {
         }
     }
 
+    fn options() {
+        uci_print!("option name Hash type spin default 24 min 1 max 1048576");
+    }
+
     pub fn uci_loop(&mut self) {
+        self.engine.lock().unwrap().info();
+
         let stdin = io::stdin();
 
         for line in stdin.lock().lines() {
@@ -55,12 +61,28 @@ impl UCI {
                     "uci" => {
                         uci_print!("id name Roxie {}", env!("CARGO_PKG_VERSION"));
                         uci_print!("id author sham-404");
+                        uci_print!();
+
+                        UCI::options();
+
                         uci_print!("uciok");
                     }
 
                     "debug" => {
-                        uci_print!("Executing in debug mode");
-                        self.debug = true;
+                        if let Some(cmd) = words.next() {
+                            match cmd {
+                                "on" => {
+                                    uci_print!("Executing in debug mode");
+                                    self.debug = true;
+                                }
+
+                                "off" => {
+                                    uci_print!("Executing in normal mode");
+                                    self.debug = false;
+                                }
+                                _ => {}
+                            }
+                        }
                     }
 
                     "isready" => {
@@ -72,6 +94,8 @@ impl UCI {
                         let mut engine_guard = self.engine.lock().unwrap();
                         *engine_guard = Engine::new()
                     }
+
+                    "setoption" => self.handle_setoption(&mut words),
 
                     "position" => {
                         self.stop_search();
@@ -164,6 +188,48 @@ impl UCI {
                 }
 
                 _ => {}
+            }
+        }
+    }
+
+    fn handle_setoption<'a>(&self, commands: &mut SplitWhitespace<'a>) {
+        // checking whether the next arg is "name"
+        let Some("name") = commands.next() else {
+            uci_print!("Incomplete setoption parameters");
+            return;
+        };
+
+        match commands.next() {
+            Some("Hash") => {
+                // checking whether the next arg is "value"
+                let Some("value") = commands.next() else {
+                    uci_print!("Incomplete setoption parameters");
+                    return;
+                };
+
+                let val = match commands.next().and_then(|v| v.parse::<usize>().ok()) {
+                    Some(val) => val,
+                    None => {
+                        uci_print!("Invalid option");
+                        return;
+                    }
+                }
+                .clamp(1, 1_048_576);
+
+                let mut engine = self.engine.lock().unwrap();
+                engine.tt = TranspositionTable::new(val);
+                engine.tt.info();
+                return;
+            }
+
+            Some(_) => {
+                uci_print!("Invalid option");
+                return;
+            }
+
+            None => {
+                uci_print!("No options specified");
+                return;
             }
         }
     }
