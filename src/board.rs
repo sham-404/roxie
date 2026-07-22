@@ -2,7 +2,6 @@ use crate::r#const::*;
 use crate::evaluation::{EG_TABLE, GAME_PHASE_VAL, MG_TABLE};
 use crate::items::*;
 use crate::magics::{get_bishop_move_bits, get_rook_move_bits};
-use crate::square::Square;
 use crate::zobrist::{CASTLING_KEYS, ENPASSANT_KEYS, SIDE_KEY, ZOBRIST_TABLE};
 
 #[inline]
@@ -441,46 +440,14 @@ impl Board {
             self.bb(enemy_col | Piece::KNIGHT),
         );
 
-        // Sliding pieces
-        let directions = [
-            ([(1, 1), (1, -1), (-1, 1), (-1, -1)], true), // diagonals
-            ([(1, 0), (-1, 0), (0, 1), (0, -1)], false),  // straight
-        ];
-        let from = Square::new(pos);
+        // Bishop and Queen attacks
+        if get_bishop_move_bits(pos, all_occ) & (en_bishop | en_queen) != 0 {
+            return true;
+        }
 
-        for (dir, is_diag) in directions {
-            for (dr, df) in dir {
-                let mut sq = from;
-
-                while let Some(next) = sq.offset(dr, df) {
-                    let to_bb = mask(next.index());
-
-                    // Some piece is blocking our way
-                    if to_bb & all_occ != 0 {
-                        // Enemy queen attacks
-                        if en_queen & to_bb != 0 {
-                            return true;
-                        }
-
-                        // Enemy bishop attacks
-                        if (en_bishop & to_bb != 0) && is_diag {
-                            return true;
-                        }
-
-                        // Enemy rook attacks
-                        if (en_rook & to_bb != 0) && !is_diag {
-                            return true;
-                        }
-                        // return true if the blocking piece is an enemy rook,
-                        // bishop or a queen, else break the loop as we have
-                        // been blocked by our own piece, or an non sliding
-                        // enemy piece
-
-                        break;
-                    }
-                    sq = next;
-                }
-            }
+        // Rook and Queen attacks
+        if get_rook_move_bits(pos, all_occ) & (en_rook | en_queen) != 0 {
+            return true;
         }
 
         // Knights

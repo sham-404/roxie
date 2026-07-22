@@ -15,6 +15,7 @@ All notable changes to Roxie are documented in this file.
 
 ### Improved
 - Micro optimized move ordering and changed quiet scoring a bit
+- Used magic bitboards for faster attack findings in is_square_attacked()
 
 ---
 
