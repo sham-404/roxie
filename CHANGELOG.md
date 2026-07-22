@@ -11,6 +11,7 @@ All notable changes to Roxie are documented in this file.
 - Added gives_check() and is_legal_mv(), which eliminating need of full make and unmake board mutation
 - Embedded the .nnue file directly into the binary
 - Added Continuation History
+- setoption is now available (for Hash and Clear Hash)
 
 ### Improved
 - Micro optimized move ordering and changed quiet scoring a bit

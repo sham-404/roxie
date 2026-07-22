@@ -224,6 +224,12 @@ impl TranspositionTable {
     }
 
     #[inline]
+    pub fn clear(&mut self) {
+        self.table.clear();
+        self.generation = 0;
+    }
+
+    #[inline]
     pub fn inc_generation(&mut self) {
         self.generation = self.generation.wrapping_add(1);
     }
