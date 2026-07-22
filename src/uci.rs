@@ -45,6 +45,7 @@ impl UCI {
 
     fn options() {
         uci_print!("option name Hash type spin default 24 min 1 max 1048576");
+        uci_print!("option name Clear Hash type button");
     }
 
     pub fn uci_loop(&mut self) {
@@ -194,18 +195,19 @@ impl UCI {
 
     fn handle_setoption<'a>(&self, commands: &mut SplitWhitespace<'a>) {
         // checking whether the next arg is "name"
-        let Some("name") = commands.next() else {
+        if commands.next() != Some("name") {
             uci_print!("Incomplete setoption parameters");
             return;
-        };
+        }
 
         match commands.next() {
-            Some("Hash") => {
+            //// Option: Hash
+            Some(cmd) if cmd.eq_ignore_ascii_case("hash") => {
                 // checking whether the next arg is "value"
-                let Some("value") = commands.next() else {
+                if commands.next() != Some("value") {
                     uci_print!("Incomplete setoption parameters");
                     return;
-                };
+                }
 
                 let val = match commands.next().and_then(|v| v.parse::<usize>().ok()) {
                     Some(val) => val,
@@ -221,6 +223,20 @@ impl UCI {
                 engine.tt.info();
                 return;
             }
+
+            //// Option: Clear Hash
+            Some(cmd) if cmd.eq_ignore_ascii_case("clear") => match commands.next() {
+                Some(cmd) if cmd.eq_ignore_ascii_case("hash") => {
+                    let mut engine = self.engine.lock().unwrap();
+                    engine.tt.clear();
+                    return;
+                }
+
+                Some(_) | None => {
+                    uci_print!("Invalid option type");
+                    return;
+                }
+            },
 
             Some(_) => {
                 uci_print!("Invalid option");
