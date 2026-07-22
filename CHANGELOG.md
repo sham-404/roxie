@@ -4,7 +4,7 @@ All notable changes to Roxie are documented in this file.
 
 ---
 
-## unreleased
+## v0.6.3
 
 ### Added
 
@@ -16,6 +16,10 @@ All notable changes to Roxie are documented in this file.
 ### Improved
 - Micro optimized move ordering and changed quiet scoring a bit
 - Used magic bitboards for faster attack findings in is_square_attacked()
+
+### Fixed
+- Fixed bug in gives_check()
+- Fixed prev_move updation error in qsearch
 
 ---
 
