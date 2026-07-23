@@ -70,19 +70,13 @@ impl UCI {
                     }
 
                     "debug" => {
-                        if let Some(cmd) = words.next() {
-                            match cmd {
-                                "on" => {
-                                    uci_print!("Executing in debug mode");
-                                    self.debug = true;
-                                }
-
-                                "off" => {
-                                    uci_print!("Executing in normal mode");
-                                    self.debug = false;
-                                }
-                                _ => {}
-                            }
+                        let cmd = words.next();
+                        if cmd == Some("on") {
+                            uci_print!("Executing in debug mode");
+                            self.debug = true;
+                        } else if cmd == Some("off") {
+                            uci_print!("Executing in normal mode");
+                            self.debug = false;
                         }
                     }
 
