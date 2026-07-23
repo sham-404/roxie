@@ -84,7 +84,6 @@ impl Piece {
         type_idx + color_idx
     }
 
-
     #[inline]
     pub fn enemy(color: PieceInfo) -> PieceInfo {
         debug_assert!(
@@ -105,6 +104,7 @@ impl Piece {
             Self::KING => 'K',
             _ => return ' ',
         };
+
         if Self::get_color(p) == Self::BLACK {
             c = c.to_ascii_lowercase();
         }

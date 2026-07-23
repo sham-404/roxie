@@ -19,6 +19,7 @@ use std::{
 
 use std::sync::LazyLock;
 
+const PIECE_VALS_FOR_SEE: [i32; 6] = [100, 320, 330, 500, 900, 10_000];
 pub const MAX_MOVES: usize = 256;
 
 pub static LMR_TABLE: LazyLock<[[i32; MAX_MOVES]; MAX_PLY]> = LazyLock::new(|| {
@@ -1511,13 +1512,6 @@ impl Board {
 
         let idx = Piece::to_idx(piece) % 6;
         // Piece indices: 0:P, 1:N, 2:B, 3:R, 4:Q, 5:K
-        match idx {
-            0 => 100,
-            1 => 320,
-            2 => 330,
-            3 => 500,
-            4 => 900,
-            _ => 10000,
-        }
+        PIECE_VALS_FOR_SEE[idx]
     }
 }

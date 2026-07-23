@@ -4,6 +4,8 @@ use crate::items::*;
 use crate::magics::{get_bishop_move_bits, get_rook_move_bits};
 use crate::zobrist::{CASTLING_KEYS, ENPASSANT_KEYS, SIDE_KEY, ZOBRIST_TABLE};
 
+const PIECE_VALS: [i32; 6] = [100, 320, 330, 500, 900, 0];
+
 #[inline]
 pub fn pop_lsb(bb: &mut u64) -> Option<usize> {
     if *bb == 0 {
@@ -676,16 +678,19 @@ impl Board {
         let (from_mask, to_mask) = (mask(from), mask(to));
         let piece = self.piece_on(from);
 
+        let mg = MG_TABLE.get().unwrap();
+        let eg = EG_TABLE.get().unwrap();
+
         debug_assert!(piece != Piece::NONE, "There ain't no piece in from");
 
         let sign = Piece::get_color_fac(piece);
         let p_idx = Piece::to_idx(piece);
 
-        self.mg_score -= sign * MG_TABLE.get().unwrap()[p_idx][from];
-        self.eg_score -= sign * EG_TABLE.get().unwrap()[p_idx][from];
+        self.mg_score -= sign * mg[p_idx][from];
+        self.eg_score -= sign * eg[p_idx][from];
 
-        self.mg_score += sign * MG_TABLE.get().unwrap()[p_idx][to];
-        self.eg_score += sign * EG_TABLE.get().unwrap()[p_idx][to];
+        self.mg_score += sign * mg[p_idx][to];
+        self.eg_score += sign * eg[p_idx][to];
 
         let piece_bb = self.mut_bb(piece);
         *piece_bb &= !from_mask;
@@ -1620,14 +1625,7 @@ impl Board {
     fn get_value(&self, piece: PieceInfo) -> i32 {
         let idx = Piece::to_idx(piece) % 6;
         // Piece indices: 0:P, 1:N, 2:B, 3:R, 4:Q, 5:K
-        match idx {
-            0 => 100,
-            1 => 320,
-            2 => 330,
-            3 => 500,
-            4 => 900,
-            _ => 0,
-        }
+        PIECE_VALS[idx]
     }
 
     fn init_pesto_score(&mut self) {
