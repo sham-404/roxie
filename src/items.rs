@@ -337,6 +337,14 @@ impl MoveList {
     }
 
     #[inline]
+    pub fn push_with_score(&mut self, mv: Move, score: i32) {
+        debug_assert!(self.len < MAX_MOVES);
+        self.moves[self.len] = mv;
+        self.score[self.len] = score;
+        self.len += 1;
+    }
+
+    #[inline]
     pub fn push(&mut self, mv: Move) {
         debug_assert!(self.len < MAX_MOVES);
         self.moves[self.len] = mv;
