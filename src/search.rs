@@ -3,6 +3,7 @@ use crate::{
     r#const::{BLACK_PAWN_ATTACKS, KING_ATTACKS, KNIGHT_ATTACKS, MAX_PLY, WHITE_PAWN_ATTACKS},
     engine::Engine,
     items::{Color, Move, MoveFlag, MoveList, Piece, PieceInfo},
+    move_pick::MovePicker,
     square::Square,
     tt::{TTEntry, TTFlag},
     uci::{GoControl, MAX_DEPTH},
@@ -84,7 +85,7 @@ impl Engine {
                 let orig_alpha = alpha;
                 let orig_beta = beta;
 
-                let mut move_list = self.board.gen_moves();
+                let move_list = self.board.gen_moves();
 
                 best_move = if move_list.len() != 0 {
                     move_list.get(0)
@@ -100,11 +101,15 @@ impl Engine {
                     tt_move = entry.best_move();
                 }
 
-                self.with_ordering(tt_move, Move::NULL, 0, &mut move_list);
-                for mv_idx in 0..move_list.len() {
-                    let mv = move_list.pick_move(mv_idx);
+                let mut picker = MovePicker::new(tt_move, [Move::NULL, Move::NULL], Move::NULL);
+                let mut mv_searched = 0;
+
+                while let Some(mv) = self.pick_next_mv(&mut picker) {
                     let undo = self.board.make_move(&mv);
                     self.update_nnue(&mv, &undo, 0);
+
+                    let mv_idx = mv_searched;
+                    mv_searched += 1;
 
                     // PV search //
                     // full window search on first move (tt_move)
@@ -373,7 +378,7 @@ impl Engine {
         }
         // NULL move pruning
 
-        let mut move_list = self.board.gen_moves();
+        let move_list = self.board.gen_moves();
         let original_alpha = alpha;
 
         // checking mates
@@ -389,9 +394,17 @@ impl Engine {
 
         // Actual searching loop
 
-        self.with_ordering(tt_move, prev_move, ply as usize, &mut move_list);
-        for mv_idx in 0..move_list.len() {
-            let mv = move_list.pick_move(mv_idx);
+        let mut picker = MovePicker::new(
+            tt_move,
+            self.killers[ply as usize],
+            prev_move,
+        );
+        let mut mv_searched = 0;
+
+        while let Some(mv) = self.pick_next_mv(&mut picker) {
+            let mv_idx = mv_searched;
+            mv_searched += 1;
+
             let flag = mv.flag();
             let is_quiet = flag.is_quiet();
 

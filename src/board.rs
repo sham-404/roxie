@@ -64,7 +64,7 @@ pub struct Board {
     mailbox: [PieceInfo; 64],
     castling: CastlingRights,
     side_to_move: Color,
-    en_passant: Option<u8>,
+    pub en_passant: Option<u8>,
     zobrist_key: u64,
     history: History,
     last_irreversible: usize,
@@ -1561,7 +1561,7 @@ impl Board {
         }
     }
 
-    fn gen_bishop_moves(&self, moves: &mut MoveList) {
+    pub fn gen_bishop_moves(&self, moves: &mut MoveList) {
         let own_occ = self.occ(&self.side_to_move);
         let enemy_occ = self.occ(&self.side_to_move.opponent());
         let all_occ = self.all_occ();
@@ -1593,7 +1593,7 @@ impl Board {
         }
     }
 
-    fn gen_rook_moves(&self, moves: &mut MoveList) {
+    pub fn gen_rook_moves(&self, moves: &mut MoveList) {
         let own_occ = self.occ(&self.side_to_move);
         let enemy_occ = self.occ(&self.side_to_move.opponent());
         let all_occ = self.all_occ();
@@ -1625,7 +1625,7 @@ impl Board {
         }
     }
 
-    fn gen_queen_moves(&self, moves: &mut MoveList) {
+    pub fn gen_queen_moves(&self, moves: &mut MoveList) {
         let own_occ = self.occ(&self.side_to_move);
         let enemy_occ = self.occ(&self.side_to_move.opponent());
         let all_occ = self.all_occ();
