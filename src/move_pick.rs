@@ -111,12 +111,12 @@ impl Board {
 
         let mut moves = MoveList::new();
         match Piece::get_type(piece) {
-            Piece::PAWN => self.gen_pawn_moves(&mut moves),
-            Piece::KNIGHT => self.gen_knight_moves(&mut moves),
-            Piece::BISHOP => self.gen_bishop_moves(&mut moves),
-            Piece::ROOK => self.gen_rook_moves(&mut moves),
-            Piece::QUEEN => self.gen_queen_moves(&mut moves),
-            Piece::KING => self.gen_king_moves(&mut moves),
+            Piece::PAWN => self.gen_pawn_moves_from_sq(from, &mut moves),
+            Piece::KNIGHT => self.gen_knight_moves_from_sq(from, &mut moves),
+            Piece::BISHOP => self.gen_bishop_moves_from_sq(from, &mut moves),
+            Piece::ROOK => self.gen_rook_moves_from_sq(from, &mut moves),
+            Piece::QUEEN => self.gen_queen_moves_from_sq(from, &mut moves),
+            Piece::KING => self.gen_king_moves_from_sq(from, &mut moves),
             _ => unreachable!("how did you reach here brotha?"),
         }
 
@@ -249,8 +249,10 @@ impl Engine {
 
                         score +=
                             self.history[self.board.side_to_move().val()][mv.from()][mv.to()] << 6;
-                        score +=
-                            (self.continuation_history.get(&self.board, picker.prev_mv, mv) << 6) as i32;
+                        score += (self
+                            .continuation_history
+                            .get(&self.board, picker.prev_mv, mv)
+                            << 6) as i32;
                         picker.moves.score[i] = score;
                     }
 

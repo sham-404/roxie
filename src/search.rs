@@ -378,13 +378,8 @@ impl Engine {
         }
         // NULL move pruning
 
-        let move_list = self.board.gen_moves();
         let original_alpha = alpha;
 
-        // checking mates
-        if move_list.len() == 0 {
-            return if in_check { -MATE + ply as i16 } else { 0 };
-        }
 
         let mut max_eval = -INF;
         let mut best_move_this_node = Move::NULL;
@@ -394,11 +389,7 @@ impl Engine {
 
         // Actual searching loop
 
-        let mut picker = MovePicker::new(
-            tt_move,
-            self.killers[ply as usize],
-            prev_move,
-        );
+        let mut picker = MovePicker::new(tt_move, self.killers[ply as usize], prev_move);
         let mut mv_searched = 0;
 
         while let Some(mv) = self.pick_next_mv(&mut picker) {
@@ -543,6 +534,11 @@ impl Engine {
 
                 break;
             }
+        }
+
+        // checking mates
+        if mv_searched == 0 {
+            return if in_check { -MATE + ply as i16 } else { 0 };
         }
 
         let flag = if fail_high {
