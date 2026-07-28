@@ -101,7 +101,8 @@ impl Engine {
                     tt_move = entry.best_move();
                 }
 
-                let mut picker = MovePicker::new(tt_move, [Move::NULL, Move::NULL], Move::NULL);
+                let mut picker =
+                    MovePicker::new(tt_move, [Move::NULL, Move::NULL], Move::NULL, false);
                 let mut mv_searched = 0;
 
                 while let Some(mv) = self.pick_next_mv(&mut picker) {
@@ -380,7 +381,6 @@ impl Engine {
 
         let original_alpha = alpha;
 
-
         let mut max_eval = -INF;
         let mut best_move_this_node = Move::NULL;
         let mut fail_high = false;
@@ -389,7 +389,7 @@ impl Engine {
 
         // Actual searching loop
 
-        let mut picker = MovePicker::new(tt_move, self.killers[ply as usize], prev_move);
+        let mut picker = MovePicker::new(tt_move, self.killers[ply as usize], prev_move, false);
         let mut mv_searched = 0;
 
         while let Some(mv) = self.pick_next_mv(&mut picker) {
@@ -405,15 +405,14 @@ impl Engine {
 
                 // late move pruning //
                 let is_non_pv = alpha + 1 == beta;
-                let lmp_threshold = 3 + (depth * depth) as usize / 3;
+                let lmp_threshold = 3 + (depth * depth) as usize;
 
                 // disabled currently!
                 if is_non_pv
                     && false
-                    && !in_check
                     && depth <= 5
+                    && !in_check
                     && quiet_searched > lmp_threshold
-                    && !self.killers[ply as usize].contains(&mv)
                 {
                     continue;
                 }
@@ -864,24 +863,31 @@ impl Engine {
             }
         }
 
-        let mut move_list = if in_check {
+        let qsearch_picker = if in_check {
             let mv_list = self.board.gen_moves();
             if mv_list.len() == 0 {
                 let score = -MATE + ply as i16;
                 self.q_tt_store(TTFlag::Exact, score, Move::NULL, ply);
                 return score;
             }
-            mv_list
+            false
         } else {
-            self.board.gen_cap_moves()
+            true
         };
 
         let orig_alpha = alpha;
         let mut best_move_this_node = Move::NULL;
 
-        self.with_ordering(tt_move, prev_move, ply as usize, &mut move_list);
-        for mv_idx in 0..move_list.len() {
-            let mv = move_list.pick_move(mv_idx);
+        let mut picker = MovePicker::new(
+            tt_move,
+            self.killers[ply as usize],
+            prev_move,
+            qsearch_picker,
+        );
+        let mut mv_searched = 0;
+
+        while let Some(mv) = self.pick_next_mv(&mut picker) {
+            mv_searched += 1;
             if !in_check && !mv.flag().is_promo() {
                 // soft delta pruning (see pruning) //
                 if self.board.see(&mv) < 0 && !self.board.gives_check(mv) {
@@ -939,6 +945,12 @@ impl Engine {
             if score > alpha {
                 alpha = score;
             }
+        }
+
+        if !qsearch_picker && mv_searched == 0 {
+            let score = -MATE + ply as i16;
+            self.q_tt_store(TTFlag::Exact, score, Move::NULL, ply);
+            return score;
         }
 
         let flag = if best_score <= orig_alpha {

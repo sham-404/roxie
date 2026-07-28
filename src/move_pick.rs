@@ -133,6 +133,7 @@ pub struct MovePicker {
     tt_move: Move,
     killers: [Move; 2],
     prev_mv: Move,
+    qsearch_picker: bool,
 
     moves: MoveList,
     mv_idx: usize,
@@ -141,12 +142,13 @@ pub struct MovePicker {
 }
 
 impl MovePicker {
-    pub fn new(tt_move: Move, killers: [Move; 2], prev_mv: Move) -> Self {
+    pub fn new(tt_move: Move, killers: [Move; 2], prev_mv: Move, qsearch_picker: bool) -> Self {
         Self {
             phase: Phase::TTMove,
             tt_move,
             killers,
             prev_mv,
+            qsearch_picker,
             moves: MoveList::new(),
             mv_idx: 0,
             bad_captures: MoveList::new(),
@@ -200,6 +202,10 @@ impl Engine {
                     }
 
                     // all captures were processed
+                    if picker.qsearch_picker { // skipping the bad captures too
+                        return None;
+                    }
+
                     picker.phase = Phase::Killers;
                     picker.mv_idx = 0;
                 }
