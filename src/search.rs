@@ -3,8 +3,8 @@ use crate::{
     r#const::{BLACK_PAWN_ATTACKS, KING_ATTACKS, KNIGHT_ATTACKS, MAX_PLY, WHITE_PAWN_ATTACKS},
     engine::Engine,
     items::{Color, Move, MoveFlag, MoveList, Piece, PieceInfo},
+    magics::{get_bishop_move_bits, get_rook_move_bits},
     move_pick::MovePicker,
-    square::Square,
     tt::{TTEntry, TTFlag},
     uci::{GoControl, MAX_DEPTH},
     uci_print,
@@ -184,6 +184,15 @@ impl Engine {
 
                 // aspiration failed low
                 if best_score <= orig_alpha {
+                    self.tt.store(TTEntry {
+                        key: self.board.get_zob_key(),
+                        depth: d,
+                        score: best_score as i32,
+                        flag: TTFlag::UpperBound,
+                        best_move,
+                        age: self.tt.get_generation(),
+                    });
+
                     alpha = (orig_alpha as i32 - delta).max(-INF as i32) as i16;
                     beta = orig_beta;
                     delta = (delta * 2).min(INF as i32); // clamp delta
@@ -287,6 +296,11 @@ impl Engine {
             return alpha;
         }
         // Mate Distance Pruning //
+
+        // checking if maximum ply is reached
+        if ply + 1 >= MAX_PLY as i32 {
+            return self.evaluate(ply as usize);
+        }
 
         // Checking draws
         if self.board.is_threefold() || self.board.is_50_rule() {
@@ -408,12 +422,7 @@ impl Engine {
                 let lmp_threshold = 3 + (depth * depth) as usize;
 
                 // disabled currently!
-                if is_non_pv
-                    && false
-                    && depth <= 5
-                    && !in_check
-                    && quiet_searched > lmp_threshold
-                {
+                if false && is_non_pv && depth <= 5 && !in_check && quiet_searched > lmp_threshold {
                     continue;
                 }
                 // late move pruning //
@@ -798,6 +807,17 @@ impl Engine {
         }
         // Mate Distance Pruning //
 
+        // max ply checking
+        if ply + 1 >= MAX_PLY as i32 {
+            return self.evaluate(ply as usize);
+        }
+
+
+        // Checking draws
+        if self.board.is_threefold() || self.board.is_50_rule() {
+            return 0;
+        }
+
         let mut tt_move = Move::NULL;
         let mut tt_score = None;
         let mut tt_flag = None;
@@ -863,18 +883,7 @@ impl Engine {
             }
         }
 
-        let qsearch_picker = if in_check {
-            let mv_list = self.board.gen_moves();
-            if mv_list.len() == 0 {
-                let score = -MATE + ply as i16;
-                self.q_tt_store(TTFlag::Exact, score, Move::NULL, ply);
-                return score;
-            }
-            false
-        } else {
-            true
-        };
-
+        let qsearch_picker = !in_check;
         let orig_alpha = alpha;
         let mut best_move_this_node = Move::NULL;
 
@@ -1383,57 +1392,46 @@ impl Board {
     fn attacks_to(&self, to_pos: usize, all_occ: u64) -> u64 {
         let mut attackers = 0u64;
 
-        // Sliding pieces
-        let directions = [
-            ([(1, 1), (1, -1), (-1, 1), (-1, -1)], true), // diagonals
-            ([(1, 0), (-1, 0), (0, 1), (0, -1)], false),  // straight
-        ];
-        let from = Square::new(to_pos);
+        let king = Piece::KING;
+        let queen = Piece::QUEEN;
+        let rook = Piece::ROOK;
+        let bishop = Piece::BISHOP;
+        let knight = Piece::KNIGHT;
+        let pawn = Piece::PAWN;
 
-        for (dir, is_diag) in directions {
-            for (dr, df) in dir {
-                let mut sq = from;
+        let white = Piece::WHITE;
+        let black = Piece::BLACK;
 
-                while let Some(next) = sq.offset(dr, df) {
-                    let to_bb = mask(next.index());
+        // bishop or queen is attacking
+        let diag_atks = get_bishop_move_bits(to_pos, all_occ);
+        attackers |= diag_atks
+            & (self.bb(white | bishop)
+                | self.bb(black | bishop)
+                | self.bb(white | queen)
+                | self.bb(black | queen))
+            & all_occ;
 
-                    // Some piece is blocking our way
-                    if to_bb & all_occ != 0 {
-                        let piece = self.piece_on(next.index());
-                        let piece_type = Piece::get_type(piece);
-                        if piece_type == Piece::QUEEN
-                            || (piece_type == Piece::BISHOP && is_diag)
-                            || (piece_type == Piece::ROOK && !is_diag)
-                        {
-                            attackers |= to_bb;
-                        }
-
-                        // accumulate attackers if the blocking piece is an enemy rook,
-                        // bishop or a queen, else break the loop as we have
-                        // been blocked by our own piece, or an non sliding
-                        // enemy piece
-
-                        break;
-                    }
-                    sq = next;
-                }
-            }
-        }
+        // rook or queen is attacking
+        let straight_atk = get_rook_move_bits(to_pos, all_occ);
+        attackers |= straight_atk
+            & (self.bb(white | rook)
+                | self.bb(black | rook)
+                | self.bb(white | queen)
+                | self.bb(black | queen))
+            & all_occ;
 
         //knight is attacking
-        attackers |= KNIGHT_ATTACKS[to_pos]
-            & (self.bb(Piece::WHITE | Piece::KNIGHT) | self.bb(Piece::BLACK | Piece::KNIGHT))
-            & all_occ;
+        attackers |=
+            KNIGHT_ATTACKS[to_pos] & (self.bb(white | knight) | self.bb(black | knight)) & all_occ;
 
         // King attacks
-        attackers |= KING_ATTACKS[to_pos]
-            & (self.bb(Piece::WHITE | Piece::KING) | self.bb(Piece::BLACK | Piece::KING))
-            & all_occ;
+        attackers |=
+            KING_ATTACKS[to_pos] & (self.bb(white | king) | self.bb(black | king)) & all_occ;
 
         // if a opp pawn is in cur color pawn's attacking sq, then
         // the opponent pawn is attacking the current sq
-        attackers |= WHITE_PAWN_ATTACKS[to_pos] & self.bb(Piece::BLACK | Piece::PAWN) & all_occ;
-        attackers |= BLACK_PAWN_ATTACKS[to_pos] & self.bb(Piece::WHITE | Piece::PAWN) & all_occ;
+        attackers |= WHITE_PAWN_ATTACKS[to_pos] & self.bb(black | pawn) & all_occ;
+        attackers |= BLACK_PAWN_ATTACKS[to_pos] & self.bb(white | pawn) & all_occ;
 
         attackers
     }
