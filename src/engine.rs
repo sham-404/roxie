@@ -4,7 +4,8 @@ use crate::{
     items::{Move, Piece},
     network::{EvalBuf, HL1},
     search::MAX_HISTORY,
-    tt::TranspositionTable, uci_print,
+    tt::TranspositionTable,
+    uci_print,
 };
 
 pub struct Engine {
