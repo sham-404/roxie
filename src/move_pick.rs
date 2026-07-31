@@ -154,6 +154,12 @@ impl MovePicker {
             bad_captures: MoveList::new(),
         }
     }
+
+    pub fn skip_quiets(&mut self) {
+        if self.phase == Phase::Quiets {
+            self.phase = Phase::BadCaptures;
+        }
+    }
 }
 
 impl Engine {

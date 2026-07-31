@@ -10,6 +10,9 @@ All notable changes to Roxie are documented in this file.
 - gen_quiet_moves() and gen_tactical_moves() were added to help the search become faster
 - Added MovePicker, replacing the total move generation and move ordering at once
 - optimized move generation functions, and introduced helpers to get the moves of a single piece 
+- Added EvalHistory for lmp, and enabled lmp (Late Move Pruning) after a long time
+
+---
 
 ## v0.6.3
 

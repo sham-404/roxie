@@ -363,6 +363,8 @@ impl Engine {
         let in_check = self.board.in_check();
         let static_eval = self.evaluate(ply as usize); // static evaluation
 
+        self.eval_history.store(static_eval, in_check, ply as usize);
+
         // Reverse Futility Pruning (Static Null Move Pruning) //
         if !in_check && depth <= 4 && beta.abs() < MATE - MAX_PLY as i16 {
             info.stats.rfp_attempts += 1;
@@ -419,11 +421,23 @@ impl Engine {
 
                 // late move pruning //
                 let is_non_pv = alpha + 1 == beta;
-                let lmp_threshold = 3 + (depth * depth) as usize;
+                let mut lmp_threshold = 3 + (depth * depth) as usize;
+                let is_improving =
+                    self.eval_history
+                        .is_improving(static_eval, in_check, ply as usize);
 
-                // disabled currently!
-                if false && is_non_pv && depth <= 5 && !in_check && quiet_searched > lmp_threshold {
-                    continue;
+                if !is_improving {
+                    lmp_threshold /= 2;
+                }
+
+                if is_non_pv && depth <= 5 && !in_check {
+                    info.stats.lmp_attempts += 1;
+
+                    if quiet_searched > lmp_threshold {
+                        info.stats.lmp_prunes += 1;
+                        picker.skip_quiets();
+                        continue;
+                    }
                 }
                 // late move pruning //
             } else {
@@ -437,9 +451,11 @@ impl Engine {
                     && flag.is_capture()
                     && !self.board.gives_check(mv)
                 {
+                    info.stats.see_prune_attempts += 1;
                     let margin = depth as i32 * 80;
 
                     if self.board.see(&mv) < -margin {
+                        info.stats.see_prunes_happened += 1;
                         continue;
                     }
                 }
@@ -805,13 +821,12 @@ impl Engine {
         if alpha >= beta {
             return alpha;
         }
-        // Mate Distance Pruning //
 
+        // Mate Distance Pruning //
         // max ply checking
         if ply + 1 >= MAX_PLY as i32 {
             return self.evaluate(ply as usize);
         }
-
 
         // Checking draws
         if self.board.is_threefold() || self.board.is_50_rule() {
@@ -1108,6 +1123,12 @@ pub struct SearchStats {
     pub lmr_attempts: usize,
     pub lmr_research: usize,
 
+    pub lmp_attempts: usize,
+    pub lmp_prunes: usize,
+
+    pub see_prune_attempts: usize,
+    pub see_prunes_happened: usize,
+
     pub rfp_attempts: usize,
     pub rfp_cutoffs: usize,
 
@@ -1131,6 +1152,12 @@ impl SearchStats {
             lmr_attempts: 0,
             lmr_research: 0,
 
+            lmp_attempts: 0,
+            lmp_prunes: 0,
+
+            see_prune_attempts: 0,
+            see_prunes_happened: 0,
+
             rfp_attempts: 0,
             rfp_cutoffs: 0,
 
@@ -1152,6 +1179,12 @@ impl SearchStats {
 
         println!("LMR attempted: {}", self.lmr_attempts);
         println!("LMR researched: {}", self.lmr_research);
+
+        println!("LMP attempted: {}", self.lmp_attempts);
+        println!("LMP pruned: {}", self.lmp_prunes);
+
+        println!("SEE attempted: {}", self.see_prune_attempts);
+        println!("SEE pruned: {}", self.see_prunes_happened);
 
         println!("RFP attempted: {}", self.rfp_attempts);
         println!("RFP cutoffs: {}", self.rfp_cutoffs);
