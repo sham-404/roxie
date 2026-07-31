@@ -14,6 +14,7 @@ pub struct Engine {
     pub history: [[[i32; 64]; 64]; 2],
     pub continuation_history: ContinuationHistory,
     pub counter_moves: CountermoveTable,
+    pub eval_history: EvalHistory,
     pub killers: [[Move; 2]; MAX_PLY],
     pub eval_buf: EvalBuf,
     pub accumulators: [[[i32; HL1]; 2]; MAX_PLY],
@@ -27,6 +28,7 @@ impl Engine {
             history: [[[0; 64]; 64]; 2],
             continuation_history: ContinuationHistory::new(),
             counter_moves: CountermoveTable::new(),
+            eval_history: EvalHistory::new(),
             killers: [[Move::NULL; 2]; MAX_PLY],
             eval_buf: EvalBuf::new(),
             accumulators: [[[0i32; HL1]; 2]; MAX_PLY],
@@ -116,5 +118,51 @@ impl ContinuationHistory {
         let new_val = (cur_val as i32) + bonus - (cur_val as i32 * bonus.abs() / MAX_HISTORY);
 
         self.table[prev_idx][cur_idx] = new_val.clamp(-MAX_HISTORY, MAX_HISTORY) as i16;
+    }
+}
+
+pub struct EvalHistory {
+    evals: [i16; MAX_PLY],
+    checks: [bool; MAX_PLY],
+}
+
+impl EvalHistory {
+    pub fn new() -> Self {
+        Self {
+            evals: [0; MAX_PLY],
+            checks: [false; MAX_PLY],
+        }
+    }
+
+    #[inline]
+    pub fn store(&mut self, score: i16, in_check: bool, ply: usize) {
+        self.evals[ply] = score;
+        self.checks[ply] = in_check;
+    }
+
+    #[inline]
+    pub fn is_improving(&self, current_eval: i16, in_check: bool, ply: usize) -> bool {
+        if in_check {
+            return false;
+        }
+
+        if ply >= 2 {
+            let mut past_ply = ply - 2;
+
+            // If we were in check last turn, then check the next previous round, (ply - 4)
+            if past_ply >= 2 && self.checks[past_ply] {
+                past_ply -= 2;
+            }
+
+            return current_eval > self.evals[past_ply];
+        }
+
+        true // true for first 2 plies btw
+    }
+
+    #[inline]
+    pub fn clear(&mut self) {
+        self.evals = [0; MAX_PLY];
+        self.checks = [false; MAX_PLY];
     }
 }
