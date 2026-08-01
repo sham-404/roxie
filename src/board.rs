@@ -1312,21 +1312,22 @@ impl Board {
 
         let mut bb = self.bb(king);
 
+        let to_move = self.side_to_move;
+        let occ = self.occ(&to_move);
+        let opp_occ = self.occ(&to_move.opponent());
+
         while let Some(from) = pop_lsb(&mut bb) {
-            let to_move = &self.side_to_move;
-            let occ = self.occ(to_move);
+            let attacks = KING_ATTACKS[from] & !occ;
 
-            let mut atk = KING_ATTACKS[from] & !occ;
+            let mut captures = attacks & opp_occ;
+            let mut quiets = attacks & !opp_occ;
 
-            while let Some(to) = pop_lsb(&mut atk) {
-                let flag = if (1 << to) & self.occ(&self.side_to_move.opponent()) != 0 {
-                    MoveFlag::CAPTURE
-                } else {
-                    MoveFlag::QUIET
-                };
+            while let Some(to) = pop_lsb(&mut captures) {
+                moves.push(Move::new(from, to, MoveFlag::CAPTURE));
+            }
 
-                let mv = Move::new(from, to, flag);
-                moves.push(mv);
+            while let Some(to) = pop_lsb(&mut quiets) {
+                moves.push(Move::new(from, to, MoveFlag::QUIET));
             }
         }
     }
@@ -1342,21 +1343,22 @@ impl Board {
 
         let mut bb = self.bb(knight);
 
+        let to_move = self.side_to_move;
+        let occ = self.occ(&to_move);
+        let opp_occ = self.occ(&to_move.opponent());
+
         while let Some(from) = pop_lsb(&mut bb) {
-            let to_move = &self.side_to_move;
-            let occ = self.occ(to_move);
+            let attacks = KNIGHT_ATTACKS[from] & !occ;
 
-            let mut atk = KNIGHT_ATTACKS[from] & !occ;
+            let mut captures = attacks & opp_occ;
+            let mut quiets = attacks & !opp_occ;
 
-            while let Some(to) = pop_lsb(&mut atk) {
-                let flag = if (1 << to) & self.occ(&self.side_to_move.opponent()) != 0 {
-                    MoveFlag::CAPTURE
-                } else {
-                    MoveFlag::QUIET
-                };
+            while let Some(to) = pop_lsb(&mut captures) {
+                moves.push(Move::new(from, to, MoveFlag::CAPTURE));
+            }
 
-                let mv = Move::new(from, to, flag);
-                moves.push(mv);
+            while let Some(to) = pop_lsb(&mut quiets) {
+                moves.push(Move::new(from, to, MoveFlag::QUIET));
             }
         }
     }
@@ -1482,20 +1484,18 @@ impl Board {
         let bishop = color | Piece::BISHOP;
         let mut bb = self.bb(bishop);
 
-        while let Some(from_idx) = pop_lsb(&mut bb) {
-            let mut move_bb = get_bishop_move_bits(from_idx, all_occ) & !own_occ;
+        while let Some(from) = pop_lsb(&mut bb) {
+            let attacks = get_bishop_move_bits(from, all_occ) & !own_occ;
 
-            while let Some(next) = pop_lsb(&mut move_bb) {
-                let to_bb = mask(next);
+            let mut captures = attacks & enemy_occ;
+            let mut quiets = attacks & !enemy_occ;
 
-                let flag = if to_bb & enemy_occ != 0 {
-                    MoveFlag::CAPTURE
-                } else {
-                    MoveFlag::QUIET
-                };
+            while let Some(to) = pop_lsb(&mut captures) {
+                moves.push(Move::new(from, to, MoveFlag::CAPTURE));
+            }
 
-                let mv = Move::new(from_idx, next, flag);
-                moves.push(mv);
+            while let Some(to) = pop_lsb(&mut quiets) {
+                moves.push(Move::new(from, to, MoveFlag::QUIET));
             }
         }
     }
@@ -1514,20 +1514,18 @@ impl Board {
         let rook = color | Piece::ROOK;
         let mut bb = self.bb(rook);
 
-        while let Some(from_idx) = pop_lsb(&mut bb) {
-            let mut move_bb = get_rook_move_bits(from_idx, all_occ) & !own_occ;
+        while let Some(from) = pop_lsb(&mut bb) {
+            let attacks = get_rook_move_bits(from, all_occ) & !own_occ;
 
-            while let Some(next) = pop_lsb(&mut move_bb) {
-                let to_bb = mask(next);
+            let mut captures = attacks & enemy_occ;
+            let mut quiets = attacks & !enemy_occ;
 
-                let flag = if to_bb & enemy_occ != 0 {
-                    MoveFlag::CAPTURE
-                } else {
-                    MoveFlag::QUIET
-                };
+            while let Some(to) = pop_lsb(&mut captures) {
+                moves.push(Move::new(from, to, MoveFlag::CAPTURE));
+            }
 
-                let mv = Move::new(from_idx, next, flag);
-                moves.push(mv);
+            while let Some(to) = pop_lsb(&mut quiets) {
+                moves.push(Move::new(from, to, MoveFlag::QUIET));
             }
         }
     }
@@ -1546,22 +1544,19 @@ impl Board {
         let queen = color | Piece::QUEEN;
         let mut bb = self.bb(queen);
 
-        while let Some(from_idx) = pop_lsb(&mut bb) {
-            let mut move_bb = (get_rook_move_bits(from_idx, all_occ)
-                | get_bishop_move_bits(from_idx, all_occ))
+        while let Some(from) = pop_lsb(&mut bb) {
+            let attacks = (get_rook_move_bits(from, all_occ) | get_bishop_move_bits(from, all_occ))
                 & !own_occ;
 
-            while let Some(next) = pop_lsb(&mut move_bb) {
-                let to_bb = mask(next);
+            let mut captures = attacks & enemy_occ;
+            let mut quiets = attacks & !enemy_occ;
 
-                let flag = if to_bb & enemy_occ != 0 {
-                    MoveFlag::CAPTURE
-                } else {
-                    MoveFlag::QUIET
-                };
+            while let Some(to) = pop_lsb(&mut captures) {
+                moves.push(Move::new(from, to, MoveFlag::CAPTURE));
+            }
 
-                let mv = Move::new(from_idx, next, flag);
-                moves.push(mv);
+            while let Some(to) = pop_lsb(&mut quiets) {
+                moves.push(Move::new(from, to, MoveFlag::QUIET));
             }
         }
     }
@@ -1615,19 +1610,19 @@ impl Board {
     pub fn gen_king_moves_from_sq(&self, from: usize, moves: &mut MoveList) {
         let to_move = &self.side_to_move;
         let occ = self.occ(to_move);
-        let enemy_occ = self.occ(&to_move.opponent());
+        let opp_occ = self.occ(&to_move.opponent());
 
-        let mut atk = KING_ATTACKS[from] & !occ;
+        let attacks = KING_ATTACKS[from] & !occ;
 
-        while let Some(to) = pop_lsb(&mut atk) {
-            let flag = if mask(to) & enemy_occ != 0 {
-                MoveFlag::CAPTURE
-            } else {
-                MoveFlag::QUIET
-            };
+        let mut captures = attacks & opp_occ;
+        let mut quiets = attacks & !opp_occ;
 
-            let mv = Move::new(from, to, flag);
-            moves.push(mv);
+        while let Some(to) = pop_lsb(&mut captures) {
+            moves.push(Move::new(from, to, MoveFlag::CAPTURE));
+        }
+
+        while let Some(to) = pop_lsb(&mut quiets) {
+            moves.push(Move::new(from, to, MoveFlag::QUIET));
         }
     }
 
@@ -1636,18 +1631,18 @@ impl Board {
         let enemy_occ = self.occ(&self.side_to_move.opponent());
         let all_occ = self.all_occ();
 
-        let mut move_bb =
+        let attacks =
             (get_rook_move_bits(from, all_occ) | get_bishop_move_bits(from, all_occ)) & !own_occ;
 
-        while let Some(to) = pop_lsb(&mut move_bb) {
-            let flag = if mask(to) & enemy_occ != 0 {
-                MoveFlag::CAPTURE
-            } else {
-                MoveFlag::QUIET
-            };
+        let mut captures = attacks & enemy_occ;
+        let mut quiets = attacks & !enemy_occ;
 
-            let mv = Move::new(from, to, flag);
-            moves.push(mv);
+        while let Some(to) = pop_lsb(&mut captures) {
+            moves.push(Move::new(from, to, MoveFlag::CAPTURE));
+        }
+
+        while let Some(to) = pop_lsb(&mut quiets) {
+            moves.push(Move::new(from, to, MoveFlag::QUIET));
         }
     }
 
@@ -1656,17 +1651,17 @@ impl Board {
         let enemy_occ = self.occ(&self.side_to_move.opponent());
         let all_occ = self.all_occ();
 
-        let mut move_bb = get_rook_move_bits(from, all_occ) & !own_occ;
+        let attacks = get_rook_move_bits(from, all_occ) & !own_occ;
 
-        while let Some(to) = pop_lsb(&mut move_bb) {
-            let flag = if mask(to) & enemy_occ != 0 {
-                MoveFlag::CAPTURE
-            } else {
-                MoveFlag::QUIET
-            };
+        let mut captures = attacks & enemy_occ;
+        let mut quiets = attacks & !enemy_occ;
 
-            let mv = Move::new(from, to, flag);
-            moves.push(mv);
+        while let Some(to) = pop_lsb(&mut captures) {
+            moves.push(Move::new(from, to, MoveFlag::CAPTURE));
+        }
+
+        while let Some(to) = pop_lsb(&mut quiets) {
+            moves.push(Move::new(from, to, MoveFlag::QUIET));
         }
     }
 
@@ -1675,36 +1670,36 @@ impl Board {
         let enemy_occ = self.occ(&self.side_to_move.opponent());
         let all_occ = self.all_occ();
 
-        let mut move_bb = get_bishop_move_bits(from, all_occ) & !own_occ;
+        let attacks = get_bishop_move_bits(from, all_occ) & !own_occ;
 
-        while let Some(to) = pop_lsb(&mut move_bb) {
-            let flag = if mask(to) & enemy_occ != 0 {
-                MoveFlag::CAPTURE
-            } else {
-                MoveFlag::QUIET
-            };
+        let mut captures = attacks & enemy_occ;
+        let mut quiets = attacks & !enemy_occ;
 
-            let mv = Move::new(from, to, flag);
-            moves.push(mv);
+        while let Some(to) = pop_lsb(&mut captures) {
+            moves.push(Move::new(from, to, MoveFlag::CAPTURE));
+        }
+
+        while let Some(to) = pop_lsb(&mut quiets) {
+            moves.push(Move::new(from, to, MoveFlag::QUIET));
         }
     }
 
     pub fn gen_knight_moves_from_sq(&self, from: usize, moves: &mut MoveList) {
         let to_move = &self.side_to_move;
         let occ = self.occ(to_move);
-        let enemy_occ = self.occ(&to_move.opponent());
+        let opp_occ = self.occ(&to_move.opponent());
 
-        let mut atk = KNIGHT_ATTACKS[from] & !occ;
+        let attacks = KNIGHT_ATTACKS[from] & !occ;
 
-        while let Some(to) = pop_lsb(&mut atk) {
-            let flag = if mask(to) & enemy_occ != 0 {
-                MoveFlag::CAPTURE
-            } else {
-                MoveFlag::QUIET
-            };
+        let mut captures = attacks & opp_occ;
+        let mut quiets = attacks & !opp_occ;
 
-            let mv = Move::new(from, to, flag);
-            moves.push(mv);
+        while let Some(to) = pop_lsb(&mut captures) {
+            moves.push(Move::new(from, to, MoveFlag::CAPTURE));
+        }
+
+        while let Some(to) = pop_lsb(&mut quiets) {
+            moves.push(Move::new(from, to, MoveFlag::QUIET));
         }
     }
 
