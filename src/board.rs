@@ -322,24 +322,7 @@ impl Board {
         //// Handling castling rights
         self.zobrist_key ^= castling_keys[self.castling.0 as usize]; // Remove old rights hash
 
-        if from == WK_START_POS {
-            self.castling.remove(WK | WQ);
-        }
-        if from == BK_START_POS {
-            self.castling.remove(BK | BQ);
-        }
-        if from == WK_START_POS + 3 || to == WK_START_POS + 3 {
-            self.castling.remove(WK);
-        }
-        if from == WK_START_POS - 4 || to == WK_START_POS - 4 {
-            self.castling.remove(WQ);
-        }
-        if from == BK_START_POS + 3 || to == BK_START_POS + 3 {
-            self.castling.remove(BK);
-        }
-        if from == BK_START_POS - 4 || to == BK_START_POS - 4 {
-            self.castling.remove(BQ);
-        }
+        self.castling.update(from, to);
 
         self.zobrist_key ^= castling_keys[self.castling.0 as usize]; // Add new rights hash
 

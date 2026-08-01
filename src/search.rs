@@ -123,6 +123,7 @@ impl Engine {
                                 ply: 1,
                                 extension: 0,
                                 prev_move: mv,
+                                excluded_move: Move::NULL,
                             },
                             &limits,
                             &mut info,
@@ -137,6 +138,7 @@ impl Engine {
                                 ply: 1,
                                 extension: 0,
                                 prev_move: mv,
+                                excluded_move: Move::NULL,
                             },
                             &limits,
                             &mut info,
@@ -152,6 +154,7 @@ impl Engine {
                                     ply: 1,
                                     extension: 0,
                                     prev_move: mv,
+                                    excluded_move: Move::NULL,
                                 },
                                 &limits,
                                 &mut info,
@@ -278,6 +281,7 @@ impl Engine {
             ply,
             extension,
             prev_move,
+            excluded_move,
         } = params;
 
         if info.abort {
@@ -310,36 +314,42 @@ impl Engine {
         // Probing the TT
         let key = self.board.get_zob_key();
         let mut tt_move = Move::NULL;
+        let mut tt_depth = 0;
+        let mut tt_score = 0;
+        let mut tt_flag = TTFlag::Exact;
+
         info.stats.tt_probes += 1;
 
         if let Some(entry) = self.tt.probe(key) {
             info.stats.tt_hits += 1;
 
             tt_move = entry.best_move();
-            let mut score = entry.score();
+            tt_depth = entry.depth();
+            tt_flag = entry.flag();
+            tt_score = entry.score();
 
             // De-adjust mate score
-            if entry.score() > MATE - MAX_PLY as i16 {
-                score -= ply as i16;
+            if tt_score > MATE - MAX_PLY as i16 {
+                tt_score -= ply as i16;
+            }
+            if tt_score < -MATE + MAX_PLY as i16 {
+                tt_score += ply as i16;
             }
 
-            if entry.score() < -MATE + MAX_PLY as i16 {
-                score += ply as i16;
-            }
-
-            if entry.depth() >= depth {
+            // ONLY return early if we are not in a singular search
+            if entry.depth() >= depth && params.excluded_move == Move::NULL {
                 match entry.flag() {
                     TTFlag::Exact => {
                         info.stats.tt_exact_cutoffs += 1;
-                        return score;
+                        return tt_score;
                     }
-                    TTFlag::LowerBound => alpha = alpha.max(score),
-                    TTFlag::UpperBound => beta = beta.min(score),
+                    TTFlag::LowerBound => alpha = alpha.max(tt_score),
+                    TTFlag::UpperBound => beta = beta.min(tt_score),
                 }
 
                 if alpha >= beta {
                     info.stats.tt_bound_cutoffs += 1;
-                    return score;
+                    return tt_score;
                 }
             }
         }
@@ -354,6 +364,7 @@ impl Engine {
                     ply,
                     extension,
                     prev_move,
+                    excluded_move,
                 },
                 info,
                 limits,
@@ -366,7 +377,11 @@ impl Engine {
         self.eval_history.store(static_eval, in_check, ply as usize);
 
         // Reverse Futility Pruning (Static Null Move Pruning) //
-        if !in_check && depth <= 4 && beta.abs() < MATE - MAX_PLY as i16 {
+        if !in_check
+            && depth <= 4
+            && beta.abs() < MATE - MAX_PLY as i16
+            && excluded_move == Move::NULL
+        {
             info.stats.rfp_attempts += 1;
 
             let margin = depth as i16 * 120; // 120 cp per depth as margin
@@ -387,6 +402,7 @@ impl Engine {
                 ply,
                 extension,
                 prev_move,
+                excluded_move,
             },
             limits,
             info,
@@ -394,6 +410,45 @@ impl Engine {
             return cutoff_score;
         }
         // NULL move pruning
+
+        //// Singular Extension
+        let mut se_extension = 0;
+
+        // Only trigger on high depths, when we aren't already doing a singular search,
+        // when we have a valid TT move, and when the TT depth is sufficient.
+        if depth >= 8
+            && tt_move != Move::NULL
+            && params.excluded_move == Move::NULL
+            && tt_depth >= depth - 3
+            && tt_flag != TTFlag::UpperBound // We need a reliable lower bound for the TT move
+            && tt_score.abs() < MATE - MAX_PLY as i16
+        // Don't extend mates
+        {
+            let singular_margin = depth as i16 * 2;
+            let singular_beta = (tt_score - singular_margin).max(-MATE);
+
+            // Zero-window search at reduced depth, excluding the TT move
+            let se_score = self.negamax(
+                SearchParams {
+                    depth: depth / 2, // Standard singular reduction
+                    alpha: singular_beta - 1,
+                    beta: singular_beta,
+                    ply,
+                    extension: 0,
+                    prev_move,
+                    excluded_move: tt_move, // exclude the TT move
+                },
+                limits,
+                info,
+            );
+
+            // If the search failed low, it means no other move can even reach
+            // the TT score minus the margin. Thus TT move is singular
+            if se_score < singular_beta {
+                se_extension = 1;
+            }
+        }
+        //// Singular Extension
 
         let original_alpha = alpha;
 
@@ -409,6 +464,10 @@ impl Engine {
         let mut mv_searched = 0;
 
         while let Some(mv) = self.pick_next_mv(&mut picker) {
+            if mv == excluded_move {
+                continue;
+            }
+
             let mv_idx = mv_searched;
             mv_searched += 1;
 
@@ -486,17 +545,25 @@ impl Engine {
             let undo = self.board.make_move(&mv);
             self.update_nnue(&mv, &undo, ply as usize);
 
+            // Taking account for extended depth for singular extention
+            let next_depth = if mv == tt_move {
+                depth + se_extension
+            } else {
+                depth
+            };
+
             let eval = self.pv_search(
                 mv,
                 mv_idx,
                 quiet_searched,
                 SearchParams {
-                    depth,
+                    depth: next_depth,
                     alpha,
                     beta,
                     ply,
                     extension,
                     prev_move,
+                    excluded_move: Move::NULL,
                 },
                 limits,
                 info,
@@ -582,7 +649,8 @@ impl Engine {
             score_to_store -= ply as i16;
         }
 
-        if !info.abort {
+        // dont store in the tt if excluded_move move has some move
+        if !info.abort && excluded_move == Move::NULL {
             self.tt.store(TTEntry {
                 key,
                 depth: depth,
@@ -607,11 +675,13 @@ impl Engine {
             beta,
             ply,
             extension,
+            excluded_move,
             ..
         } = params;
 
         // Conditions for NMP
         if depth > 3
+            && excluded_move == Move::NULL
             && !self.board.in_check()
             && !self.board.is_endgame()
             && self.evaluate(ply as usize) >= beta
@@ -631,6 +701,7 @@ impl Engine {
                     ply: ply + 1,
                     extension: extension,
                     prev_move: Move::NULL,
+                    excluded_move: Move::NULL,
                 },
                 limits,
                 info,
@@ -670,6 +741,7 @@ impl Engine {
             ply,
             extension,
             prev_move,
+            ..
         } = params;
 
         let in_check = self.board.in_check();
@@ -690,6 +762,7 @@ impl Engine {
                     ply: ply + 1,
                     extension: next_extensions,
                     prev_move: mv,
+                    excluded_move: Move::NULL,
                 },
                 limits,
                 info,
@@ -747,6 +820,7 @@ impl Engine {
                 ply: ply + 1,
                 extension: next_extensions,
                 prev_move: mv,
+                excluded_move: Move::NULL,
             },
             limits,
             info,
@@ -764,6 +838,7 @@ impl Engine {
                     ply: ply + 1,
                     extension: next_extensions,
                     prev_move: mv,
+                    excluded_move: Move::NULL,
                 },
                 limits,
                 info,
@@ -780,6 +855,7 @@ impl Engine {
                     ply: ply + 1,
                     extension: next_extensions,
                     prev_move: mv,
+                    excluded_move: Move::NULL,
                 },
                 limits,
                 info,
@@ -1111,6 +1187,7 @@ struct SearchParams {
     ply: i32,
     extension: u8,
     prev_move: Move,
+    excluded_move: Move,
 }
 
 #[derive(Clone, Copy)]

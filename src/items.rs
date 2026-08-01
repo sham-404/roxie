@@ -465,6 +465,20 @@ impl Color {
     }
 }
 
+pub const CASTLING_MASKS: [u8; 64] = {
+    let all_rights = WK | WQ | BK | BQ;
+    let mut masks = [all_rights; 64];
+
+    masks[(WK_START_POS - 4) as usize] = !WQ;
+    masks[WK_START_POS as usize] = !(WK | WQ);
+    masks[(WK_START_POS + 3) as usize] = !WK;
+    masks[(BK_START_POS - 4) as usize] = !BQ;
+    masks[BK_START_POS as usize] = !(BK | BQ);
+    masks[(BK_START_POS + 3) as usize] = !BK;
+
+    masks
+};
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct CastlingRights(pub u8);
 
@@ -507,5 +521,11 @@ impl CastlingRights {
     #[inline]
     pub fn add(&mut self, mask: u8) {
         self.0 |= mask;
+    }
+
+    // update castling rights based on from and to
+    #[inline]
+    pub fn update(&mut self, from: usize, to: usize) {
+        self.0 &= CASTLING_MASKS[from as usize] & CASTLING_MASKS[to as usize];
     }
 }
