@@ -12,6 +12,12 @@ All notable changes to Roxie are documented in this file.
 - optimized move generation functions, and introduced helpers to get the moves of a single piece 
 - Added EvalHistory for lmp, and enabled lmp (Late Move Pruning) after a long time
 
+### Improved
+- Reduced the if branching for quiets and captures for performance, but not so significant tho.
+
+### Fixed
+- see() is fixed with subtle, non significant issue
+
 ---
 
 ## v0.6.3
