@@ -1488,6 +1488,12 @@ impl Board {
         // Initial gain = captured piece
         gain[0] = self.get_see_value(target);
 
+        if mov.flag().is_promo() {
+            let promo_piece = mov.flag().get_promo_piece();
+            gain[0] += self.get_see_value(promo_piece) - self.get_see_value(Piece::PAWN);
+            cur_victim = promo_piece;
+        }
+
         // Simulated occupancy AFTER first capture
         let mut occ = self.all_occ();
         occ ^= mask(from); // piece moved from from_sq
@@ -1509,6 +1515,9 @@ impl Board {
 
             // SEE pruning
             if (-gain[d - 1]).max(gain[d]) < 0 {
+                // if we are pruning, then we are discarding this branch
+                // so no we have to reduce it by one depth
+                d -= 1;
                 break;
             }
 
