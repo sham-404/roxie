@@ -216,6 +216,17 @@ impl MoveFlag {
             _ => 0,
         }
     }
+
+    #[inline]
+    pub fn get_promo_piece(self) -> PieceInfo {
+        match self.0 & Self::PIECE_BIT {
+            Self::KNIGHT => Piece::KNIGHT,
+            Self::BISHOP => Piece::BISHOP,
+            Self::ROOK => Piece::ROOK,
+            Self::QUEEN => Piece::QUEEN,
+            _ => unreachable!("Not a promo piece brotha"),
+        }
+    }
 }
 
 use crate::r#const::SQ_TO_COORD;
