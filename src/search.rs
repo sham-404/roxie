@@ -307,7 +307,7 @@ impl Engine {
         }
 
         // Checking draws
-        if self.board.is_threefold() || self.board.is_50_rule() {
+        if self.board.is_repetition() || self.board.is_50_rule() {
             return 0;
         }
 
@@ -905,7 +905,7 @@ impl Engine {
         }
 
         // Checking draws
-        if self.board.is_threefold() || self.board.is_50_rule() {
+        if self.board.is_repetition() || self.board.is_50_rule() {
             return 0;
         }
 

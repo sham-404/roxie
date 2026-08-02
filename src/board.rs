@@ -579,14 +579,14 @@ impl Board {
         gives_check
     }
 
-    pub fn is_threefold(&self) -> bool {
+    pub fn is_repetition(&self) -> bool {
         let cur = self.zobrist_key;
         let mut count = 1;
 
         for i in (self.last_irreversible..self.history.len()).rev() {
             if self.history.get(i) == cur {
                 count += 1;
-                if count >= 3 {
+                if count >= 2 {
                     return true;
                 }
             }
@@ -597,6 +597,11 @@ impl Board {
 
     pub fn is_50_rule(&self) -> bool {
         self.halfmove_clock >= 100
+    }
+
+    #[inline]
+    pub fn halfmove_clock(&self) -> usize {
+        self.halfmove_clock
     }
 
     #[inline]
