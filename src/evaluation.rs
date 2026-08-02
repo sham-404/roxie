@@ -2,11 +2,14 @@ use std::sync::OnceLock;
 
 use crate::{
     board::{Board, pop_lsb},
-    r#const::{BLACK, BLACK_PASSED_MASKS, KING_ATTACKS, KNIGHT_ATTACKS, WHITE, WHITE_PASSED_MASKS},
+    r#const::{
+        BLACK, BLACK_PASSED_MASKS, KING_ATTACKS, KNIGHT_ATTACKS, MAX_PLY, WHITE, WHITE_PASSED_MASKS,
+    },
     engine::Engine,
     items::{Color, Piece},
     magics::{get_bishop_move_bits, get_rook_move_bits},
     network::{HL1, NETWORK},
+    search::MATE,
 };
 
 // const SCORE: [i32; 5] = [100, 320, 330, 500, 900];
@@ -588,11 +591,26 @@ fn king_safety_score(board: &Board) -> i32 {
     (score * (phase - king_safety_start_phase)) / (24 - king_safety_start_phase)
 }
 
+fn scaled_score_for_50_mv_rule(board: &Board, score: i32) -> i32 {
+    if score.abs() > MATE as i32 - MAX_PLY as i32 {
+        return score;
+    }
+
+    let halfmoves = board.halfmove_clock();
+
+    // scaling done when halfmove goes above 70
+    if halfmoves > 70 {
+        let remaining = 100 - halfmoves as i32;
+        let scale = (remaining * 100) / 30;
+
+        return score * scale / 100;
+    }
+    score
+}
+
 const TEMPO_BONUS: i32 = 10;
 impl Engine {
     pub fn evaluate(&mut self, ply: usize) -> i16 {
-        let mut score = 0;
-
         if let Some(nn) = NETWORK.get() {
             let mut acc = [0; HL1 * 2];
             match self.board.side_to_move() {
@@ -605,13 +623,18 @@ impl Engine {
                     acc[HL1..].copy_from_slice(&self.accumulators[ply][WHITE]);
                 }
             };
-            return nn.eval_hkp_with_acc(&mut self.eval_buf, &acc);
+
+            let score = nn.eval_hkp_with_acc(&mut self.eval_buf, &acc) as i32;
+            return scaled_score_for_50_mv_rule(&self.board, score) as i16;
         }
+
+        let mut score = 0;
 
         score += &self.board.get_pesto_score();
         score += mobility_score(&self.board);
         score += pawn_struct_score(&self.board);
         score += king_safety_score(&self.board);
+        score = scaled_score_for_50_mv_rule(&self.board, score);
 
         ((score + TEMPO_BONUS) * &self.board.side_to_move().fac()) as i16
     }
