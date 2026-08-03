@@ -62,6 +62,12 @@ python match.py <engine1> <engine2> [options]
   Output directory for results
   Default: `tests/results`
 
+* `--epd PATH_TO_EPD_FILE`
+  Uses provided .epd file to test the engine from a position
+
+* `--fen FEN_STRING`
+  Uses the given fen string as start position and match the engines
+
 ---
 
 ## 🧠 Behavior Notes
@@ -75,19 +81,21 @@ python match.py <engine1> <engine2> [options]
 ## 🧪 Examples
 
 ```bash
-# Compare two versions (recommended)
+# Compare two versions
 python match.py ./roxie_v0_2 ./roxie_v0_3 -n 100 --depth 1
 
-# Use time control (after search is implemented)
+# Use time control 
 python match.py ./roxie_v0_3 ./roxie_v0_4 -n 50 --tc 1+0.1
-
-# Roxie vs Stockfish benchmark
-python match.py ./roxie stockfish -n 20 --depth 1
 
 # Custom output directory
 python match.py ./roxie_v0_2 ./roxie_v0_3 -n 100 --depth 1 -o experiments/run1
-```
 
+# Test positions from an EPD file
+python match.py ./roxie stockfish -n 1 --epd tests/position.epd --tc 300+3
+
+# Test a single FEN position directly
+python match.py ./roxie stockfish -n 1 --fen "8/8/8/4k3/8/2B5/3N4/4K3 w - - 0 1" --tc 300+3
+```
 ---
 
 ## 📊 Output
@@ -124,10 +132,3 @@ This framework is used to:
 * Detect regressions
 
 ---
-
-## 🚀 Future Improvements
-
-* Elo calculation from match results
-* Strength progression graphs 📈
-* Opening books for better position variety
-* Parallel match execution
