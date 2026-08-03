@@ -37,6 +37,10 @@ def run_match(
     sprt,
     engine1_opts,
     engine2_opts,
+    openings_file,
+    openings_format,
+    openings_order,
+    openings_plies,
 ):
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -48,7 +52,11 @@ def run_match(
     e1_path = os.path.abspath(engine1)
     e2_path = os.path.abspath(engine2)
 
-    pgn_path = os.path.abspath(os.path.join(SCRIPT_DIR, "chess_moves.pgn"))
+    # Resolve openings path dynamically
+    if os.path.isabs(openings_file):
+        openings_path = openings_file
+    else:
+        openings_path = os.path.abspath(os.path.join(SCRIPT_DIR, openings_file))
 
     pgns_dir = resolve_outdir("pgns")
     os.makedirs(pgns_dir, exist_ok=True)
@@ -79,12 +87,19 @@ def run_match(
         mode = "time"
         mode_value = tc
 
+    # Dynamic Opening Configuration
     cmd += [
         "-openings",
-        f"file={pgn_path}",
-        "format=pgn",
-        "order=random",
-        "plies=10",
+        f"file={openings_path}",
+        f"format={openings_format}",
+        f"order={openings_order}",
+    ]
+    
+    # Only append plies if it's strictly > 0 (EPDs usually don't need plies)
+    if openings_plies > 0:
+        cmd.append(f"plies={openings_plies}")
+
+    cmd += [
         "-games",
         str(games),
         "-repeat",
@@ -143,8 +158,8 @@ def run_match(
             "mode": mode,
             "mode_value": mode_value,
             "concurrency": concurrency,
-            "opening_file": pgn_path,
-            "opening_plies": 10,
+            "opening_file": openings_path,
+            "opening_plies": openings_plies,
             "pgn_file": pgn_file,
             "result": {
                 "engine1_wins": summary["wins"],
@@ -207,24 +222,39 @@ def main():
     ap.add_argument("engine2")
 
     ap.add_argument("-n", "--games", type=int, default=200)
-
     ap.add_argument("--tc", default="0.1+0.01")
-
     ap.add_argument("--depth", type=int)
-
     ap.add_argument("-o", "--outdir", default="results")
-
     ap.add_argument("--save", action="store_true")
-
     ap.add_argument("-c", "--concurrency", type=int, default=1)
-
     ap.add_argument("--sprt", action="store_true")
-
     ap.add_argument("--engine1-opt", action="append", default=[])
-
     ap.add_argument("--engine2-opt", action="append", default=[])
 
+    ap.add_argument("--epd", help="Path to an EPD file (overrides default PGN settings for specific positions)")
+    ap.add_argument("--fen", help="A raw FEN string to test. Will automatically create a temp EPD file to run.")
+
     args = ap.parse_args()
+
+    # Determine openings config based on flags
+    if args.fen:
+        temp_epd = os.path.join(SCRIPT_DIR, "temp_custom_fen.epd")
+        with open(temp_epd, "w") as f:
+            f.write(args.fen + "\n")
+        openings_file = temp_epd
+        openings_format = "epd"
+        openings_order = "sequential"
+        openings_plies = 0
+    elif args.epd:
+        openings_file = args.epd
+        openings_format = "epd"
+        openings_order = "sequential"
+        openings_plies = 0
+    else:
+        openings_file = "chess_moves.pgn"
+        openings_format = "pgn"
+        openings_order = "random"
+        openings_plies = 10
 
     run_match(
         args.engine1,
@@ -238,7 +268,15 @@ def main():
         args.sprt,
         args.engine1_opt,
         args.engine2_opt,
+        openings_file,
+        openings_format,
+        openings_order,
+        openings_plies
     )
+
+    # Cleanup the temp FEN file if it was generated
+    if args.fen and os.path.exists(temp_epd):
+        os.remove(temp_epd)
 
 
 if __name__ == "__main__":

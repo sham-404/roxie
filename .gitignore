@@ -1,8 +1,6 @@
 /target
 
-tests/pgns/
-tests/results/
-tests/subjects/
+/tests/*
 
 releases/
 venv/
@@ -11,4 +9,8 @@ venv/
 *.nnue
 *.csv
 
+!tests/README.md
+!tests/chess_moves.pgn
+!tests/match.py
+!tests/sample_positions.csv
 !src/*.nnue
