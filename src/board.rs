@@ -7,7 +7,7 @@ use crate::zobrist::{CASTLING_KEYS, ENPASSANT_KEYS, SIDE_KEY, ZOBRIST_TABLE};
 
 const PIECE_VALS: [i32; 6] = [100, 320, 330, 500, 900, 0];
 
-#[inline]
+#[inline(always)]
 pub fn pop_lsb(bb: &mut u64) -> Option<usize> {
     if *bb == 0 {
         return None;
@@ -19,7 +19,7 @@ pub fn pop_lsb(bb: &mut u64) -> Option<usize> {
     Some(sq)
 }
 
-#[inline]
+#[inline(always)]
 pub fn mask(idx: usize) -> u64 {
     1u64 << idx
 }
@@ -466,7 +466,7 @@ impl Board {
         false
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn in_check(&self) -> bool {
         let color = match self.side_to_move {
             Color::White => Piece::WHITE,
@@ -479,7 +479,7 @@ impl Board {
         )
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn in_check_after_moving(&self) -> bool {
         let color = match self.side_to_move {
             Color::White => Piece::BLACK,
@@ -613,12 +613,12 @@ impl Board {
         self.halfmove_clock >= 100
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn halfmove_clock(&self) -> usize {
         self.halfmove_clock
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn piece_on(&self, sq: usize) -> PieceInfo {
         return self.mailbox[sq];
     }
@@ -676,7 +676,7 @@ impl Board {
 
 ///////// Helpers
 impl Board {
-    #[inline]
+    #[inline(always)]
     fn move_piece_quiet(&mut self, from: usize, to: usize) {
         let (from_mask, to_mask) = (mask(from), mask(to));
         let piece = self.piece_on(from);
@@ -707,7 +707,7 @@ impl Board {
         self.occupancy[BOTH] ^= from_mask | to_mask;
     }
 
-    #[inline]
+    #[inline(always)]
     fn remove_piece(&mut self, piece: PieceInfo, pos: usize) {
         let pos_mask = mask(pos);
 
@@ -726,7 +726,7 @@ impl Board {
         self.occupancy[BOTH] &= !pos_mask;
     }
 
-    #[inline]
+    #[inline(always)]
     fn add_piece(&mut self, piece: PieceInfo, pos: usize) {
         let pos_mask = mask(pos);
 
@@ -745,7 +745,7 @@ impl Board {
         self.occupancy[BOTH] |= pos_mask;
     }
 
-    #[inline]
+    #[inline(always)]
     fn move_piece_on_bb(&mut self, piece: PieceInfo, from: usize, to: usize) {
         let (from_mask, to_mask) = (mask(from), mask(to));
 
@@ -760,7 +760,7 @@ impl Board {
         self.occupancy[BOTH] ^= from_mask | to_mask;
     }
 
-    #[inline]
+    #[inline(always)]
     fn remove_piece_on_bb(&mut self, piece: PieceInfo, pos: usize) {
         let pos_mask = mask(pos);
 
@@ -771,7 +771,7 @@ impl Board {
         self.occupancy[BOTH] &= !pos_mask;
     }
 
-    #[inline]
+    #[inline(always)]
     fn add_piece_on_bb(&mut self, piece: PieceInfo, pos: usize) {
         let pos_mask = mask(pos);
 
@@ -811,17 +811,17 @@ impl Board {
         self.side_to_move
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn get_zob_key(&self) -> u64 {
         self.zobrist_key
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn is_endgame(&self) -> bool {
         self.game_phase.min(24) < 9
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn get_game_phase(&self) -> i32 {
         self.game_phase
     }
@@ -834,7 +834,7 @@ impl Board {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn get_bb(&self) -> &[u64] {
         &self.bitboards
     }
@@ -2102,7 +2102,7 @@ impl Board {
         0
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn get_value(&self, piece: PieceInfo) -> i32 {
         let idx = Piece::to_idx(piece) % 6;
         // Piece indices: 0:P, 1:N, 2:B, 3:R, 4:Q, 5:K

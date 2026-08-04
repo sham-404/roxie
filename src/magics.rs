@@ -141,7 +141,7 @@ pub struct Magic {
 }
 
 impl Magic {
-    #[inline]
+    #[inline(always)]
     pub fn index(&self, occ: u64) -> usize {
         ((occ & self.mask).wrapping_mul(self.multiplier) >> self.shift) as usize
     }
@@ -154,6 +154,7 @@ pub fn init_magics() {
     LazyLock::force(&BISHOP_MAGIC_STORE);
 }
 
+#[inline(always)]
 pub fn get_bishop_move_bits(sq: usize, occ: u64) -> u64 {
     let magic = &BISHOP_MAGIC_STORE[sq];
     let idx = magic.index(occ);
@@ -161,6 +162,7 @@ pub fn get_bishop_move_bits(sq: usize, occ: u64) -> u64 {
     BISHOP_ATTACKS[sq][idx as usize]
 }
 
+#[inline(always)]
 pub fn get_rook_move_bits(sq: usize, occ: u64) -> u64 {
     let magic = &ROOK_MAGIC_STORE[sq];
     let idx = magic.index(occ);

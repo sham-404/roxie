@@ -11,7 +11,7 @@ pub enum TTFlag {
 }
 
 impl TTFlag {
-    #[inline]
+    #[inline(always)]
     fn from_bits(bits: u8) -> Self {
         match bits {
             0 => Self::Exact,
@@ -89,31 +89,31 @@ impl TTPacked {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn flag(&self) -> TTFlag {
         let bits = ((self.info & TTPacked::FLAG_MASK) >> TTPacked::FLAG_SHIFT) as u8;
         TTFlag::from_bits(bits)
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn depth(&self) -> u16 {
         ((self.info & TTPacked::DEPTH_MASK) >> TTPacked::DEPTH_SHIFT) as u16
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn best_move(&self) -> Move {
         let mv = ((self.info & TTPacked::MOVE_MASK) >> TTPacked::MOVE_SHIFT) as u16;
         Move(mv)
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn score(&self) -> i16 {
         let u16_score = ((self.info & TTPacked::SCORE_MASK) >> TTPacked::SCORE_SHIFT) as u16;
         let de_offset_score = u16_score as i32 - MATE as i32;
         de_offset_score as i16
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn age(&self) -> u8 {
         ((self.info & TTPacked::AGE_MASK) >> TTPacked::AGE_SHIFT) as u8
     }
@@ -164,7 +164,7 @@ impl TranspositionTable {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn info(&self) {
         let bucket_size = std::mem::size_of::<TTBucket>();
         uci_print!(
@@ -224,18 +224,18 @@ impl TranspositionTable {
         bucket.slots[victim_idx] = new_packed;
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn clear(&mut self) {
         self.table.clear();
         self.generation = 0;
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn inc_generation(&mut self) {
         self.generation = self.generation.wrapping_add(1);
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn get_generation(&self) -> u8 {
         self.generation
     }

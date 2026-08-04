@@ -35,7 +35,7 @@ impl Engine {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn info(&self) {
         uci_print!("Roxie v{}\n", env!("CARGO_PKG_VERSION"));
         self.tt.info();
@@ -78,7 +78,7 @@ impl ContinuationHistory {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn get_after_mv(&self, board: &Board, prev_mv: Move, cur_mv: Move) -> i16 {
         if prev_mv == Move::NULL || cur_mv == Move::NULL {
             return 0;
@@ -90,7 +90,7 @@ impl ContinuationHistory {
         self.table[prev_idx][cur_idx]
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn get(&self, board: &Board, prev_mv: Move, cur_mv: Move) -> i16 {
         debug_assert_ne!(cur_mv, Move::NULL); // cur_mv is expected to be a valid move
         if prev_mv == Move::NULL {
@@ -103,7 +103,7 @@ impl ContinuationHistory {
         self.table[prev_idx][cur_idx]
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn update(&mut self, board: &Board, prev_mv: Move, cur_mv: Move, bonus: i32) {
         debug_assert_ne!(cur_mv, Move::NULL); // cur_mv is expected to be a valid move
         if prev_mv == Move::NULL {
@@ -134,13 +134,13 @@ impl EvalHistory {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn store(&mut self, score: i16, in_check: bool, ply: usize) {
         self.evals[ply] = score;
         self.checks[ply] = in_check;
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn is_improving(&self, current_eval: i16, in_check: bool, ply: usize) -> bool {
         if in_check {
             return false;
@@ -160,7 +160,7 @@ impl EvalHistory {
         true // true for first 2 plies btw
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn clear(&mut self) {
         self.evals = [0; MAX_PLY];
         self.checks = [false; MAX_PLY];
