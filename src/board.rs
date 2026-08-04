@@ -466,6 +466,7 @@ impl Board {
         false
     }
 
+    #[inline]
     pub fn in_check(&self) -> bool {
         let color = match self.side_to_move {
             Color::White => Piece::WHITE,
@@ -475,6 +476,19 @@ impl Board {
         self.is_square_atacked(
             pop_lsb(&mut self.bb(color | Piece::KING)).unwrap(),
             &self.side_to_move,
+        )
+    }
+
+    #[inline]
+    pub fn in_check_after_moving(&self) -> bool {
+        let color = match self.side_to_move {
+            Color::White => Piece::BLACK,
+            Color::Black => Piece::WHITE,
+        };
+
+        self.is_square_atacked(
+            pop_lsb(&mut self.bb(color | Piece::KING)).unwrap(),
+            &self.side_to_move.opponent(),
         )
     }
 
@@ -864,7 +878,7 @@ impl Board {
 
         self.gen_castling_moves(&mut moves);
 
-        self.filter_illegal(&mut moves);
+        // self.filter_illegal(&mut moves);
         moves
     }
 
@@ -1957,7 +1971,7 @@ impl Board {
         is_legal
     }
 
-    fn filter_illegal(&mut self, moves: &mut MoveList) {
+    pub fn filter_illegal(&mut self, moves: &mut MoveList) {
         let mut last_legal_mv_idx: isize = -1;
 
         for idx in 0..moves.len() {

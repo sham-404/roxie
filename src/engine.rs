@@ -24,7 +24,7 @@ impl Engine {
     pub fn new() -> Self {
         Self {
             board: Board::start_pos(),
-            tt: TranspositionTable::new(25),
+            tt: TranspositionTable::new(16),
             history: [[[0; 64]; 64]; 2],
             continuation_history: ContinuationHistory::new(),
             counter_moves: CountermoveTable::new(),

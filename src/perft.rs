@@ -8,15 +8,25 @@ pub fn perft(board: &mut Board, depth: u32) -> u64 {
     let move_list = board.gen_moves();
 
     if depth == 1 {
-        return move_list.len() as u64;
+        return move_list
+            .as_slice()
+            .iter()
+            .filter(|&&mv| board.is_legal_mv(mv))
+            .count() as u64;
     }
 
     let mut nodes = 0;
 
     for mov in move_list.as_slice() {
-        let undo = board.make_move(&mov);
+        let undo = board.make_move(mov);
+
+        if board.in_check_after_moving() {
+            board.unmake_move(mov, &undo);
+            continue;
+        }
+
         nodes += perft(board, depth - 1);
-        board.unmake_move(&mov, &undo);
+        board.unmake_move(mov, &undo);
     }
 
     nodes
@@ -28,6 +38,10 @@ pub fn perft_divide(board: &mut Board, depth: u32) -> u64 {
 
     for mov in move_list.as_slice() {
         let undo = board.make_move(&mov);
+        if board.in_check_after_moving() {
+            board.unmake_move(mov, &undo);
+            continue;
+        }
 
         let nodes = if depth > 1 {
             perft(board, depth - 1)

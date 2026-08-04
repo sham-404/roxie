@@ -1,6 +1,6 @@
 use crate::{items::Move, search::MATE, uci_print};
 
-const TT_SLOT_SIZE: usize = 3;
+const TT_SLOT_SIZE: usize = 4;
 
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -123,6 +123,7 @@ impl TTPacked {
     }
 }
 
+#[repr(align(64))]
 #[derive(Clone, Copy)]
 pub struct TTBucket {
     pub slots: [TTPacked; TT_SLOT_SIZE],
