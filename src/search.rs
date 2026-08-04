@@ -1068,7 +1068,7 @@ impl Engine {
 }
 
 impl Engine {
-    #[inline]
+    #[inline(always)]
     pub fn with_ordering(
         &mut self,
         tt_move: Move,
@@ -1129,7 +1129,7 @@ impl Engine {
         });
     }
 
-    #[inline]
+    #[inline(always)]
     fn store_killer(&mut self, mv: Move, ply: usize) {
         if self.killers[ply][0] != mv {
             self.killers[ply][1] = self.killers[ply][0];

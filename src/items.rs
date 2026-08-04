@@ -24,17 +24,17 @@ impl Piece {
     const TYPE_MASK: u8 = 0b00111;
     const COLOR_MASK: u8 = 0b11000;
 
-    #[inline]
+    #[inline(always)]
     pub fn get_type(p: PieceInfo) -> u8 {
         p & Self::TYPE_MASK
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn get_color(p: PieceInfo) -> u8 {
         p & Self::COLOR_MASK
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn get_color_idx(p: PieceInfo) -> usize {
         if p & Self::COLOR_MASK == Piece::WHITE {
             WHITE
@@ -43,7 +43,7 @@ impl Piece {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn get_color_fac(p: PieceInfo) -> i32 {
         if p & Self::COLOR_MASK == Piece::WHITE {
             1
@@ -52,7 +52,7 @@ impl Piece {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn from_idx(idx: usize) -> PieceInfo {
         // idx 0-5 -> White Pawn to King
         // idx 6-11 -> Black Pawn to King
@@ -62,7 +62,7 @@ impl Piece {
     }
 
     // Indexes the pieces from 1 t0 11 for bitboards
-    #[inline]
+    #[inline(always)]
     pub const fn to_idx(p: PieceInfo) -> usize {
         // This maps:
         // White (P, N, B, R, Q, K) -> 0, 1, 2, 3, 4, 5
@@ -73,7 +73,7 @@ impl Piece {
         type_idx + color_idx
     }
 
-    #[inline]
+    #[inline(always)]
     pub const fn to_hkp_idx(p: PieceInfo) -> usize {
         // This maps:
         // White (P, N, B, R, Q, K) -> 0, 1, 2, 3, 4, _
@@ -84,7 +84,7 @@ impl Piece {
         type_idx + color_idx
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn enemy(color: PieceInfo) -> PieceInfo {
         debug_assert!(
             color == color & Self::COLOR_MASK,
@@ -186,27 +186,27 @@ impl MoveFlag {
     pub const PROMO_CAP_ROOK: MoveFlag = MoveFlag(0b1110);
     pub const PROMO_CAP_QUEEN: MoveFlag = MoveFlag(0b1111);
 
-    #[inline]
+    #[inline(always)]
     pub fn is_capture(self) -> bool {
         (self.0 & Self::CAPTURE_BIT) != 0
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn is_promo(self) -> bool {
         (self.0 & Self::PROMO_BIT) != 0
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn is_castle(self) -> bool {
         self.0 & 0b1110 == 0b0010
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn is_quiet(self) -> bool {
         (self.0 & (Self::CAPTURE_BIT | Self::PROMO_BIT)) == 0
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn get_promo_value(self) -> u16 {
         match self.0 & Self::PIECE_BIT {
             Self::KNIGHT => 320,
@@ -217,7 +217,7 @@ impl MoveFlag {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn get_promo_piece(self) -> PieceInfo {
         match self.0 & Self::PIECE_BIT {
             Self::KNIGHT => Piece::KNIGHT,
@@ -243,17 +243,17 @@ impl Move {
         Move(m)
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn from(self) -> usize {
         (self.0 & 0x3F) as usize
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn to(self) -> usize {
         ((self.0 >> 6) & 0x3F) as usize
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn flag(self) -> MoveFlag {
         MoveFlag(((self.0 >> 12) & 0xF) as FlagInfo)
     }
@@ -333,7 +333,7 @@ pub struct MoveList {
 }
 
 impl MoveList {
-    #[inline]
+    #[inline(always)]
     pub fn new() -> Self {
         Self {
             moves: [Move::NULL; MAX_MOVES],
@@ -342,12 +342,12 @@ impl MoveList {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn get(&self, idx: usize) -> Move {
         self.moves[idx]
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn push_with_score(&mut self, mv: Move, score: i32) {
         debug_assert!(self.len < MAX_MOVES);
         self.moves[self.len] = mv;
@@ -355,7 +355,7 @@ impl MoveList {
         self.len += 1;
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn push(&mut self, mv: Move) {
         debug_assert!(self.len < MAX_MOVES);
         self.moves[self.len] = mv;
@@ -379,7 +379,7 @@ impl MoveList {
         self.moves[start_idx]
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.len
     }
@@ -388,7 +388,7 @@ impl MoveList {
         self.len = 0;
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn as_slice(&self) -> &[Move] {
         &self.moves[..self.len]
     }
@@ -407,24 +407,24 @@ impl History {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.len
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn get(&self, idx: usize) -> u64 {
         self.stack[idx]
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn push(&mut self, key: u64) {
         debug_assert!(self.len < 1024);
         self.stack[self.len] = key;
         self.len += 1;
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn pop(&mut self) -> u64 {
         debug_assert!(self.len > 0);
         self.len -= 1;
@@ -440,7 +440,7 @@ pub enum Color {
 }
 
 impl Color {
-    #[inline]
+    #[inline(always)]
     pub fn opponent(&self) -> Self {
         match self {
             Color::White => Color::Black,
@@ -448,7 +448,7 @@ impl Color {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn val(&self) -> usize {
         match self {
             Color::White => WHITE,
@@ -456,7 +456,7 @@ impl Color {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn fac(&self) -> i32 {
         match self {
             Color::White => 1,
@@ -491,40 +491,40 @@ impl CastlingRights {
         Self(0)
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn white_kingside(self) -> bool {
         self.0 & WK != 0
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn white_queenside(self) -> bool {
         self.0 & WQ != 0
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn black_kingside(self) -> bool {
         self.0 & BK != 0
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn black_queenside(self) -> bool {
         self.0 & BQ != 0
     }
 
     // remove rights
-    #[inline]
+    #[inline(always)]
     pub fn remove(&mut self, mask: u8) {
         self.0 &= !mask;
     }
 
     // add rights
-    #[inline]
+    #[inline(always)]
     pub fn add(&mut self, mask: u8) {
         self.0 |= mask;
     }
 
     // update castling rights based on from and to
-    #[inline]
+    #[inline(always)]
     pub fn update(&mut self, from: usize, to: usize) {
         self.0 &= CASTLING_MASKS[from as usize] & CASTLING_MASKS[to as usize];
     }
