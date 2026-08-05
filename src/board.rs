@@ -1006,7 +1006,7 @@ impl Board {
         // castling moves
         self.gen_castling_moves(&mut moves);
 
-        self.filter_illegal(&mut moves);
+        // self.filter_illegal(&mut moves);
 
         moves
     }
@@ -1133,7 +1133,7 @@ impl Board {
             }
         }
 
-        self.filter_illegal(&mut moves);
+        // self.filter_illegal(&mut moves);
         moves
     }
 
@@ -1299,7 +1299,7 @@ impl Board {
             }
         }
 
-        self.filter_illegal(&mut moves);
+        // self.filter_illegal(&mut moves);
         moves
     }
 

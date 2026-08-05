@@ -168,9 +168,7 @@ impl Engine {
             match picker.phase {
                 Phase::TTMove => {
                     picker.phase = Phase::GenerateTactical;
-                    if picker.tt_move != Move::NULL
-                        && self.board.is_pseudo_legal_mv(picker.tt_move)
-                        && self.board.is_legal_mv(picker.tt_move)
+                    if picker.tt_move != Move::NULL && self.board.is_pseudo_legal_mv(picker.tt_move)
                     {
                         return Some(picker.tt_move);
                     }
@@ -208,7 +206,8 @@ impl Engine {
                     }
 
                     // all captures were processed
-                    if picker.qsearch_picker { // skipping the bad captures too
+                    if picker.qsearch_picker {
+                        // skipping the bad captures too
                         return None;
                     }
 
@@ -224,7 +223,6 @@ impl Engine {
                         if killer != Move::NULL
                             && killer != picker.tt_move
                             && self.board.is_pseudo_legal_mv(killer)
-                            && self.board.is_legal_mv(killer)
                         {
                             return Some(killer);
                         }
@@ -245,7 +243,6 @@ impl Engine {
                     ]
                     .contains(&counter_mv)
                         && self.board.is_pseudo_legal_mv(counter_mv)
-                        && self.board.is_legal_mv(counter_mv)
                     {
                         return Some(counter_mv);
                     }
