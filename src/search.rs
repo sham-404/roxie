@@ -88,7 +88,15 @@ impl Engine {
                 let move_list = self.board.gen_moves();
 
                 best_move = if move_list.len() != 0 {
-                    move_list.get(0)
+                    if let Some(&mv) = move_list
+                        .as_slice()
+                        .iter()
+                        .find(|&&mv| self.board.is_legal_mv(mv))
+                    {
+                        mv
+                    } else {
+                        Move::NULL
+                    }
                 } else {
                     Move::NULL
                 };
@@ -107,6 +115,11 @@ impl Engine {
 
                 while let Some(mv) = self.pick_next_mv(&mut picker) {
                     let undo = self.board.make_move(&mv);
+                    if self.board.in_check_after_moving() {
+                        self.board.unmake_move(&mv, &undo);
+                        continue;
+                    }
+
                     self.update_nnue(&mv, &undo, 0);
 
                     let mv_idx = mv_searched;
@@ -406,6 +419,7 @@ impl Engine {
             },
             limits,
             info,
+            static_eval,
         ) {
             return cutoff_score;
         }
@@ -469,15 +483,11 @@ impl Engine {
             }
 
             let mv_idx = mv_searched;
-            mv_searched += 1;
 
             let flag = mv.flag();
             let is_quiet = flag.is_quiet();
 
-            if is_quiet {
-                quiet_searched += 1;
-                quiet_list.push(mv);
-
+            if is_quiet && mv_idx > 0 {
                 // late move pruning //
                 let is_non_pv = alpha + 1 == beta;
                 let mut lmp_threshold = 3 + (depth * depth) as usize;
@@ -492,14 +502,14 @@ impl Engine {
                 if is_non_pv && depth <= 5 && !in_check {
                     info.stats.lmp_attempts += 1;
 
-                    if quiet_searched > lmp_threshold {
+                    if quiet_searched >= lmp_threshold {
                         info.stats.lmp_prunes += 1;
                         picker.skip_quiets();
                         continue;
                     }
                 }
                 // late move pruning //
-            } else {
+            } else if mv_idx > 0 {
                 // SEE pruning //
                 let is_non_pv = alpha + 1 == beta;
 
@@ -508,6 +518,7 @@ impl Engine {
                     && !in_check
                     && mv != tt_move
                     && flag.is_capture()
+                    && !flag.is_promo()
                     && !self.board.gives_check(mv)
                 {
                     info.stats.see_prune_attempts += 1;
@@ -543,6 +554,18 @@ impl Engine {
             // Futility Pruning //
 
             let undo = self.board.make_move(&mv);
+            if self.board.in_check_after_moving() {
+                self.board.unmake_move(&mv, &undo);
+                continue;
+            }
+
+            if is_quiet {
+                quiet_list.push(mv);
+                quiet_searched += 1
+            }
+
+            mv_searched += 1;
+
             self.update_nnue(&mv, &undo, ply as usize);
 
             // Taking account for extended depth for singular extention
@@ -669,6 +692,7 @@ impl Engine {
         params: SearchParams,
         limits: &SearchLimits,
         info: &mut SearchInfo,
+        static_eval: i16,
     ) -> Option<i16> {
         let SearchParams {
             depth,
@@ -684,7 +708,7 @@ impl Engine {
             && excluded_move == Move::NULL
             && !self.board.in_check()
             && !self.board.is_endgame()
-            && self.evaluate(ply as usize) >= beta
+            && static_eval >= beta
         {
             info.stats.nmp_attemps += 1;
 
@@ -987,7 +1011,6 @@ impl Engine {
         let mut mv_searched = 0;
 
         while let Some(mv) = self.pick_next_mv(&mut picker) {
-            mv_searched += 1;
             if !in_check && !mv.flag().is_promo() {
                 // soft delta pruning (see pruning) //
                 if self.board.see(&mv) < 0 && !self.board.gives_check(mv) {
@@ -1011,6 +1034,11 @@ impl Engine {
             }
 
             let undo = self.board.make_move(&mv);
+            if self.board.in_check_after_moving() {
+                self.board.unmake_move(&mv, &undo);
+                continue;
+            }
+            mv_searched += 1;
 
             self.update_nnue(&mv, &undo, ply as usize);
 
@@ -1154,7 +1182,8 @@ impl Engine {
 
                 // Verify the TT move is actually valid in this position
                 // (needed due to rare hash collisions overwritings)
-                let moves = self.board.gen_moves();
+                let mut moves = self.board.gen_moves();
+                self.board.filter_illegal(&mut moves);
                 if !moves.as_slice().contains(&mv) {
                     break;
                 }
