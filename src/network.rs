@@ -495,12 +495,10 @@ mod tests {
         evaluation::init_pesto_table,
         magics::init_magics,
         network::{NN_DATA, Network, QP},
-        zobrist::init_zobrist,
     };
 
     #[test]
     fn nn_check() {
-        init_zobrist();
         init_pesto_table();
         init_magics();
 
