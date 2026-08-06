@@ -389,7 +389,7 @@ impl Engine {
 
         self.eval_history.store(static_eval, in_check, ply as usize);
 
-        // Reverse Futility Pruning (Static Null Move Pruning) //
+        //// Reverse Futility Pruning (Static Null Move Pruning) //
         if !in_check
             && depth <= 4
             && beta.abs() < MATE - MAX_PLY as i16
@@ -404,9 +404,9 @@ impl Engine {
                 return static_eval; // Immediate static beta cutoff
             }
         }
-        // Reverse Futility Pruning (Static Null Move Pruning) //
+        //// Reverse Futility Pruning (Static Null Move Pruning) //
 
-        // NULL move pruning
+        //// NULL move pruning
         if let Some(cutoff_score) = self.nmp_search(
             SearchParams {
                 depth,
@@ -423,7 +423,80 @@ impl Engine {
         ) {
             return cutoff_score;
         }
-        // NULL move pruning
+        //// NULL move pruning
+
+        //// ProbCut (Probablistic Cut)
+        if depth >= 5
+            && !in_check
+            && excluded_move == Move::NULL
+            && beta.abs() < MATE - MAX_PLY as i16
+        {
+            let pc_margin = 200i32;
+            let pc_beta = ((beta as i32 + pc_margin).min((MATE - MAX_PLY as i16) as i32)) as i16;
+            let pc_depth = if depth >= 8 { depth - 4 } else { depth - 3 };
+
+            let tt_move = if tt_move.flag().is_quiet() {
+                Move::NULL
+            } else {
+                tt_move
+            };
+
+            let mut pc_picker = MovePicker::new(tt_move, [Move::NULL; 2], prev_move, true);
+
+            while let Some(mv) = self.pick_next_mv(&mut pc_picker) {
+                if !mv.flag().is_promo() && self.board.see(&mv) <= 0 {
+                    continue;
+                }
+
+                let undo = self.board.make_move(&mv);
+                if self.board.in_check_after_moving() {
+                    self.board.unmake_move(&mv, &undo);
+                    continue;
+                }
+
+                info.stats.probcut_attempts += 1;
+                self.update_nnue(&mv, &undo, ply as usize);
+
+                let pc_score = -self.negamax(
+                    SearchParams {
+                        depth: pc_depth,
+                        alpha: -pc_beta,
+                        beta: -pc_beta + 1, // Zero window
+                        ply: ply + 1,
+                        extension: 0,
+                        prev_move: mv,
+                        excluded_move: Move::NULL,
+                    },
+                    limits,
+                    info,
+                );
+
+                self.board.unmake_move(&mv, &undo);
+
+                if pc_score >= pc_beta {
+                    info.stats.probcut_cutoffs += 1;
+
+                    // Guard against fake mates from shallow searches
+                    let safe_score = if pc_score >= MATE - MAX_PLY as i16 {
+                        pc_beta
+                    } else {
+                        pc_score
+                    };
+
+                    self.tt.store(TTEntry {
+                        key: self.board.get_zob_key(),
+                        depth: pc_depth + 1, // Safe depth assumption
+                        score: safe_score as i32,
+                        flag: TTFlag::LowerBound,
+                        best_move: mv,
+                        age: self.tt.get_generation(),
+                    });
+
+                    return safe_score;
+                }
+            }
+        }
+        //// ProbCut (Probablistic Cut)
 
         //// Singular Extension
         let mut se_extension = 0;
@@ -472,8 +545,7 @@ impl Engine {
         let mut quiet_list = MoveList::new();
         let mut quiet_searched = 0;
 
-        // Actual searching loop
-
+        //// Actual searching loop
         let mut picker = MovePicker::new(tt_move, self.killers[ply as usize], prev_move, false);
         let mut mv_searched = 0;
 
@@ -1238,6 +1310,9 @@ pub struct SearchStats {
     pub rfp_attempts: usize,
     pub rfp_cutoffs: usize,
 
+    pub probcut_attempts: usize,
+    pub probcut_cutoffs: usize,
+
     pub futility_attempts: usize,
     pub futility_prunes: usize,
 
@@ -1267,6 +1342,9 @@ impl SearchStats {
             rfp_attempts: 0,
             rfp_cutoffs: 0,
 
+            probcut_attempts: 0,
+            probcut_cutoffs: 0,
+
             futility_attempts: 0,
             futility_prunes: 0,
 
@@ -1294,6 +1372,9 @@ impl SearchStats {
 
         println!("RFP attempted: {}", self.rfp_attempts);
         println!("RFP cutoffs: {}", self.rfp_cutoffs);
+
+        println!("Prob Cut attempted: {}", self.probcut_attempts);
+        println!("Prob Cut cutoffs: {}", self.probcut_cutoffs);
 
         println!("Futility attempted: {}", self.futility_attempts);
         println!("Futility pruned: {}", self.futility_prunes);

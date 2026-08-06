@@ -12,6 +12,7 @@ All notable changes to Roxie are documented in this file.
 - optimized move generation functions, and introduced helpers to get the moves of a single piece 
 - Added EvalHistory for lmp, and enabled lmp (Late Move Pruning) after a long time
 - Added Singular Extension
+- Added Probablistic Cut (ProbCut) for search
 
 ### Improved
 - Reduced the if branching for quiets and captures for performance, but not so significant tho.
