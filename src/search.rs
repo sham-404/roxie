@@ -320,7 +320,7 @@ impl Engine {
         }
 
         // Checking draws
-        if self.board.is_repetition() || self.board.is_50_rule() {
+        if self.board.is_draw() {
             return 0;
         }
 
@@ -350,7 +350,7 @@ impl Engine {
             }
 
             // ONLY return early if we are not in a singular search
-            if entry.depth() >= depth && params.excluded_move == Move::NULL {
+            if entry.depth() >= depth && excluded_move == Move::NULL {
                 match entry.flag() {
                     TTFlag::Exact => {
                         info.stats.tt_exact_cutoffs += 1;
@@ -366,6 +366,36 @@ impl Engine {
                 }
             }
         }
+
+        //// Internal Iterative Deepening (IID)
+        // If we don't have a tt move, try to search a lower depth search and hope it 
+        // probes a tt move
+        if depth >= 5 && tt_move == Move::NULL && excluded_move == Move::NULL {
+            info.stats.iid_attempts += 1;
+
+            let iid_depth = depth - 2;
+
+            self.negamax(
+                SearchParams {
+                    depth: iid_depth,
+                    alpha,
+                    beta,
+                    ply,
+                    extension: 0,
+                    prev_move,
+                    excluded_move: Move::NULL,
+                },
+                limits,
+                info,
+            );
+
+            // probing tt, as we might have a move there now
+            if let Some(entry) = self.tt.probe(key) {
+                info.stats.iid_success += 1;
+                tt_move = entry.best_move();
+            }
+        }
+        //// Internal Iterative Deepening (IID)
 
         // base case handling
         if depth == 0 {
@@ -890,13 +920,8 @@ impl Engine {
 
             r -= hist_adjustment;
 
-            // Counter move adjustment
-            if mv == self.counter_moves.get(prev_move) {
-                r -= 1;
-            }
-
-            // killer move adjustment
-            if self.killers[ply as usize].contains(&mv) {
+            // Counter and killer move adjustment
+            if mv == self.counter_moves.get(prev_move) || self.killers[ply as usize].contains(&mv) {
                 r -= 1;
             }
 
@@ -1001,7 +1026,7 @@ impl Engine {
         }
 
         // Checking draws
-        if self.board.is_repetition() || self.board.is_50_rule() {
+        if self.board.is_draw() {
             return 0;
         }
 
@@ -1291,7 +1316,7 @@ struct SearchParams {
     excluded_move: Move,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct SearchStats {
     pub q_nodes: usize,
 
@@ -1313,6 +1338,9 @@ pub struct SearchStats {
     pub probcut_attempts: usize,
     pub probcut_cutoffs: usize,
 
+    pub iid_attempts: usize,
+    pub iid_success: usize,
+
     pub futility_attempts: usize,
     pub futility_prunes: usize,
 
@@ -1324,35 +1352,7 @@ pub struct SearchStats {
 
 impl SearchStats {
     pub fn new() -> SearchStats {
-        SearchStats {
-            q_nodes: 0,
-
-            nmp_attemps: 0,
-            nmp_cutoffs: 0,
-
-            lmr_attempts: 0,
-            lmr_research: 0,
-
-            lmp_attempts: 0,
-            lmp_prunes: 0,
-
-            see_prune_attempts: 0,
-            see_prunes_happened: 0,
-
-            rfp_attempts: 0,
-            rfp_cutoffs: 0,
-
-            probcut_attempts: 0,
-            probcut_cutoffs: 0,
-
-            futility_attempts: 0,
-            futility_prunes: 0,
-
-            tt_probes: 0,
-            tt_hits: 0,
-            tt_exact_cutoffs: 0,
-            tt_bound_cutoffs: 0,
-        }
+        SearchStats::default()
     }
 
     pub fn describe(&self) {
@@ -1366,6 +1366,9 @@ impl SearchStats {
 
         println!("LMP attempted: {}", self.lmp_attempts);
         println!("LMP pruned: {}", self.lmp_prunes);
+
+        println!("IID attempted: {}", self.iid_attempts);
+        println!("IID succeeded: {}", self.iid_success);
 
         println!("SEE attempted: {}", self.see_prune_attempts);
         println!("SEE pruned: {}", self.see_prunes_happened);
