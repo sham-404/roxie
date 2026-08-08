@@ -593,6 +593,7 @@ impl Board {
         gives_check
     }
 
+    #[inline(always)]
     pub fn is_repetition(&self) -> bool {
         let cur = self.zobrist_key;
         let mut count = 1;
@@ -609,8 +610,81 @@ impl Board {
         false
     }
 
+    #[inline(always)]
     pub fn is_50_rule(&self) -> bool {
         self.halfmove_clock >= 100
+    }
+
+    #[inline(always)]
+    pub fn is_insufficient_material(&self) -> bool {
+        let total_pieces = self.all_occ().count_ones();
+
+        // K vs K
+        if total_pieces == 2 {
+            return true;
+        }
+
+        if total_pieces > 4 {
+            return false;
+        }
+
+        let b_pawns = self.bb(Piece::BLACK | Piece::PAWN);
+        let w_pawns = self.bb(Piece::WHITE | Piece::PAWN);
+        let b_knight = self.bb(Piece::BLACK | Piece::KNIGHT);
+        let w_knight = self.bb(Piece::WHITE | Piece::KNIGHT);
+        let b_bishop = self.bb(Piece::BLACK | Piece::BISHOP);
+        let w_bishop = self.bb(Piece::WHITE | Piece::BISHOP);
+
+        // pawns exist, so no insufficient
+        if b_pawns != 0 || w_pawns != 0 {
+            return false;
+        }
+
+        // K vs N/B
+        let minor_piece_bb = b_knight | w_knight | b_bishop | w_bishop;
+        if total_pieces == 3 {
+            return minor_piece_bb.count_ones() != 0; // any minor piece exists
+        }
+
+        // NOTE: now it is guarenteed that board has only 4 pieces including 2 kings.
+        // Which means, there should be only 2 other pieces to check for insufficiency
+        // so if the minor pieces are not exactly 2, then there is a major piece
+        // on the board
+        if minor_piece_bb.count_ones() != 2 {
+            return false;
+        }
+
+        // 1 white side bishop and 1 black side bishop
+        if w_bishop != 0 && b_bishop != 0 {
+            // wanted to check if both bishops are of same colors as
+            // different colored bishop might end up in checkmating position
+            // if the opponent is dumb enough
+
+            // Must be only one bishop present on both sides
+            debug_assert!(w_bishop.is_power_of_two());
+            debug_assert!(b_bishop.is_power_of_two());
+
+            const DARK_SQUARES: u64 = 0xAA55AA55AA55AA55;
+
+            // true if both bishops are same sq colored bishops
+            return (w_bishop & DARK_SQUARES != 0) == (b_bishop & DARK_SQUARES != 0);
+        }
+
+        // NOTE: wierd positions like bishops of same color and same side
+        // (which is an insufficiency btw) is not handled as it is very very
+        // rare. So ima let search handle those kind of positions directly.
+        // But anyway, why on earth you promote yo pawn to a bishop gng??
+
+        false
+    }
+
+    #[inline(always)]
+    pub fn is_draw(&self) -> bool {
+        if self.is_50_rule() || self.is_repetition() || self.is_insufficient_material() {
+            return true;
+        }
+
+        false
     }
 
     #[inline(always)]

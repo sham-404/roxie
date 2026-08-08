@@ -44,7 +44,7 @@ impl UCI {
     }
 
     fn options() {
-        uci_print!("option name Hash type spin default 24 min 1 max 1048576");
+        uci_print!("option name Hash type spin default 16 min 1 max 1048576");
         uci_print!("option name Clear Hash type button");
     }
 
@@ -61,7 +61,7 @@ impl UCI {
                 match cmd {
                     "uci" => {
                         uci_print!("id name Roxie {}", env!("CARGO_PKG_VERSION"));
-                        uci_print!("id author sham-404");
+                        uci_print!("id author Sham Sujith");
                         uci_print!();
 
                         UCI::options();
