@@ -21,6 +21,7 @@ All notable changes to Roxie are documented in this file.
 ### Fixed
 - see() is fixed with subtle, non significant issue
 - quiescence() is fixed, as it lacked 3 fold and 50 move check before
+- Critical!! -> fixed black pawn quiet move generation (i forgot to exclude the promo square)
 
 ---
 

@@ -1014,7 +1014,7 @@ impl Board {
                 (single, double)
             }
             Piece::BLACK => {
-                let single = (pawn_bb >> 8) & empty;
+                let single = (pawn_bb >> 8) & empty & !end_pos;
                 let double = ((pawn_bb & start_pos) >> 16) & empty & (empty >> 8);
                 (single, double)
             }
