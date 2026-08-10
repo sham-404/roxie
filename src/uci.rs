@@ -31,6 +31,7 @@ pub struct UCI {
     stop_signal: Arc<AtomicBool>,
     search_handle: Option<JoinHandle<()>>,
     debug: bool,
+    stats: bool,
 }
 
 impl UCI {
@@ -40,6 +41,7 @@ impl UCI {
             stop_signal: Arc::new(AtomicBool::new(false)),
             search_handle: None,
             debug: false,
+            stats: false,
         }
     }
 
@@ -77,6 +79,17 @@ impl UCI {
                         } else if cmd == Some("off") {
                             uci_print!("Executing in normal mode");
                             self.debug = false;
+                        }
+                    }
+
+                    "stats" => {
+                        let cmd = words.next();
+                        if cmd == Some("on") {
+                            uci_print!("Turning on stats");
+                            self.stats = true;
+                        } else if cmd == Some("off") {
+                            uci_print!("Turning off stats");
+                            self.stats = false;
                         }
                     }
 
@@ -138,6 +151,7 @@ impl UCI {
 
         let thread_engine = Arc::clone(&self.engine);
         let debug = self.debug;
+        let stats = self.stats;
 
         self.search_handle = Some(thread::spawn(move || {
             let mut engine_guard = thread_engine.lock().unwrap();
@@ -148,6 +162,10 @@ impl UCI {
                     info.stats.describe();
                 }
             });
+
+            if stats {
+                data.stats.print_stats();
+            }
 
             uci_print!("bestmove {}", data.best_move.to_coord());
         }));
