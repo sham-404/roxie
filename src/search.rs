@@ -28,9 +28,7 @@ pub static LMR_TABLE: LazyLock<[[i32; MAX_MOVES]; MAX_PLY]> = LazyLock::new(|| {
 
     for depth in 1..MAX_PLY {
         for mv_idx in 1..MAX_MOVES {
-            // The constants 1.0 and 1.5 tunable
             let reduction = 1.5 + (depth as f64).ln() * (mv_idx as f64).ln() / 1.5;
-
             table[depth][mv_idx] = reduction as i32;
         }
     }
@@ -63,6 +61,8 @@ impl Engine {
         for d in 1..=limits.depth.unwrap_or(MAX_DEPTH) {
             let mut best_move: Move;
             let mut best_score: i16;
+            let last_iteration_nodes = info.nodes;
+            info.nodes += 1;
 
             // making the search of depth 1 completely mandatory
             // as it guarentees us to return a valid move
@@ -81,7 +81,6 @@ impl Engine {
 
             // aspiration re-search loop
             loop {
-                info.nodes += 1;
                 let orig_alpha = alpha;
                 let orig_beta = beta;
 
@@ -264,6 +263,10 @@ impl Engine {
             info.best_move = best_move;
             info.pv = self.gen_pv();
 
+            info.stats.nodes_by_depth[d as usize] =
+                info.nodes as usize - last_iteration_nodes as usize;
+            info.stats.nodes = info.nodes as usize;
+
             last_complete_info = info.clone();
 
             on_iteration(&info);
@@ -368,7 +371,7 @@ impl Engine {
         }
 
         // //// Internal Iterative Deepening (IID)
-        // // If we don't have a tt move, try to search a lower depth search and hope it 
+        // // If we don't have a tt move, try to search a lower depth search and hope it
         // // probes a tt move
         // if depth >= 5 && tt_move == Move::NULL && excluded_move == Move::NULL {
         //     info.stats.iid_attempts += 1;
@@ -638,7 +641,6 @@ impl Engine {
             if depth < 3 && mv_idx > 0 && is_quiet && !in_check {
                 // If static eval + margin can't even beat alpha,
                 // this quiet move is highly unlikely to change the node status.
-                // Margin scales up with depth: Depth 1 = 150cp, Depth 2 = 300cp, Depth 3 = 450cp
 
                 let futility_margin = depth as i16 * 150;
                 if static_eval + futility_margin <= alpha {
@@ -705,8 +707,11 @@ impl Engine {
                 alpha = eval;
             }
 
-            // pruning
+            // pruning (beta cutoff)
             if eval >= beta {
+                info.stats.beta_cutoffs += 1;
+                info.stats.cutoffs_by_idx[mv_idx] += 1;
+
                 fail_high = true;
 
                 if is_quiet {
@@ -815,13 +820,15 @@ impl Engine {
             info.stats.nmp_attemps += 1;
 
             let r = 3 + depth / 6;
+            let nmp_depth = (depth - 1).saturating_sub(r);
+
             let old_epsq = self.board.make_null_move();
             self.update_nnue_null_move(ply as usize);
 
             // Zero-window search
             let score = -self.negamax(
                 SearchParams {
-                    depth: depth - 1 - r,
+                    depth: nmp_depth,
                     alpha: -beta,
                     beta: -beta + 1,
                     ply: ply + 1,
@@ -1135,6 +1142,7 @@ impl Engine {
                 self.board.unmake_move(&mv, &undo);
                 continue;
             }
+            let mv_idx = mv_searched;
             mv_searched += 1;
 
             self.update_nnue(&mv, &undo, ply as usize);
@@ -1162,7 +1170,11 @@ impl Engine {
                 best_score = score;
             }
 
+            // beta cutoff
             if score >= beta {
+                info.stats.q_beta_cutoffs += 1;
+                info.stats.q_cutoffs_by_idx[mv_idx] += 1;
+
                 self.q_tt_store(TTFlag::LowerBound, score, mv, ply);
                 return score;
             }
@@ -1316,9 +1328,12 @@ struct SearchParams {
     excluded_move: Move,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 pub struct SearchStats {
+    pub nodes: usize,
     pub q_nodes: usize,
+
+    pub nodes_by_depth: [usize; MAX_PLY],
 
     pub nmp_attemps: usize,
     pub nmp_cutoffs: usize,
@@ -1348,11 +1363,480 @@ pub struct SearchStats {
     pub tt_hits: usize,
     pub tt_exact_cutoffs: usize,
     pub tt_bound_cutoffs: usize,
+
+    pub beta_cutoffs: usize,
+    pub q_beta_cutoffs: usize,
+
+    pub cutoffs_by_idx: [usize; MAX_MOVES],
+    pub q_cutoffs_by_idx: [usize; MAX_MOVES],
 }
 
 impl SearchStats {
     pub fn new() -> SearchStats {
-        SearchStats::default()
+        Self {
+            nodes: 0,
+            q_nodes: 0,
+            nodes_by_depth: [0; MAX_PLY],
+
+            nmp_attemps: 0,
+            nmp_cutoffs: 0,
+            lmr_attempts: 0,
+            lmr_research: 0,
+            lmp_attempts: 0,
+            lmp_prunes: 0,
+            see_prune_attempts: 0,
+            see_prunes_happened: 0,
+            rfp_attempts: 0,
+            rfp_cutoffs: 0,
+            probcut_attempts: 0,
+            probcut_cutoffs: 0,
+            iid_attempts: 0,
+            iid_success: 0,
+            futility_attempts: 0,
+            futility_prunes: 0,
+            tt_probes: 0,
+            tt_hits: 0,
+            tt_exact_cutoffs: 0,
+            tt_bound_cutoffs: 0,
+            beta_cutoffs: 0,
+            q_beta_cutoffs: 0,
+            cutoffs_by_idx: [0; MAX_MOVES],
+            q_cutoffs_by_idx: [0; MAX_MOVES],
+        }
+    }
+
+    #[inline]
+    fn pct(num: usize, denom: usize) -> f64 {
+        if denom == 0 {
+            0.0
+        } else {
+            num as f64 * 100.0 / denom as f64
+        }
+    }
+
+    #[inline]
+    fn ratio(num: usize, denom: usize) -> f64 {
+        if denom == 0 {
+            0.0
+        } else {
+            num as f64 / denom as f64
+        }
+    }
+
+    pub fn print_stats(&self) {
+        println!();
+        println!("╔══════════════════════════════════════════════════════════════╗");
+        println!("║                     ROXIE SEARCH STATS                       ║");
+        println!("╚══════════════════════════════════════════════════════════════╝");
+
+        // ------------------------------------------------------------
+        // BASIC SEARCH
+        // ------------------------------------------------------------
+
+        println!();
+        println!("── Search ─────────────────────────────────────────────────────");
+
+        let total_nodes = self.nodes;
+        let q_nodes = self.q_nodes;
+        let main_nodes = total_nodes.saturating_sub(q_nodes);
+
+        println!("Main search nodes:      {}", main_nodes);
+        println!("QSearch nodes:          {}", q_nodes);
+        println!("Total nodes:            {}", total_nodes);
+
+        println!(
+            "QSearch / main:         {:.2}%",
+            Self::pct(q_nodes, main_nodes)
+        );
+
+        println!(
+            "QSearch / total:        {:.2}%",
+            Self::pct(q_nodes, total_nodes)
+        );
+
+        println!(
+            "Main / total:           {:.2}%",
+            Self::pct(main_nodes, total_nodes)
+        );
+
+        // ------------------------------------------------------------
+        // BETA CUToffs
+        // ------------------------------------------------------------
+
+        println!();
+        println!("── Cutoffs ────────────────────────────────────────────────────");
+
+        println!("Main beta cutoffs:      {}", self.beta_cutoffs);
+
+        println!("QSearch beta cutoffs:   {}", self.q_beta_cutoffs);
+
+        println!(
+            "All searched cutoffs:   {}",
+            self.beta_cutoffs + self.q_beta_cutoffs
+        );
+
+        // TT cutoffs are deliberately kept separate.
+        let tt_cutoffs = self.tt_exact_cutoffs + self.tt_bound_cutoffs;
+
+        println!("TT exact cutoffs:       {}", self.tt_exact_cutoffs);
+
+        println!("TT bound cutoffs:       {}", self.tt_bound_cutoffs);
+
+        println!("TT total cutoffs:       {}", tt_cutoffs);
+
+        println!(
+            "TT cutoffs / probes:    {:.3}%",
+            Self::pct(tt_cutoffs, self.tt_probes)
+        );
+
+        // ------------------------------------------------------------
+        // MOVE ORDERING
+        // ------------------------------------------------------------
+
+        println!();
+        println!("── Move Ordering ──────────────────────────────────────────────");
+
+        println!(
+            "{:<8} {:>12} {:>12} {:>12} {:>12}",
+            "Index", "Main", "Main Cum.", "QSearch", "Q Cum."
+        );
+
+        let mut main_cumulative = 0.0;
+        let mut q_cumulative = 0.0;
+
+        let mut main_weighted_index = 0usize;
+        let mut q_weighted_index = 0usize;
+
+        for idx in 0..MAX_MOVES {
+            let cutoff = self.cutoffs_by_idx[idx];
+            let q_cutoff = self.q_cutoffs_by_idx[idx];
+
+            main_weighted_index += idx * cutoff;
+            q_weighted_index += idx * q_cutoff;
+
+            let distribution = Self::pct(cutoff, self.beta_cutoffs);
+            let q_distribution = Self::pct(q_cutoff, self.q_beta_cutoffs);
+
+            main_cumulative += distribution;
+            q_cumulative += q_distribution;
+
+            if distribution == 0.0 && q_distribution == 0.0 {
+                break;
+            }
+
+            println!(
+                "{:<8} {:>11.3}% {:>11.3}% {:>11.3}% {:>11.3}%",
+                idx, distribution, main_cumulative, q_distribution, q_cumulative
+            );
+        }
+
+        println!();
+
+        println!(
+            "Average main cutoff index: {:.3}",
+            Self::ratio(main_weighted_index, self.beta_cutoffs)
+        );
+
+        println!(
+            "Average qsearch cutoff index: {:.3}",
+            Self::ratio(q_weighted_index, self.q_beta_cutoffs)
+        );
+
+        println!(
+            "Main cutoffs in move 0:    {:.3}%",
+            Self::pct(self.cutoffs_by_idx[0], self.beta_cutoffs)
+        );
+
+        println!(
+            "Main cutoffs in first 2:   {:.3}%",
+            Self::pct(self.cutoffs_by_idx.iter().take(2).sum(), self.beta_cutoffs)
+        );
+
+        println!(
+            "Main cutoffs in first 4:   {:.3}%",
+            Self::pct(self.cutoffs_by_idx.iter().take(4).sum(), self.beta_cutoffs)
+        );
+
+        println!(
+            "Main cutoffs in first 8:   {:.3}%",
+            Self::pct(self.cutoffs_by_idx.iter().take(8).sum(), self.beta_cutoffs)
+        );
+
+        println!(
+            "Q cutoffs in move 0:       {:.3}%",
+            Self::pct(self.q_cutoffs_by_idx[0], self.q_beta_cutoffs)
+        );
+
+        println!(
+            "Q cutoffs in first 2:      {:.3}%",
+            Self::pct(
+                self.q_cutoffs_by_idx.iter().take(2).sum(),
+                self.q_beta_cutoffs
+            )
+        );
+
+        println!(
+            "Q cutoffs in first 4:      {:.3}%",
+            Self::pct(
+                self.q_cutoffs_by_idx.iter().take(4).sum(),
+                self.q_beta_cutoffs
+            )
+        );
+
+        // ------------------------------------------------------------
+        // NULL MOVE PRUNING
+        // ------------------------------------------------------------
+
+        println!();
+        println!("── Null Move Pruning ──────────────────────────────────────────");
+
+        println!("Attempts:                 {}", self.nmp_attemps);
+
+        println!("Cutoffs:                  {}", self.nmp_cutoffs);
+
+        println!(
+            "Cutoff efficiency:        {:.3}%",
+            Self::pct(self.nmp_cutoffs, self.nmp_attemps)
+        );
+
+        // ------------------------------------------------------------
+        // LMR
+        // ------------------------------------------------------------
+
+        println!();
+        println!("── Late Move Reductions ───────────────────────────────────────");
+
+        println!("Attempts:                 {}", self.lmr_attempts);
+
+        println!("Re-searches:              {}", self.lmr_research);
+
+        println!(
+            "Re-search rate:           {:.3}%",
+            Self::pct(self.lmr_research, self.lmr_attempts)
+        );
+
+        println!(
+            "Accepted reductions:      {:.3}%",
+            Self::pct(
+                self.lmr_attempts.saturating_sub(self.lmr_research),
+                self.lmr_attempts
+            )
+        );
+
+        // ------------------------------------------------------------
+        // LMP
+        // ------------------------------------------------------------
+
+        println!();
+        println!("── Late Move Pruning ──────────────────────────────────────────");
+
+        println!("Attempts:                 {}", self.lmp_attempts);
+
+        println!("Pruned:                   {}", self.lmp_prunes);
+
+        println!(
+            "Prune efficiency:         {:.3}%",
+            Self::pct(self.lmp_prunes, self.lmp_attempts)
+        );
+
+        println!(
+            "Searched instead:         {:.3}%",
+            Self::pct(
+                self.lmp_attempts.saturating_sub(self.lmp_prunes),
+                self.lmp_attempts
+            )
+        );
+
+        // ------------------------------------------------------------
+        // SEE
+        // ------------------------------------------------------------
+
+        println!();
+        println!("── SEE Pruning ────────────────────────────────────────────────");
+
+        println!("Attempts:                 {}", self.see_prune_attempts);
+
+        println!("Pruned:                   {}", self.see_prunes_happened);
+
+        println!(
+            "Prune efficiency:         {:.3}%",
+            Self::pct(self.see_prunes_happened, self.see_prune_attempts)
+        );
+
+        // ------------------------------------------------------------
+        // RFP
+        // ------------------------------------------------------------
+
+        println!();
+        println!("── Reverse Futility Pruning ──────────────────────────────────");
+
+        println!("Attempts:                 {}", self.rfp_attempts);
+
+        println!("Cutoffs:                  {}", self.rfp_cutoffs);
+
+        println!(
+            "Cutoff efficiency:        {:.3}%",
+            Self::pct(self.rfp_cutoffs, self.rfp_attempts)
+        );
+
+        // ------------------------------------------------------------
+        // PROBCUT
+        // ------------------------------------------------------------
+
+        println!();
+        println!("── ProbCut ────────────────────────────────────────────────────");
+
+        println!("Attempts:                 {}", self.probcut_attempts);
+
+        println!("Cutoffs:                  {}", self.probcut_cutoffs);
+
+        println!(
+            "Cutoff efficiency:        {:.3}%",
+            Self::pct(self.probcut_cutoffs, self.probcut_attempts)
+        );
+
+        // ------------------------------------------------------------
+        // IID
+        // ------------------------------------------------------------
+
+        println!();
+        println!("── Internal Iterative Deepening ───────────────────────────────");
+
+        println!("Attempts:                 {}", self.iid_attempts);
+
+        println!("Successes:                {}", self.iid_success);
+
+        println!(
+            "Success rate:             {:.3}%",
+            Self::pct(self.iid_success, self.iid_attempts)
+        );
+
+        // ------------------------------------------------------------
+        // FUTILITY
+        // ------------------------------------------------------------
+
+        println!();
+        println!("── Futility Pruning ───────────────────────────────────────────");
+
+        println!("Attempts:                 {}", self.futility_attempts);
+
+        println!("Pruned:                   {}", self.futility_prunes);
+
+        println!(
+            "Prune efficiency:         {:.3}%",
+            Self::pct(self.futility_prunes, self.futility_attempts)
+        );
+
+        println!(
+            "Searched instead:         {:.3}%",
+            Self::pct(
+                self.futility_attempts.saturating_sub(self.futility_prunes),
+                self.futility_attempts
+            )
+        );
+
+        // ------------------------------------------------------------
+        // TRANSPOSITION TABLE
+        // ------------------------------------------------------------
+
+        println!();
+        println!("── Transposition Table ────────────────────────────────────────");
+
+        println!("Probes:                   {}", self.tt_probes);
+
+        println!("Hits:                     {}", self.tt_hits);
+
+        println!(
+            "Hit rate:                 {:.3}%",
+            Self::pct(self.tt_hits, self.tt_probes)
+        );
+
+        println!("Exact cutoffs:            {}", self.tt_exact_cutoffs);
+
+        println!("Bound cutoffs:            {}", self.tt_bound_cutoffs);
+
+        println!("Total cutoffs:            {}", tt_cutoffs);
+
+        println!(
+            "Exact / hits:             {:.3}%",
+            Self::pct(self.tt_exact_cutoffs, self.tt_hits)
+        );
+
+        println!(
+            "Bound / hits:             {:.3}%",
+            Self::pct(self.tt_bound_cutoffs, self.tt_hits)
+        );
+
+        // ------------------------------------------------------------
+        // EBF
+        // ------------------------------------------------------------
+
+        println!();
+        println!("── Effective Branching Factor ─────────────────────────────────");
+
+        let mut ebf_sum = 0.0;
+        let mut ebf_count = 0;
+
+        for depth in 1..MAX_PLY {
+            let prev = self.nodes_by_depth[depth - 1];
+            let current = self.nodes_by_depth[depth];
+
+            if prev == 0 || current == 0 {
+                continue;
+            }
+
+            let ebf = current as f64 / prev as f64;
+
+            println!("Depth {:>2} -> {:>2}:       {:.3}", depth - 1, depth, ebf);
+
+            ebf_sum += ebf;
+            ebf_count += 1;
+        }
+
+        if ebf_count > 0 {
+            println!(
+                "Average EBF:              {:.3}",
+                ebf_sum / ebf_count as f64
+            );
+        } else {
+            println!("EBF unavailable: node/depth data not recorded");
+        }
+
+        // ------------------------------------------------------------
+        // SUMMARY
+        // ------------------------------------------------------------
+
+        println!();
+        println!("── Search Summary ─────────────────────────────────────────────");
+
+        println!(
+            "Pruning attempts:         {}",
+            self.nmp_attemps
+                + self.lmp_attempts
+                + self.see_prune_attempts
+                + self.rfp_attempts
+                + self.probcut_attempts
+                + self.futility_attempts
+        );
+
+        println!(
+            "Successful prunes:        {}",
+            self.nmp_cutoffs
+                + self.lmp_prunes
+                + self.see_prunes_happened
+                + self.rfp_cutoffs
+                + self.probcut_cutoffs
+                + self.futility_prunes
+        );
+
+        println!("Total TT cutoffs:         {}", tt_cutoffs);
+
+        println!("Total beta cutoffs:       {}", self.beta_cutoffs);
+
+        println!("Total qsearch cutoffs:    {}", self.q_beta_cutoffs);
+
+        println!();
+        println!("════════════════════════════════════════════════════════════════");
     }
 
     pub fn describe(&self) {

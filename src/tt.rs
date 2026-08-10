@@ -187,8 +187,8 @@ impl TranspositionTable {
         None
     }
 
-    pub fn store(&mut self, new_entry: TTEntry) {
-        let new_packed = TTPacked::new(new_entry);
+    pub fn store(&mut self, mut new_entry: TTEntry) {
+        let mut new_packed = TTPacked::new(new_entry);
         let index = new_packed.key as usize & self.mask;
         let bucket = &mut self.table[index];
 
@@ -206,6 +206,17 @@ impl TranspositionTable {
 
             // exact key match
             if slot.key == new_packed.key {
+                // If Q-search is trying to store a NULL move, and we already
+                // have a perfectly good move from a previous search, rescue it.
+                if new_entry.best_move == Move::NULL {
+                    let old_move = slot.best_move();
+                    if old_move != Move::NULL {
+                        new_entry.best_move = old_move;
+                        new_packed = TTPacked::new(new_entry); // Repack with the rescued move
+                    }
+                }
+
+                // Overwrite if the new depth is greater or equal
                 if new_packed.depth() >= slot.depth() {
                     bucket.slots[i] = new_packed;
                 }
