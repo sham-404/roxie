@@ -4,6 +4,8 @@ use std::{
     sync::OnceLock,
 };
 
+use std::arch::x86_64::*;
+
 use crate::{
     board::{Board, pop_lsb},
     r#const::{BLACK, WHITE},
@@ -253,57 +255,76 @@ impl Network {
         acc
     }
 
-    fn fill_acc(&self, feature: &[usize]) -> Vec<i32> {
-        // Start the accumulator pre-loaded with the biases
-        let mut acc = self.b1.clone();
+    // fn fill_acc(&self, feature: &[usize]) -> Vec<i32> {
+    //     // Start the accumulator pre-loaded with the biases
+    //     let mut acc = self.b1.clone();
+    //
+    //     for &act_feat in feature {
+    //         let offset = act_feat * HL1;
+    //
+    //         assert!(offset + HL1 <= self.w1.len());
+    //
+    //         unsafe {
+    //             for neuron_idx in 0..HL1 {
+    //                 let w = *self.w1.get_unchecked(offset + neuron_idx);
+    //                 *acc.get_unchecked_mut(neuron_idx) += w as i32;
+    //             }
+    //         }
+    //     }
+    //
+    //     acc
+    // }
 
-        for &act_feat in feature {
-            let offset = act_feat * (HL1);
-
-            for neuron_idx in 0..HL1 {
-                acc[neuron_idx] += self.w1[offset + neuron_idx] as i32;
-            }
-        }
-
-        acc
-    }
-
-    fn process_layer(
-        inp_layer: &[i32],
-        out_layer: &mut [i32],
-        weight: &[i16],
-        bias: &[i32],
-        to_quantize: bool,
-    ) {
-        let input_len = inp_layer.len();
-        for neuron_idx in 0..bias.len() {
-            let mut dot = 0;
-
-            for i in 0..input_len {
-                dot += inp_layer[i] * weight[i + neuron_idx * input_len] as i32;
-            }
-
-            let val = bias[neuron_idx]
-                + if to_quantize {
-                    (dot + (1 << (QP - 1))) >> QP
-                } else {
-                    dot
-                };
-
-            out_layer[neuron_idx] = val;
-        }
-    }
-
-    fn hard_tanh(min: i32, max: i32, layer: &mut [i32]) {
-        let len = layer.len();
-        let mut idx = 0;
-
-        while idx < len {
-            let val = layer[idx].clamp(min, max);
-            layer[idx] = val;
-            idx += 1;
-        }
-    }
+    // fn process_layer(
+    //     inp_layer: &[i32],
+    //     out_layer: &mut [i32],
+    //     weight: &[i16],
+    //     bias: &[i32],
+    //     to_quantize: bool,
+    // ) {
+    //     let input_len = inp_layer.len();
+    //     let out_len = bias.len();
+    //
+    //     // ensuring our slices are large enough to prevent UB
+    //     assert!(out_layer.len() >= out_len);
+    //     assert!(weight.len() >= input_len * out_len);
+    //
+    //     for neuron_idx in 0..out_len {
+    //         let mut dot = 0;
+    //         let w_offset = neuron_idx * input_len;
+    //
+    //         // Bypassing the bound checks for each array access
+    //         unsafe {
+    //             for i in 0..input_len {
+    //                 let inp = *inp_layer.get_unchecked(i);
+    //                 let w = *weight.get_unchecked(w_offset + i);
+    //                 dot += inp * w as i32;
+    //             }
+    //
+    //             let b = *bias.get_unchecked(neuron_idx);
+    //             let val = b + if to_quantize {
+    //                 (dot + (1 << (QP - 1))) >> QP
+    //             } else {
+    //                 dot
+    //             };
+    //
+    //             *out_layer.get_unchecked_mut(neuron_idx) = val;
+    //         }
+    //     }
+    // }
+    //
+    // fn hard_tanh(min: i32, max: i32, layer: &mut [i32]) {
+    //     let len = layer.len();
+    //     let mut idx = 0;
+    //
+    //     unsafe {
+    //         while idx < len {
+    //             let val = (*layer.get_unchecked(idx)).clamp(min, max);
+    //             *layer.get_unchecked_mut(idx) = val;
+    //             idx += 1;
+    //         }
+    //     }
+    // }
 
     fn read_f32(file: &mut File, size: usize) -> Vec<f32> {
         let mut bytes = vec![0u8; size * 4];
@@ -342,6 +363,240 @@ impl Network {
         }
 
         out
+    }
+}
+
+// SIMD instructions
+impl Network {
+    pub fn process_layer(
+        inp_layer: &[i32],
+        out_layer: &mut [i32],
+        weight: &[i16],
+        bias: &[i32],
+        to_quantize: bool,
+    ) {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            if is_x86_feature_detected!("avx2") {
+                return unsafe {
+                    Self::process_layer_avx2(inp_layer, out_layer, weight, bias, to_quantize)
+                };
+            }
+        }
+
+        Self::process_layer_scalar(inp_layer, out_layer, weight, bias, to_quantize);
+    }
+
+    fn process_layer_scalar(
+        inp_layer: &[i32],
+        out_layer: &mut [i32],
+        weight: &[i16],
+        bias: &[i32],
+        to_quantize: bool,
+    ) {
+        let input_len = inp_layer.len();
+        let out_len = bias.len();
+
+        for neuron_idx in 0..out_len {
+            let mut dot = 0;
+            let w_offset = neuron_idx * input_len;
+
+            unsafe {
+                for i in 0..input_len {
+                    let inp = *inp_layer.get_unchecked(i);
+                    let w = *weight.get_unchecked(w_offset + i);
+                    dot += inp * w as i32;
+                }
+
+                let b = *bias.get_unchecked(neuron_idx);
+                let val = b + if to_quantize {
+                    (dot + (1 << (QP - 1))) >> QP
+                } else {
+                    dot
+                };
+
+                *out_layer.get_unchecked_mut(neuron_idx) = val;
+            }
+        }
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[target_feature(enable = "avx2")]
+    unsafe fn process_layer_avx2(
+        inp_layer: &[i32],
+        out_layer: &mut [i32],
+        weight: &[i16],
+        bias: &[i32],
+        to_quantize: bool,
+    ) {
+        let input_len = inp_layer.len();
+        let out_len = bias.len();
+
+        for neuron_idx in 0..out_len {
+            let w_offset = neuron_idx * input_len;
+            let mut i = 0;
+
+            unsafe {
+                let mut acc = _mm256_setzero_si256();
+
+                while i + 8 <= input_len {
+                    let inp = _mm256_loadu_si256(inp_layer.as_ptr().add(i) as *const __m256i);
+                    let w_128 =
+                        _mm_loadu_si128(weight.as_ptr().add(w_offset + i) as *const __m128i);
+                    let w_256 = _mm256_cvtepi16_epi32(w_128);
+
+                    let prod = _mm256_mullo_epi32(inp, w_256);
+                    acc = _mm256_add_epi32(acc, prod);
+
+                    i += 8;
+                }
+
+                let acc_128 = _mm_add_epi32(
+                    _mm256_castsi256_si128(acc),
+                    _mm256_extracti128_si256(acc, 1),
+                );
+
+                let mut sums = [0i32; 4];
+                _mm_storeu_si128(sums.as_mut_ptr() as *mut __m128i, acc_128);
+                let mut dot = sums[0] + sums[1] + sums[2] + sums[3];
+
+                while i < input_len {
+                    dot +=
+                        *inp_layer.get_unchecked(i) * (*weight.get_unchecked(w_offset + i) as i32);
+                    i += 1;
+                }
+
+                let b = *bias.get_unchecked(neuron_idx);
+                let val = b + if to_quantize {
+                    (dot + (1 << (QP - 1))) >> QP
+                } else {
+                    dot
+                };
+
+                *out_layer.get_unchecked_mut(neuron_idx) = val;
+            }
+        }
+    }
+
+    pub fn hard_tanh(min: i32, max: i32, layer: &mut [i32]) {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            if is_x86_feature_detected!("avx2") {
+                return unsafe { Self::hard_tanh_avx2(min, max, layer) };
+            }
+        }
+
+        Self::hard_tanh_scalar(min, max, layer);
+    }
+
+    fn hard_tanh_scalar(min: i32, max: i32, layer: &mut [i32]) {
+        let len = layer.len();
+        let mut idx = 0;
+
+        while idx < len {
+            unsafe {
+                let val = (*layer.get_unchecked(idx)).clamp(min, max);
+                *layer.get_unchecked_mut(idx) = val;
+            }
+            idx += 1;
+        }
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[target_feature(enable = "avx2")]
+    unsafe fn hard_tanh_avx2(min: i32, max: i32, layer: &mut [i32]) {
+        let len = layer.len();
+        let mut i = 0;
+
+        unsafe {
+            let v_min = _mm256_set1_epi32(min);
+            let v_max = _mm256_set1_epi32(max);
+
+            while i + 8 <= len {
+                let ptr = layer.as_mut_ptr().add(i);
+
+                let mut v = _mm256_loadu_si256(ptr as *const __m256i);
+                v = _mm256_max_epi32(v, v_min);
+                v = _mm256_min_epi32(v, v_max);
+
+                _mm256_storeu_si256(ptr as *mut __m256i, v);
+                i += 8;
+            }
+
+            while i < len {
+                let val = (*layer.get_unchecked(i)).clamp(min, max);
+                *layer.get_unchecked_mut(i) = val;
+                i += 1;
+            }
+        }
+    }
+
+    pub fn fill_acc(&self, feature: &[usize]) -> Vec<i32> {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            if is_x86_feature_detected!("avx2") {
+                return unsafe { self.fill_acc_avx2(feature) };
+            }
+        }
+
+        self.fill_acc_scalar(feature)
+    }
+
+    fn fill_acc_scalar(&self, feature: &[usize]) -> Vec<i32> {
+        let mut acc = self.b1.clone();
+
+        for &act_feat in feature {
+            let offset = act_feat * HL1;
+
+            unsafe {
+                for neuron_idx in 0..HL1 {
+                    let w = *self.w1.get_unchecked(offset + neuron_idx);
+                    *acc.get_unchecked_mut(neuron_idx) += w as i32;
+                }
+            }
+        }
+
+        acc
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[target_feature(enable = "avx2")]
+    unsafe fn fill_acc_avx2(&self, feature: &[usize]) -> Vec<i32> {
+        let mut acc = self.b1.clone();
+
+        for &act_feat in feature {
+            let offset = act_feat * HL1;
+            let mut i = 0;
+
+            unsafe {
+                while i + 8 <= HL1 {
+                    // Load 8 weights (i16) and extend to i32
+                    let w_128 = _mm_loadu_si128(self.w1.as_ptr().add(offset + i) as *const __m128i);
+                    let w_256 = _mm256_cvtepi16_epi32(w_128);
+
+                    // Load 8 current accumulator values (i32)
+                    let acc_ptr = acc.as_mut_ptr().add(i);
+                    let acc_256 = _mm256_loadu_si256(acc_ptr as *const __m256i);
+
+                    // Add them together
+                    let sum = _mm256_add_epi32(acc_256, w_256);
+
+                    // Store back to accumulator
+                    _mm256_storeu_si256(acc_ptr as *mut __m256i, sum);
+
+                    i += 8;
+                }
+
+                // Tail loop (unlikely if HL1 is 256, but good for safety)
+                while i < HL1 {
+                    let w = *self.w1.get_unchecked(offset + i);
+                    *acc.get_unchecked_mut(i) += w as i32;
+                    i += 1;
+                }
+            }
+        }
+
+        acc
     }
 }
 
@@ -495,12 +750,15 @@ mod tests {
         evaluation::init_pesto_table,
         magics::init_magics,
         network::{NN_DATA, Network, QP},
+        zobrist::init_zobrist,
     };
 
     #[test]
     fn nn_check() {
         init_pesto_table();
         init_magics();
+
+        init_zobrist();
 
         let mut cursor = Cursor::new(NN_DATA);
         let nn = Network::load(&mut cursor);
