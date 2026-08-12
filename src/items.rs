@@ -284,16 +284,16 @@ impl Move {
         coord
     }
 
-    pub fn from_uci(mv_str: &str, board: &mut Board) -> Move {
+    pub fn from_uci(mv_str: &str, board: &mut Board) -> Option<Move> {
         let move_list = board.gen_moves();
 
         for mv in move_list.moves {
             if mv.to_coord() == mv_str {
-                return mv;
+                return Some(mv);
             }
         }
 
-        panic!("Invalid move: {}", mv_str);
+        None
     }
 }
 

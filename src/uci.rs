@@ -180,8 +180,15 @@ impl UCI {
 
                     if let Some("moves") = commands.next() {
                         for mv_str in commands {
-                            let mv = Move::from_uci(mv_str, &mut engine.board);
-                            engine.board.make_move(&mv);
+                            if let Some(mv) = Move::from_uci(mv_str, &mut engine.board) {
+                                engine.board.make_move(&mv);
+                            } else {
+                                uci_print!(
+                                    "info string ignoring illegal move: {}",
+                                    mv_str
+                                );
+                                return;
+                            }
                         }
                     }
                 }
@@ -194,8 +201,15 @@ impl UCI {
 
                     if let Some("moves") = commands.next() {
                         for mv_str in commands {
-                            let mv = Move::from_uci(mv_str, &mut engine.board);
-                            engine.board.make_move(&mv);
+                            if let Some(mv) = Move::from_uci(mv_str, &mut engine.board) {
+                                engine.board.make_move(&mv);
+                            } else {
+                                uci_print!(
+                                    "info string ignoring illegal move: {}",
+                                    mv_str
+                                );
+                                return;
+                            }
                         }
                     }
                 }

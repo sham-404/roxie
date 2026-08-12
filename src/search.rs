@@ -370,35 +370,35 @@ impl Engine {
             }
         }
 
-        // //// Internal Iterative Deepening (IID)
-        // // If we don't have a tt move, try to search a lower depth search and hope it
-        // // probes a tt move
-        // if depth >= 5 && tt_move == Move::NULL && excluded_move == Move::NULL {
-        //     info.stats.iid_attempts += 1;
-        //
-        //     let iid_depth = depth - 2;
-        //
-        //     self.negamax(
-        //         SearchParams {
-        //             depth: iid_depth,
-        //             alpha,
-        //             beta,
-        //             ply,
-        //             extension: 0,
-        //             prev_move,
-        //             excluded_move: Move::NULL,
-        //         },
-        //         limits,
-        //         info,
-        //     );
-        //
-        //     // probing tt, as we might have a move there now
-        //     if let Some(entry) = self.tt.probe(key) {
-        //         info.stats.iid_success += 1;
-        //         tt_move = entry.best_move();
-        //     }
-        // }
-        // //// Internal Iterative Deepening (IID)
+        //// Internal Iterative Deepening (IID)
+        // If we don't have a tt move, try to search a lower depth search and hope it
+        // probes a tt move
+        if depth >= 5 && tt_move == Move::NULL && excluded_move == Move::NULL {
+            info.stats.iid_attempts += 1;
+
+            let iid_depth = depth - 2;
+
+            self.negamax(
+                SearchParams {
+                    depth: iid_depth,
+                    alpha,
+                    beta,
+                    ply,
+                    extension: 0,
+                    prev_move,
+                    excluded_move: Move::NULL,
+                },
+                limits,
+                info,
+            );
+
+            // probing tt, as we might have a move there now
+            if let Some(entry) = self.tt.probe(key) {
+                info.stats.iid_success += 1;
+                tt_move = entry.best_move();
+            }
+        }
+        //// Internal Iterative Deepening (IID)
 
         // base case handling
         if depth == 0 {
@@ -458,78 +458,78 @@ impl Engine {
         }
         //// NULL move pruning
 
-        // //// ProbCut (Probablistic Cut)
-        // if depth >= 5
-        //     && !in_check
-        //     && excluded_move == Move::NULL
-        //     && beta.abs() < MATE - MAX_PLY as i16
-        // {
-        //     let pc_margin = 200i32;
-        //     let pc_beta = ((beta as i32 + pc_margin).min((MATE - MAX_PLY as i16) as i32)) as i16;
-        //     let pc_depth = if depth >= 8 { depth - 4 } else { depth - 3 };
-        //
-        //     let tt_move = if tt_move.flag().is_quiet() {
-        //         Move::NULL
-        //     } else {
-        //         tt_move
-        //     };
-        //
-        //     let mut pc_picker = MovePicker::new(tt_move, [Move::NULL; 2], prev_move, true);
-        //
-        //     while let Some(mv) = self.pick_next_mv(&mut pc_picker) {
-        //         if !mv.flag().is_promo() && self.board.see(&mv) <= 0 {
-        //             continue;
-        //         }
-        //
-        //         let undo = self.board.make_move(&mv);
-        //         if self.board.in_check_after_moving() {
-        //             self.board.unmake_move(&mv, &undo);
-        //             continue;
-        //         }
-        //
-        //         info.stats.probcut_attempts += 1;
-        //         self.update_nnue(&mv, &undo, ply as usize);
-        //
-        //         let pc_score = -self.negamax(
-        //             SearchParams {
-        //                 depth: pc_depth,
-        //                 alpha: -pc_beta,
-        //                 beta: -pc_beta + 1, // Zero window
-        //                 ply: ply + 1,
-        //                 extension: 0,
-        //                 prev_move: mv,
-        //                 excluded_move: Move::NULL,
-        //             },
-        //             limits,
-        //             info,
-        //         );
-        //
-        //         self.board.unmake_move(&mv, &undo);
-        //
-        //         if pc_score >= pc_beta {
-        //             info.stats.probcut_cutoffs += 1;
-        //
-        //             // Guard against fake mates from shallow searches
-        //             let safe_score = if pc_score >= MATE - MAX_PLY as i16 {
-        //                 pc_beta
-        //             } else {
-        //                 pc_score
-        //             };
-        //
-        //             self.tt.store(TTEntry {
-        //                 key: self.board.get_zob_key(),
-        //                 depth: pc_depth + 1, // Safe depth assumption
-        //                 score: safe_score as i32,
-        //                 flag: TTFlag::LowerBound,
-        //                 best_move: mv,
-        //                 age: self.tt.get_generation(),
-        //             });
-        //
-        //             return safe_score;
-        //         }
-        //     }
-        // }
-        // //// ProbCut (Probablistic Cut)
+        //// ProbCut (Probablistic Cut)
+        if depth >= 5
+            && !in_check
+            && excluded_move == Move::NULL
+            && beta.abs() < MATE - MAX_PLY as i16
+        {
+            let pc_margin = 200i32;
+            let pc_beta = ((beta as i32 + pc_margin).min((MATE - MAX_PLY as i16) as i32)) as i16;
+            let pc_depth = if depth >= 8 { depth - 4 } else { depth - 3 };
+
+            let tt_move = if tt_move.flag().is_quiet() {
+                Move::NULL
+            } else {
+                tt_move
+            };
+
+            let mut pc_picker = MovePicker::new(tt_move, [Move::NULL; 2], prev_move, true);
+
+            while let Some(mv) = self.pick_next_mv(&mut pc_picker) {
+                if !mv.flag().is_promo() && self.board.see(&mv) <= 0 {
+                    continue;
+                }
+
+                let undo = self.board.make_move(&mv);
+                if self.board.in_check_after_moving() {
+                    self.board.unmake_move(&mv, &undo);
+                    continue;
+                }
+
+                info.stats.probcut_attempts += 1;
+                self.update_nnue(&mv, &undo, ply as usize);
+
+                let pc_score = -self.negamax(
+                    SearchParams {
+                        depth: pc_depth,
+                        alpha: -pc_beta,
+                        beta: -pc_beta + 1, // Zero window
+                        ply: ply + 1,
+                        extension: 0,
+                        prev_move: mv,
+                        excluded_move: Move::NULL,
+                    },
+                    limits,
+                    info,
+                );
+
+                self.board.unmake_move(&mv, &undo);
+
+                if pc_score >= pc_beta {
+                    info.stats.probcut_cutoffs += 1;
+
+                    // Guard against fake mates from shallow searches
+                    let safe_score = if pc_score >= MATE - MAX_PLY as i16 {
+                        pc_beta
+                    } else {
+                        pc_score
+                    };
+
+                    self.tt.store(TTEntry {
+                        key: self.board.get_zob_key(),
+                        depth: pc_depth + 1, // Safe depth assumption
+                        score: safe_score as i32,
+                        flag: TTFlag::LowerBound,
+                        best_move: mv,
+                        age: self.tt.get_generation(),
+                    });
+
+                    return safe_score;
+                }
+            }
+        }
+        //// ProbCut (Probablistic Cut)
 
         //// Singular Extension
         let mut se_extension = 0;
@@ -813,9 +813,10 @@ impl Engine {
         // Conditions for NMP
         if depth > 3
             && excluded_move == Move::NULL
+            && beta.abs() < MATE - MAX_PLY as i16
+            && static_eval >= beta
             && !self.board.in_check()
             && !self.board.is_endgame()
-            && static_eval >= beta
         {
             info.stats.nmp_attemps += 1;
 
@@ -925,7 +926,7 @@ impl Engine {
 
             let hist_adjustment = hist_score / adjustment_fac;
 
-            r -= hist_adjustment;
+            r -= hist_adjustment.clamp(-4, 4);
 
             // Counter and killer move adjustment
             if mv == self.counter_moves.get(prev_move) || self.killers[ply as usize].contains(&mv) {
@@ -1093,7 +1094,7 @@ impl Engine {
 
             // beta cutoff
             if stand_pat >= beta {
-                self.q_tt_store(TTFlag::LowerBound, stand_pat, Move::NULL, ply);
+                self.q_tt_store(TTFlag::LowerBound, stand_pat, tt_move, ply);
                 return stand_pat;
             }
 
@@ -1115,9 +1116,10 @@ impl Engine {
         let mut mv_searched = 0;
 
         while let Some(mv) = self.pick_next_mv(&mut picker) {
+            let gives_check = self.board.gives_check(mv);
             if !in_check && !mv.flag().is_promo() {
                 // soft delta pruning (see pruning) //
-                if self.board.see(&mv) < 0 && !self.board.gives_check(mv) {
+                if !gives_check && self.board.see(&mv) < 0 {
                     continue;
                 }
                 // soft delta pruning (see pruning) //
@@ -1131,7 +1133,7 @@ impl Engine {
                 } as i16;
 
                 const DELTA: i16 = 200;
-                if stand_pat + gain + DELTA < alpha {
+                if !gives_check && stand_pat + gain + DELTA < alpha {
                     continue;
                 }
                 // delta pruning //
@@ -1186,7 +1188,7 @@ impl Engine {
 
         if !qsearch_picker && mv_searched == 0 {
             let score = -MATE + ply as i16;
-            self.q_tt_store(TTFlag::Exact, score, Move::NULL, ply);
+            self.q_tt_store(TTFlag::Exact, score, tt_move, ply);
             return score;
         }
 
@@ -1333,7 +1335,9 @@ pub struct SearchStats {
     pub nodes: usize,
     pub q_nodes: usize,
 
-    pub nodes_by_depth: [usize; MAX_PLY],
+    // +1 is necessary, as depth is usually calculated from 1, so we
+    // have to include the MAX_DEPTH idx as well
+    pub nodes_by_depth: [usize; MAX_DEPTH as usize + 1],
 
     pub nmp_attemps: usize,
     pub nmp_cutoffs: usize,
@@ -1376,7 +1380,7 @@ impl SearchStats {
         Self {
             nodes: 0,
             q_nodes: 0,
-            nodes_by_depth: [0; MAX_PLY],
+            nodes_by_depth: [0; MAX_DEPTH as usize + 1],
 
             nmp_attemps: 0,
             nmp_cutoffs: 0,
@@ -1777,7 +1781,7 @@ impl SearchStats {
         let mut ebf_sum = 0.0;
         let mut ebf_count = 0;
 
-        for depth in 1..MAX_PLY {
+        for depth in 1..MAX_PLY + 1 {
             let prev = self.nodes_by_depth[depth - 1];
             let current = self.nodes_by_depth[depth];
 
