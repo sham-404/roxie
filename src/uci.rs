@@ -99,8 +99,7 @@ impl UCI {
 
                     "ucinewgame" => {
                         self.stop_search();
-                        let mut engine_guard = self.engine.lock().unwrap();
-                        *engine_guard = Engine::new()
+                        self.engine.lock().unwrap().reset();
                     }
 
                     "setoption" => self.handle_setoption(&mut words),
@@ -183,10 +182,7 @@ impl UCI {
                             if let Some(mv) = Move::from_uci(mv_str, &mut engine.board) {
                                 engine.board.make_move(&mv);
                             } else {
-                                uci_print!(
-                                    "info string ignoring illegal move: {}",
-                                    mv_str
-                                );
+                                uci_print!("info string ignoring illegal move: {}", mv_str);
                                 return;
                             }
                         }
@@ -194,20 +190,29 @@ impl UCI {
                 }
 
                 "fen" => {
-                    let fen_parts: Vec<&str> = commands.by_ref().take(6).collect();
-                    let fen = fen_parts.join(" ");
+                    let mut fen_parts = Vec::new();
+                    let mut has_moves = false;
 
+                    // Collecting parts till it ends, or if we have "moves" command
+                    while let Some(part) = commands.next() {
+                        if part == "moves" {
+                            has_moves = true;
+                            break;
+                        }
+                        fen_parts.push(part);
+                    }
+
+                    let fen = fen_parts.join(" ");
                     engine.board = Board::load_fen(&fen);
 
-                    if let Some("moves") = commands.next() {
+                    // if we broke out of the loop because we hit "moves",
+                    // the remaining items in `commands` are the actual moves.
+                    if has_moves {
                         for mv_str in commands {
                             if let Some(mv) = Move::from_uci(mv_str, &mut engine.board) {
                                 engine.board.make_move(&mv);
                             } else {
-                                uci_print!(
-                                    "info string ignoring illegal move: {}",
-                                    mv_str
-                                );
+                                uci_print!("info string ignoring illegal move: {}", mv_str);
                                 return;
                             }
                         }

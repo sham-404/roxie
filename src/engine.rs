@@ -35,6 +35,18 @@ impl Engine {
         }
     }
 
+    pub fn reset(&mut self) {
+        self.board = Board::start_pos();
+        self.tt.clear();
+        self.history = [[[0; 64]; 64]; 2];
+        self.continuation_history = ContinuationHistory::new();
+        self.counter_moves = CountermoveTable::new();
+        self.eval_history = EvalHistory::new();
+        self.killers = [[Move::NULL; 2]; MAX_PLY];
+        self.eval_buf = EvalBuf::new();
+        self.accumulators = [[[0; HL1]; 2]; MAX_PLY];
+    }
+
     #[inline(always)]
     pub fn info(&self) {
         uci_print!("Roxie v{}\n", env!("CARGO_PKG_VERSION"));

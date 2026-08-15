@@ -8,6 +8,7 @@ All notable changes to Roxie are documented in this file.
 
 ### Added 
 - SIMD instructions added, noticable NPS increase detected
+- Made the network layer (bias layer) from i32 to i16 for better simd usage
 - gen_quiet_moves() and gen_tactical_moves() were added to help the search become faster
 - Added MovePicker, replacing the total move generation and move ordering at once
 - optimized move generation functions, and introduced helpers to get the moves of a single piece 
@@ -18,8 +19,10 @@ All notable changes to Roxie are documented in this file.
 ### Improved
 - Reduced the if branching for quiets and captures for performance, but not so significant tho.
 - Improved castling right updation in make_move()
+- MakeFile now contains flags, which reduce the binary size by litte by removing unnecessary debugging features
 
 ### Fixed
+- Engine now correctly preserves the size of tt (old version reinitialize to 16 mb on every 'ucinewgame')
 - see() is fixed with subtle, non significant issue
 - quiescence() is fixed, as it lacked 3 fold and 50 move check before
 - Critical!! -> fixed black pawn quiet move generation (i forgot to exclude the promo square)

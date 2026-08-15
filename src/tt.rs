@@ -237,7 +237,9 @@ impl TranspositionTable {
 
     #[inline(always)]
     pub fn clear(&mut self) {
-        self.table.clear();
+        self.table.fill(TTBucket {
+            slots: [TTPacked::default(); TT_SLOT_SIZE],
+        });
         self.generation = 0;
     }
 
