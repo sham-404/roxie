@@ -77,20 +77,16 @@ impl Network {
         assert_eq!(&magic, MAGIC);
 
         let w1 = Network::read_i16(reader, INPUT * HL1);
-        let b1 = Network::read_i32(reader, HL1);
-        let b1 = b1.into_iter().map(|val| val as i16).collect();
+        let b1 = Network::read_i16(reader, HL1);
 
         let w2 = Network::read_i16(reader, HL1 * 2 * HL2);
-        let b2 = Network::read_i32(reader, HL2);
-        let b2 = b2.into_iter().map(|val| val as i16).collect();
+        let b2 = Network::read_i16(reader, HL2);
 
         let w3 = Network::read_i16(reader, HL2 * HL3);
-        let b3 = Network::read_i32(reader, HL3);
-        let b3 = b3.into_iter().map(|val| val as i16).collect();
+        let b3 = Network::read_i16(reader, HL3);
 
         let w4 = Network::read_i16(reader, HL3 * OUTPUT);
-        let b4 = Network::read_i32(reader, OUTPUT);
-        let b4 = b4.into_iter().map(|val| val as i16).collect();
+        let b4 = Network::read_i16(reader, OUTPUT);
 
         Network {
             w1,
@@ -346,6 +342,7 @@ impl Network {
         out
     }
 
+    #[allow(dead_code)]
     fn read_i32(file: &mut impl Read, size: usize) -> Vec<i32> {
         let mut bytes = vec![0u8; size * 4];
         file.read_exact(&mut bytes).unwrap();
@@ -562,8 +559,9 @@ impl Network {
 
             unsafe {
                 while i + 16 <= HL1 {
-                    let w_256 = _mm256_loadu_si256(self.w1.as_ptr().add(offset + i) as *const __m256i);
-                    
+                    let w_256 =
+                        _mm256_loadu_si256(self.w1.as_ptr().add(offset + i) as *const __m256i);
+
                     let acc_ptr = acc.as_mut_ptr().add(i);
                     let acc_256 = _mm256_loadu_si256(acc_ptr as *const __m256i);
 
