@@ -17,7 +17,7 @@ pub struct Engine {
     pub eval_history: EvalHistory,
     pub killers: [[Move; 2]; MAX_PLY],
     pub eval_buf: EvalBuf,
-    pub accumulators: [[[i32; HL1]; 2]; MAX_PLY],
+    pub accumulators: [[[i16; HL1]; 2]; MAX_PLY],
 }
 
 impl Engine {
@@ -31,7 +31,7 @@ impl Engine {
             eval_history: EvalHistory::new(),
             killers: [[Move::NULL; 2]; MAX_PLY],
             eval_buf: EvalBuf::new(),
-            accumulators: [[[0i32; HL1]; 2]; MAX_PLY],
+            accumulators: [[[0; HL1]; 2]; MAX_PLY],
         }
     }
 

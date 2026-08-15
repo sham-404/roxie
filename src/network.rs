@@ -25,10 +25,10 @@ const QP: i32 = 8;
 pub const Q: f32 = (1 << QP) as f32; // 2 ^ QP
 
 pub struct EvalBuf {
-    fc1: [i32; HL1 * 2],
-    fc2: [i32; HL2],
-    fc3: [i32; HL3],
-    fc4: [i32; OUTPUT],
+    fc1: [i16; HL1 * 2],
+    fc2: [i16; HL2],
+    fc3: [i16; HL3],
+    fc4: [i16; OUTPUT],
 }
 
 impl EvalBuf {
@@ -58,16 +58,16 @@ pub fn init_nn(is_needed: bool) {
 
 pub struct Network {
     w1: Vec<i16>,
-    b1: Vec<i32>,
+    b1: Vec<i16>,
 
     w2: Vec<i16>,
-    b2: Vec<i32>,
+    b2: Vec<i16>,
 
     w3: Vec<i16>,
-    b3: Vec<i32>,
+    b3: Vec<i16>,
 
     w4: Vec<i16>,
-    b4: Vec<i32>,
+    b4: Vec<i16>,
 }
 
 impl Network {
@@ -78,15 +78,19 @@ impl Network {
 
         let w1 = Network::read_i16(reader, INPUT * HL1);
         let b1 = Network::read_i32(reader, HL1);
+        let b1 = b1.into_iter().map(|val| val as i16).collect();
 
         let w2 = Network::read_i16(reader, HL1 * 2 * HL2);
         let b2 = Network::read_i32(reader, HL2);
+        let b2 = b2.into_iter().map(|val| val as i16).collect();
 
         let w3 = Network::read_i16(reader, HL2 * HL3);
         let b3 = Network::read_i32(reader, HL3);
+        let b3 = b3.into_iter().map(|val| val as i16).collect();
 
         let w4 = Network::read_i16(reader, HL3 * OUTPUT);
         let b4 = Network::read_i32(reader, OUTPUT);
+        let b4 = b4.into_iter().map(|val| val as i16).collect();
 
         Network {
             w1,
@@ -112,25 +116,25 @@ impl Network {
         let w1 = Network::quantize_to_i16(&w1);
 
         let b1 = Network::read_f32(&mut file, HL1);
-        let b1 = Network::quantize_to_i32(&b1);
+        let b1 = Network::quantize_to_i16(&b1);
 
         let w2 = Network::read_f32(&mut file, HL1 * 2 * HL2);
         let w2 = Network::quantize_to_i16(&w2);
 
         let b2 = Network::read_f32(&mut file, HL2);
-        let b2 = Network::quantize_to_i32(&b2);
+        let b2 = Network::quantize_to_i16(&b2);
 
         let w3 = Network::read_f32(&mut file, HL2 * HL3);
         let w3 = Network::quantize_to_i16(&w3);
 
         let b3 = Network::read_f32(&mut file, HL3);
-        let b3 = Network::quantize_to_i32(&b3);
+        let b3 = Network::quantize_to_i16(&b3);
 
         let w4 = Network::read_f32(&mut file, HL3 * OUTPUT);
         let w4 = Network::quantize_to_i16(&w4);
 
         let b4 = Network::read_f32(&mut file, OUTPUT);
-        let b4 = Network::quantize_to_i32(&b4);
+        let b4 = Network::quantize_to_i16(&b4);
 
         let pos = file.stream_position().unwrap();
         assert_eq!(file_size, pos); // validating that we have reached the EOF
@@ -157,25 +161,15 @@ impl Network {
         quantized
     }
 
-    fn quantize_to_i32(layer: &[f32]) -> Vec<i32> {
-        let mut quantized: Vec<i32> = Vec::with_capacity(layer.len());
-
-        for &val in layer {
-            quantized.push((val * Q).round() as i32);
-        }
-
-        quantized
-    }
-
-    pub fn eval_hkp_with_acc(&self, buf: &mut EvalBuf, acc: &[i32]) -> i16 {
+    pub fn eval_hkp_with_acc(&self, buf: &mut EvalBuf, acc: &[i16]) -> i16 {
         buf.fc1.copy_from_slice(&acc);
-        Network::hard_tanh(0 as i32, 1 * Q as i32, &mut buf.fc1);
+        Network::hard_tanh(0 as i16, 1 * Q as i16, &mut buf.fc1);
 
         Network::process_layer(&buf.fc1, &mut buf.fc2, &self.w2, &self.b2, true);
-        Network::hard_tanh(0 as i32, 1 * Q as i32, &mut buf.fc2);
+        Network::hard_tanh(0 as i16, 1 * Q as i16, &mut buf.fc2);
 
         Network::process_layer(&buf.fc2, &mut buf.fc3, &self.w3, &self.b3, true);
-        Network::hard_tanh(0 as i32, 1 * Q as i32, &mut buf.fc3);
+        Network::hard_tanh(0 as i16, 1 * Q as i16, &mut buf.fc3);
 
         Network::process_layer(&buf.fc3, &mut buf.fc4, &self.w4, &self.b4, true);
 
@@ -187,15 +181,15 @@ impl Network {
 
     pub fn eval_hkp(&self, board: &Board) -> i32 {
         let mut acc = self.build_acc(board);
-        Network::hard_tanh(0 as i32, 1 * Q as i32, &mut acc);
+        Network::hard_tanh(0 as i16, 1 * Q as i16, &mut acc);
 
         let mut fc2 = vec![0; HL2];
         Network::process_layer(&acc, &mut fc2, &self.w2, &self.b2, true);
-        Network::hard_tanh(0 as i32, 1 * Q as i32, &mut fc2);
+        Network::hard_tanh(0 as i16, 1 * Q as i16, &mut fc2);
 
         let mut fc3 = vec![0; HL3];
         Network::process_layer(&fc2, &mut fc3, &self.w3, &self.b3, true);
-        Network::hard_tanh(0 as i32, 1 * Q as i32, &mut fc3);
+        Network::hard_tanh(0 as i16, 1 * Q as i16, &mut fc3);
 
         let mut fc4 = vec![0; OUTPUT];
         Network::process_layer(&fc3, &mut fc4, &self.w4, &self.b4, true);
@@ -206,7 +200,7 @@ impl Network {
         (600.0 * y.atanh()) as i32
     }
 
-    fn build_acc(&self, board: &Board) -> [i32; HL1 * 2] {
+    fn build_acc(&self, board: &Board) -> [i16; HL1 * 2] {
         let mut white_feat = [50000usize; 30];
         let mut black_feat = [50000usize; 30];
 
@@ -255,7 +249,7 @@ impl Network {
         acc
     }
 
-    // fn fill_acc(&self, feature: &[usize]) -> Vec<i32> {
+    // fn fill_acc(&self, feature: &[usize]) -> Vec<i16> {
     //     // Start the accumulator pre-loaded with the biases
     //     let mut acc = self.b1.clone();
     //
@@ -267,7 +261,7 @@ impl Network {
     //         unsafe {
     //             for neuron_idx in 0..HL1 {
     //                 let w = *self.w1.get_unchecked(offset + neuron_idx);
-    //                 *acc.get_unchecked_mut(neuron_idx) += w as i32;
+    //                 *acc.get_unchecked_mut(neuron_idx) += w;
     //             }
     //         }
     //     }
@@ -276,10 +270,10 @@ impl Network {
     // }
 
     // fn process_layer(
-    //     inp_layer: &[i32],
-    //     out_layer: &mut [i32],
+    //     inp_layer: &[i16],
+    //     out_layer: &mut [i16],
     //     weight: &[i16],
-    //     bias: &[i32],
+    //     bias: &[i16],
     //     to_quantize: bool,
     // ) {
     //     let input_len = inp_layer.len();
@@ -290,30 +284,30 @@ impl Network {
     //     assert!(weight.len() >= input_len * out_len);
     //
     //     for neuron_idx in 0..out_len {
-    //         let mut dot = 0;
+    //         let mut dot: i32 = 0;
     //         let w_offset = neuron_idx * input_len;
     //
     //         // Bypassing the bound checks for each array access
     //         unsafe {
     //             for i in 0..input_len {
-    //                 let inp = *inp_layer.get_unchecked(i);
-    //                 let w = *weight.get_unchecked(w_offset + i);
-    //                 dot += inp * w as i32;
+    //                 let inp = *inp_layer.get_unchecked(i) as i32;
+    //                 let w = *weight.get_unchecked(w_offset + i) as i32;
+    //                 dot += inp * w;
     //             }
     //
-    //             let b = *bias.get_unchecked(neuron_idx);
+    //             let b = *bias.get_unchecked(neuron_idx) as i32;
     //             let val = b + if to_quantize {
     //                 (dot + (1 << (QP - 1))) >> QP
     //             } else {
     //                 dot
     //             };
     //
-    //             *out_layer.get_unchecked_mut(neuron_idx) = val;
+    //             *out_layer.get_unchecked_mut(neuron_idx) = val as i16;
     //         }
     //     }
     // }
     //
-    // fn hard_tanh(min: i32, max: i32, layer: &mut [i32]) {
+    // fn hard_tanh(min: i16, max: i16, layer: &mut [i16]) {
     //     let len = layer.len();
     //     let mut idx = 0;
     //
@@ -369,10 +363,10 @@ impl Network {
 // SIMD instructions
 impl Network {
     pub fn process_layer(
-        inp_layer: &[i32],
-        out_layer: &mut [i32],
+        inp_layer: &[i16],
+        out_layer: &mut [i16],
         weight: &[i16],
-        bias: &[i32],
+        bias: &[i16],
         to_quantize: bool,
     ) {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -388,34 +382,34 @@ impl Network {
     }
 
     fn process_layer_scalar(
-        inp_layer: &[i32],
-        out_layer: &mut [i32],
+        inp_layer: &[i16],
+        out_layer: &mut [i16],
         weight: &[i16],
-        bias: &[i32],
+        bias: &[i16],
         to_quantize: bool,
     ) {
         let input_len = inp_layer.len();
         let out_len = bias.len();
 
         for neuron_idx in 0..out_len {
-            let mut dot = 0;
+            let mut dot: i32 = 0;
             let w_offset = neuron_idx * input_len;
 
             unsafe {
                 for i in 0..input_len {
-                    let inp = *inp_layer.get_unchecked(i);
-                    let w = *weight.get_unchecked(w_offset + i);
-                    dot += inp * w as i32;
+                    let inp = *inp_layer.get_unchecked(i) as i32;
+                    let w = *weight.get_unchecked(w_offset + i) as i32;
+                    dot += inp * w;
                 }
 
-                let b = *bias.get_unchecked(neuron_idx);
+                let b = *bias.get_unchecked(neuron_idx) as i32;
                 let val = b + if to_quantize {
                     (dot + (1 << (QP - 1))) >> QP
                 } else {
                     dot
                 };
 
-                *out_layer.get_unchecked_mut(neuron_idx) = val;
+                *out_layer.get_unchecked_mut(neuron_idx) = val as i16;
             }
         }
     }
@@ -423,10 +417,10 @@ impl Network {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[target_feature(enable = "avx2")]
     unsafe fn process_layer_avx2(
-        inp_layer: &[i32],
-        out_layer: &mut [i32],
+        inp_layer: &[i16],
+        out_layer: &mut [i16],
         weight: &[i16],
-        bias: &[i32],
+        bias: &[i16],
         to_quantize: bool,
     ) {
         let input_len = inp_layer.len();
@@ -439,16 +433,14 @@ impl Network {
             unsafe {
                 let mut acc = _mm256_setzero_si256();
 
-                while i + 8 <= input_len {
+                while i + 16 <= input_len {
                     let inp = _mm256_loadu_si256(inp_layer.as_ptr().add(i) as *const __m256i);
-                    let w_128 =
-                        _mm_loadu_si128(weight.as_ptr().add(w_offset + i) as *const __m128i);
-                    let w_256 = _mm256_cvtepi16_epi32(w_128);
+                    let w = _mm256_loadu_si256(weight.as_ptr().add(w_offset + i) as *const __m256i);
 
-                    let prod = _mm256_mullo_epi32(inp, w_256);
+                    let prod = _mm256_madd_epi16(inp, w);
                     acc = _mm256_add_epi32(acc, prod);
 
-                    i += 8;
+                    i += 16;
                 }
 
                 let acc_128 = _mm_add_epi32(
@@ -461,24 +453,24 @@ impl Network {
                 let mut dot = sums[0] + sums[1] + sums[2] + sums[3];
 
                 while i < input_len {
-                    dot +=
-                        *inp_layer.get_unchecked(i) * (*weight.get_unchecked(w_offset + i) as i32);
+                    dot += (*inp_layer.get_unchecked(i) as i32)
+                        * (*weight.get_unchecked(w_offset + i) as i32);
                     i += 1;
                 }
 
-                let b = *bias.get_unchecked(neuron_idx);
+                let b = *bias.get_unchecked(neuron_idx) as i32;
                 let val = b + if to_quantize {
                     (dot + (1 << (QP - 1))) >> QP
                 } else {
                     dot
                 };
 
-                *out_layer.get_unchecked_mut(neuron_idx) = val;
+                *out_layer.get_unchecked_mut(neuron_idx) = val as i16;
             }
         }
     }
 
-    pub fn hard_tanh(min: i32, max: i32, layer: &mut [i32]) {
+    pub fn hard_tanh(min: i16, max: i16, layer: &mut [i16]) {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
             if is_x86_feature_detected!("avx2") {
@@ -489,7 +481,7 @@ impl Network {
         Self::hard_tanh_scalar(min, max, layer);
     }
 
-    fn hard_tanh_scalar(min: i32, max: i32, layer: &mut [i32]) {
+    fn hard_tanh_scalar(min: i16, max: i16, layer: &mut [i16]) {
         let len = layer.len();
         let mut idx = 0;
 
@@ -504,23 +496,23 @@ impl Network {
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[target_feature(enable = "avx2")]
-    unsafe fn hard_tanh_avx2(min: i32, max: i32, layer: &mut [i32]) {
+    unsafe fn hard_tanh_avx2(min: i16, max: i16, layer: &mut [i16]) {
         let len = layer.len();
         let mut i = 0;
 
         unsafe {
-            let v_min = _mm256_set1_epi32(min);
-            let v_max = _mm256_set1_epi32(max);
+            let v_min = _mm256_set1_epi16(min);
+            let v_max = _mm256_set1_epi16(max);
 
-            while i + 8 <= len {
+            while i + 16 <= len {
                 let ptr = layer.as_mut_ptr().add(i);
 
                 let mut v = _mm256_loadu_si256(ptr as *const __m256i);
-                v = _mm256_max_epi32(v, v_min);
-                v = _mm256_min_epi32(v, v_max);
+                v = _mm256_max_epi16(v, v_min);
+                v = _mm256_min_epi16(v, v_max);
 
                 _mm256_storeu_si256(ptr as *mut __m256i, v);
-                i += 8;
+                i += 16;
             }
 
             while i < len {
@@ -531,7 +523,7 @@ impl Network {
         }
     }
 
-    pub fn fill_acc(&self, feature: &[usize]) -> Vec<i32> {
+    pub fn fill_acc(&self, feature: &[usize]) -> Vec<i16> {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
             if is_x86_feature_detected!("avx2") {
@@ -542,7 +534,7 @@ impl Network {
         self.fill_acc_scalar(feature)
     }
 
-    fn fill_acc_scalar(&self, feature: &[usize]) -> Vec<i32> {
+    fn fill_acc_scalar(&self, feature: &[usize]) -> Vec<i16> {
         let mut acc = self.b1.clone();
 
         for &act_feat in feature {
@@ -551,7 +543,7 @@ impl Network {
             unsafe {
                 for neuron_idx in 0..HL1 {
                     let w = *self.w1.get_unchecked(offset + neuron_idx);
-                    *acc.get_unchecked_mut(neuron_idx) += w as i32;
+                    *acc.get_unchecked_mut(neuron_idx) += w;
                 }
             }
         }
@@ -561,7 +553,7 @@ impl Network {
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[target_feature(enable = "avx2")]
-    unsafe fn fill_acc_avx2(&self, feature: &[usize]) -> Vec<i32> {
+    unsafe fn fill_acc_avx2(&self, feature: &[usize]) -> Vec<i16> {
         let mut acc = self.b1.clone();
 
         for &act_feat in feature {
@@ -569,28 +561,22 @@ impl Network {
             let mut i = 0;
 
             unsafe {
-                while i + 8 <= HL1 {
-                    // Load 8 weights (i16) and extend to i32
-                    let w_128 = _mm_loadu_si128(self.w1.as_ptr().add(offset + i) as *const __m128i);
-                    let w_256 = _mm256_cvtepi16_epi32(w_128);
-
-                    // Load 8 current accumulator values (i32)
+                while i + 16 <= HL1 {
+                    let w_256 = _mm256_loadu_si256(self.w1.as_ptr().add(offset + i) as *const __m256i);
+                    
                     let acc_ptr = acc.as_mut_ptr().add(i);
                     let acc_256 = _mm256_loadu_si256(acc_ptr as *const __m256i);
 
-                    // Add them together
-                    let sum = _mm256_add_epi32(acc_256, w_256);
+                    let sum = _mm256_add_epi16(acc_256, w_256);
 
-                    // Store back to accumulator
                     _mm256_storeu_si256(acc_ptr as *mut __m256i, sum);
 
-                    i += 8;
+                    i += 16;
                 }
 
-                // Tail loop (unlikely if HL1 is 256, but good for safety)
                 while i < HL1 {
                     let w = *self.w1.get_unchecked(offset + i);
-                    *acc.get_unchecked_mut(i) += w as i32;
+                    *acc.get_unchecked_mut(i) += w;
                     i += 1;
                 }
             }
@@ -719,8 +705,8 @@ impl Engine {
             let (w_act, b_act) = (w_added[idx], b_added[idx]);
 
             for neuron in 0..HL1 {
-                acc[WHITE][neuron] += nn.w1[w_act * (HL1) + neuron] as i32;
-                acc[BLACK][neuron] += nn.w1[b_act * (HL1) + neuron] as i32;
+                acc[WHITE][neuron] += nn.w1[w_act * (HL1) + neuron];
+                acc[BLACK][neuron] += nn.w1[b_act * (HL1) + neuron];
             }
         }
 
@@ -729,8 +715,8 @@ impl Engine {
             let (w_act, b_act) = (w_removed[idx], b_removed[idx]);
 
             for neuron in 0..HL1 {
-                acc[WHITE][neuron] -= nn.w1[w_act * (HL1) + neuron] as i32;
-                acc[BLACK][neuron] -= nn.w1[b_act * (HL1) + neuron] as i32;
+                acc[WHITE][neuron] -= nn.w1[w_act * (HL1) + neuron];
+                acc[BLACK][neuron] -= nn.w1[b_act * (HL1) + neuron];
             }
         }
     }
@@ -746,7 +732,6 @@ mod tests {
     use std::io::Cursor;
 
     use crate::{
-        engine::Engine,
         evaluation::init_pesto_table,
         magics::init_magics,
         network::{NN_DATA, Network, QP},
@@ -788,10 +773,6 @@ mod tests {
 
         println!("Min b4: {}", nn.b4.iter().min().unwrap());
         println!("Max b4: {}", nn.b4.iter().max().unwrap());
-
-        let engine = Engine::new();
-        println!("During an eval:");
-        nn.eval_hkp(&engine.board);
 
         println!("Min i8 {}", i8::MIN);
         println!("Max i8 {}", i8::MAX);
