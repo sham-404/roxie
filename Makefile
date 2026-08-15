@@ -2,9 +2,9 @@ EXE    := roxie
 TARGET := $(shell rustc --print host-tuple)
 
 # Explicit Architecture Instruction Sets
-FLAG_NATIVE := -C target-cpu=native
-FLAG_AVX512 := -C target-cpu=x86-64-v4 -C target-feature=+avx512f,+avx512bw,+avx512dq,+avx512vl,+avx512vnni,+bmi2,+popcnt
-FLAG_AVX2   := -C target-cpu=x86-64-v3 -C target-feature=+avx2,+bmi2,+popcnt
+FLAG_NATIVE := -C target-cpu=native -C debuginfo=0 -C strip=symbols
+FLAG_AVX512 := -C target-cpu=x86-64-v4 -C target-feature=+avx512f,+avx512bw,+avx512dq,+avx512vl,+avx512vnni,+bmi2,+popcnt -C debuginfo=0 -C strip=symbols
+FLAG_AVX2   := -C target-cpu=x86-64-v3 -C target-feature=+avx2,+bmi2,+popcnt -C debuginfo=0 -C strip=symbols
 
 .PHONY: all native avx512 avx2 pgo-avx512 clean help
 
