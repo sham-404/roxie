@@ -727,23 +727,15 @@ impl Engine {
                         }
 
                         // for history
-                        let h = &mut self.history[stm][q_mv.from()][q_mv.to()];
-                        *h -= bonus >> 2;
-                        *h = (*h).clamp(-MAX_HISTORY, MAX_HISTORY);
+                        self.history.update(stm, q_mv.from(), q_mv.to(), -bonus);
 
                         // for continuation history
-                        self.continuation_history.update(
-                            &self.board,
-                            prev_move,
-                            *q_mv,
-                            -bonus >> 2,
-                        );
+                        self.continuation_history
+                            .update(&self.board, prev_move, *q_mv, -bonus);
                     }
 
                     // history bonus scoring
-                    let h = &mut self.history[stm][mv.from()][mv.to()];
-                    *h += bonus;
-                    *h = (*h).clamp(-MAX_HISTORY, MAX_HISTORY);
+                    self.history.update(stm, mv.from(), mv.to(), bonus);
 
                     // continuation history scoring
                     self.continuation_history
@@ -922,7 +914,7 @@ impl Engine {
             let cont_hist = self
                 .continuation_history
                 .get_after_mv(&self.board, prev_move, mv) as i32;
-            let hist_score = self.history[stm][mv.from()][mv.to()] + cont_hist;
+            let hist_score = self.history.get(stm, mv.from(), mv.to()) + cont_hist;
 
             let hist_adjustment = hist_score / adjustment_fac;
 
@@ -933,8 +925,8 @@ impl Engine {
                 r -= 1;
             }
 
-            // Minimum reduction of 1 ply, maximum of depth - 1 to avoid negative depths
-            r.clamp(1, depth as i32 - 1) as u16
+            // Minimum reduction of 0 ply, maximum of depth - 1 to avoid negative depths
+            r.clamp(0, depth as i32 - 1) as u16
         } else {
             0
         };
@@ -1238,8 +1230,11 @@ impl Engine {
                 }
 
                 let mut score = self.board.score_move(mv);
-                score += self.history[self.board.side_to_move().val()][mv.from()][mv.to()] << 6;
-                score += (self.continuation_history.get(&self.board, prev_move, mv) << 6) as i32;
+                score += self
+                    .history
+                    .get(self.board.side_to_move().val(), mv.from(), mv.to())
+                    << 2;
+                score += (self.continuation_history.get(&self.board, prev_move, mv) << 4) as i32;
 
                 movelist.score[i] = score;
             } else {

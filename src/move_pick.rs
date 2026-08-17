@@ -257,11 +257,13 @@ impl Engine {
                         let mut score = self.board.score_quiet_move(mv);
 
                         score +=
-                            self.history[self.board.side_to_move().val()][mv.from()][mv.to()] << 6;
+                            self.history
+                                .get(self.board.side_to_move().val(), mv.from(), mv.to())
+                                << 2;
                         score += (self
                             .continuation_history
                             .get(&self.board, picker.prev_mv, mv)
-                            << 6) as i32;
+                            << 4) as i32;
                         picker.moves.score[i] = score;
                     }
 

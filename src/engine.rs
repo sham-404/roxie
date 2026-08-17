@@ -11,7 +11,7 @@ use crate::{
 pub struct Engine {
     pub board: Board,
     pub tt: TranspositionTable,
-    pub history: [[[i32; 64]; 64]; 2],
+    pub history: HistoryTable,
     pub continuation_history: ContinuationHistory,
     pub counter_moves: CountermoveTable,
     pub eval_history: EvalHistory,
@@ -25,7 +25,7 @@ impl Engine {
         Self {
             board: Board::start_pos(),
             tt: TranspositionTable::new(16),
-            history: [[[0; 64]; 64]; 2],
+            history: HistoryTable::new(),
             continuation_history: ContinuationHistory::new(),
             counter_moves: CountermoveTable::new(),
             eval_history: EvalHistory::new(),
@@ -38,7 +38,7 @@ impl Engine {
     pub fn reset(&mut self) {
         self.board = Board::start_pos();
         self.tt.clear();
-        self.history = [[[0; 64]; 64]; 2];
+        self.history = HistoryTable::new();
         self.continuation_history = ContinuationHistory::new();
         self.counter_moves = CountermoveTable::new();
         self.eval_history = EvalHistory::new();
@@ -54,6 +54,30 @@ impl Engine {
     }
 }
 
+pub struct HistoryTable {
+    table: [[[i32; 64]; 64]; 2],
+}
+
+impl HistoryTable {
+    pub fn new() -> Self {
+        Self {
+            table: [[[0; 64]; 64]; 2],
+        }
+    }
+
+    #[inline(always)]
+    pub fn update(&mut self, stm: usize, from: usize, to: usize, bonus: i32) {
+        let h = &mut self.table[stm][from][to];
+        *h += bonus - (*h * bonus.abs()) / MAX_HISTORY;
+        *h = (*h).clamp(-MAX_HISTORY, MAX_HISTORY);
+    }
+
+    #[inline(always)]
+    pub fn get(&self, stm: usize, from: usize, to: usize) -> i32 {
+        self.table[stm][from][to]
+    }
+}
+
 pub struct CountermoveTable {
     pub table: [[Move; 64]; 64],
 }
@@ -65,6 +89,7 @@ impl CountermoveTable {
         }
     }
 
+    #[inline(always)]
     pub fn store(&mut self, prev_mv: Move, cur_mv: Move) {
         if prev_mv == Move::NULL {
             return;
@@ -72,6 +97,7 @@ impl CountermoveTable {
         self.table[prev_mv.from()][prev_mv.to()] = cur_mv;
     }
 
+    #[inline(always)]
     pub fn get(&self, prev_mv: Move) -> Move {
         self.table[prev_mv.from()][prev_mv.to()]
     }

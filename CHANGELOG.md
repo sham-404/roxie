@@ -20,6 +20,7 @@ All notable changes to Roxie are documented in this file.
 - Reduced the if branching for quiets and captures for performance, but not so significant tho.
 - Improved castling right updation in make_move()
 - MakeFile now contains flags, which reduce the binary size by litte by removing unnecessary debugging features
+- Used gravity decay for history table
 
 ### Fixed
 - Engine now correctly preserves the size of tt (old version reinitialize to 16 mb on every 'ucinewgame')
