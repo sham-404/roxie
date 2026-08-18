@@ -1,6 +1,6 @@
 use crate::{
     board::Board,
-    engine::Engine,
+    engine::{CaptureHistory, Engine},
     evaluation::MG_TABLE,
     items::{Move, MoveFlag, MoveList, Piece},
 };
@@ -36,32 +36,29 @@ impl Board {
         0
     }
 
-    pub fn score_tactical_move(&self, mv: Move) -> i32 {
+    pub fn score_tactical_move(&self, mv: Move, cap_hist: &CaptureHistory) -> i32 {
         let flag = mv.flag();
         let from = mv.from();
         let to = mv.to();
 
         let attacker = self.piece_on(from);
-        let victim = self.piece_on(to);
+        let mut victim = self.piece_on(to);
 
-        // promotions updation
+        // Promotions
         if flag.is_promo() {
-            if !flag.is_capture() {
-                // normal promotion
-                return 60_000_000 + flag.get_promo_value() as i32;
-            }
-
-            // capture promotion
-            return 80_000_000 + flag.get_promo_value() as i32;
+            let promo_val = flag.get_promo_value() as i32;
+            let score = if flag.is_capture() {
+                80_000_000 + promo_val
+            } else {
+                60_000_000 + promo_val
+            };
+            return score;
         }
 
         // En passant
         if victim == Piece::NONE {
             debug_assert!(flag == MoveFlag::EN_PASSANT);
-            if flag != MoveFlag::EN_PASSANT {
-                println!("{}", mv.to_coord());
-            }
-            return 50_000_000;
+            victim = Piece::PAWN | Piece::enemy(Piece::get_color(attacker));
         }
 
         let v_val = self.get_value(victim);
@@ -72,18 +69,25 @@ impl Board {
 
         let see_score = self.see(&mv);
 
-        // Winning capture
-        if see_score > 0 {
-            return 70_000_000 + mvv_lva + see_score;
-        }
+        let cap_hist_score = cap_hist.get(attacker, victim, to);
 
-        // Equal capture
-        if see_score == 0 {
-            return 50_000_000 + mvv_lva + see_score;
-        }
+        // Max cap history score is equivalent of 2.5 centipawns
+        let hist_in_centipawns = cap_hist_score >> 5;
+        let adjusted_see = see_score + hist_in_centipawns;
 
-        // Losing capture
-        return 1_000_000 + mvv_lva + see_score;
+        let base = 50_000_000;
+
+        // trying out dynamic formula for scoring
+        let final_score = base + (adjusted_see * 100) + mvv_lva + (cap_hist_score * 2);
+
+        // Now good capture is not only based on see, but it also takes capture history
+        // into consideration for assigning a move as good capture, even see is negative
+        if see_score >= 0 || adjusted_see >= 0 {
+            // it is a good capture
+            return final_score;
+        } else {
+            return final_score - 49_000_000;
+        }
     }
 
     pub fn is_pseudo_legal_mv(&self, mv: Move) -> bool {
@@ -178,7 +182,9 @@ impl Engine {
                     picker.moves = self.board.gen_tactical_moves();
 
                     for i in 0..picker.moves.len() {
-                        let score = self.board.score_tactical_move(picker.moves.get(i));
+                        let score = self
+                            .board
+                            .score_tactical_move(picker.moves.get(i), &self.capture_history);
                         picker.moves.score[i] = score;
                     }
 

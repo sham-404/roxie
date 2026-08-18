@@ -576,6 +576,7 @@ impl Engine {
         let mut best_move_this_node = Move::NULL;
         let mut fail_high = false;
         let mut quiet_list = MoveList::new();
+        let mut cap_list = MoveList::new();
         let mut quiet_searched = 0;
 
         //// Actual searching loop
@@ -591,6 +592,7 @@ impl Engine {
 
             let flag = mv.flag();
             let is_quiet = flag.is_quiet();
+            let is_capture = flag.is_capture();
 
             if is_quiet && mv_idx > 0 {
                 // late move pruning //
@@ -622,7 +624,7 @@ impl Engine {
                     && is_non_pv
                     && !in_check
                     && mv != tt_move
-                    && flag.is_capture()
+                    && is_capture
                     && !flag.is_promo()
                     && !self.board.gives_check(mv)
                 {
@@ -666,6 +668,8 @@ impl Engine {
             if is_quiet {
                 quiet_list.push(mv);
                 quiet_searched += 1
+            } else if is_capture {
+                cap_list.push(mv);
             }
 
             mv_searched += 1;
@@ -743,6 +747,35 @@ impl Engine {
 
                     // counter moves storing
                     self.counter_moves.store(prev_move, mv);
+                } else if is_capture {
+                    let bonus = (depth * depth).min(400) as i32;
+
+                    // capture maluses
+                    for &cap_mv in cap_list.as_slice() {
+                        if cap_mv == mv {
+                            continue;
+                        }
+
+                        let attacker = self.board.piece_on(cap_mv.from());
+                        let victim = if cap_mv.flag() == MoveFlag::EN_PASSANT {
+                            Piece::PAWN | Piece::enemy(Piece::get_color(attacker))
+                        } else {
+                            self.board.piece_on(cap_mv.to())
+                        };
+
+                        self.capture_history
+                            .update(attacker, victim, cap_mv.to(), -bonus);
+                    }
+
+                    let attacker = self.board.piece_on(mv.from());
+                    let victim = if mv.flag() == MoveFlag::EN_PASSANT {
+                        Piece::PAWN | Piece::enemy(Piece::get_color(attacker))
+                    } else {
+                        self.board.piece_on(mv.to())
+                    };
+
+                    self.capture_history
+                        .update(attacker, victim, mv.to(), -bonus);
                 }
 
                 break;
