@@ -1,7 +1,7 @@
 use crate::{
     board::Board,
     r#const::MAX_PLY,
-    items::{Move, Piece},
+    items::{Move, Piece, PieceInfo},
     network::{EvalBuf, HL1},
     search::MAX_HISTORY,
     tt::TranspositionTable,
@@ -15,6 +15,7 @@ pub struct Engine {
     pub continuation_history: ContinuationHistory,
     pub counter_moves: CountermoveTable,
     pub eval_history: EvalHistory,
+    pub capture_history: CaptureHistory,
     pub killers: [[Move; 2]; MAX_PLY],
     pub eval_buf: EvalBuf,
     pub accumulators: [[[i16; HL1]; 2]; MAX_PLY],
@@ -29,6 +30,7 @@ impl Engine {
             continuation_history: ContinuationHistory::new(),
             counter_moves: CountermoveTable::new(),
             eval_history: EvalHistory::new(),
+            capture_history: CaptureHistory::new(),
             killers: [[Move::NULL; 2]; MAX_PLY],
             eval_buf: EvalBuf::new(),
             accumulators: [[[0; HL1]; 2]; MAX_PLY],
@@ -42,6 +44,7 @@ impl Engine {
         self.continuation_history = ContinuationHistory::new();
         self.counter_moves = CountermoveTable::new();
         self.eval_history = EvalHistory::new();
+        self.capture_history = CaptureHistory::new();
         self.killers = [[Move::NULL; 2]; MAX_PLY];
         self.eval_buf = EvalBuf::new();
         self.accumulators = [[[0; HL1]; 2]; MAX_PLY];
@@ -202,5 +205,35 @@ impl EvalHistory {
     pub fn clear(&mut self) {
         self.evals = [0; MAX_PLY];
         self.checks = [false; MAX_PLY];
+    }
+}
+
+const MAX_CAP_HISTORY: i32 = 8192;
+pub struct CaptureHistory {
+    // [atk_piece_idx (0 - 11)][victim_type_idx (0 - 5)][to_sq (0 - 64)]
+    table: [[[i32; 64]; 6]; 12],
+}
+
+impl CaptureHistory {
+    pub fn new() -> Self {
+        Self {
+            table: [[[0; 64]; 6]; 12],
+        }
+    }
+
+    #[inline(always)]
+    pub fn get(&self, attacker: PieceInfo, victim: PieceInfo, to: usize) -> i32 {
+        let att_idx = Piece::to_idx(attacker);
+        let vic_type_idx = (Piece::to_idx(victim) % 6) as usize;
+        self.table[att_idx][vic_type_idx][to]
+    }
+
+    #[inline(always)]
+    pub fn update(&mut self, attacker: PieceInfo, victim: PieceInfo, to: usize, bonus: i32) {
+        let att_idx = Piece::to_idx(attacker);
+        let vic_type_idx = (Piece::to_idx(victim) % 6) as usize;
+
+        let h = &mut self.table[att_idx][vic_type_idx][to];
+        *h += bonus - (*h * bonus.abs()) / MAX_CAP_HISTORY;
     }
 }
