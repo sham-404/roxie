@@ -1,13 +1,5 @@
 use crate::{
-    board::{Board, mask},
-    r#const::{BLACK_PAWN_ATTACKS, KING_ATTACKS, KNIGHT_ATTACKS, MAX_PLY, WHITE_PAWN_ATTACKS},
-    engine::Engine,
-    items::{Color, Move, MoveFlag, MoveList, Piece, PieceInfo},
-    magics::{get_bishop_move_bits, get_rook_move_bits},
-    move_pick::MovePicker,
-    tt::{TTEntry, TTFlag},
-    uci::{GoControl, MAX_DEPTH},
-    uci_print,
+    board::{Board, compute_pawn_hash, mask}, r#const::{BLACK_PAWN_ATTACKS, KING_ATTACKS, KNIGHT_ATTACKS, MAX_PLY, WHITE_PAWN_ATTACKS}, engine::{CORR_GRAIN, Engine}, items::{Color, Move, MoveFlag, MoveList, Piece, PieceInfo}, magics::{get_bishop_move_bits, get_rook_move_bits}, move_pick::MovePicker, tt::{TTEntry, TTFlag}, uci::{GoControl, MAX_DEPTH}, uci_print,
 };
 
 use std::{
@@ -103,7 +95,7 @@ impl Engine {
 
                 let mut tt_move = Move::NULL;
                 info.stats.tt_probes += 1;
-                if let Some(entry) = self.tt.probe(self.board.get_zob_key()) {
+                if let Some(entry) = self.tt.probe(self.board.get_hash()) {
                     info.stats.tt_hits += 1;
                     tt_move = entry.best_move();
                 }
@@ -200,7 +192,7 @@ impl Engine {
                 // aspiration failed low
                 if best_score <= orig_alpha {
                     self.tt.store(TTEntry {
-                        key: self.board.get_zob_key(),
+                        key: self.board.get_hash(),
                         depth: d,
                         score: best_score as i32,
                         flag: TTFlag::UpperBound,
@@ -248,7 +240,7 @@ impl Engine {
             // }
 
             // Manual storing for root node in TT
-            let root_key = self.board.get_zob_key();
+            let root_key = self.board.get_hash();
             self.tt.store(TTEntry {
                 key: root_key,
                 depth: d,
@@ -328,7 +320,7 @@ impl Engine {
         }
 
         // Probing the TT
-        let key = self.board.get_zob_key();
+        let key = self.board.get_hash();
         let mut tt_move = Move::NULL;
         let mut tt_depth = 0;
         let mut tt_score = 0;
@@ -418,7 +410,25 @@ impl Engine {
         }
 
         let in_check = self.board.in_check();
-        let static_eval = self.evaluate(ply as usize); // static evaluation
+        let stm_val = self.board.side_to_move().val();
+        let pawn_hash = compute_pawn_hash(&self.board);
+
+        let base_eval = self.evaluate(ply as usize);
+
+        // Static evaluation
+        let static_eval = if !in_check {
+            // clamping the data to be between 32 centipawns
+            let correction = self
+                .correction_history
+                .get(stm_val, pawn_hash)
+                .clamp(-32, 32);
+            // Prevent correction from accidentally creating a fake mate score
+            (base_eval as i32 + correction)
+                .clamp(-MATE as i32 + MAX_PLY as i32, MATE as i32 - MAX_PLY as i32)
+                as i16
+        } else {
+            base_eval
+        };
 
         self.eval_history.store(static_eval, in_check, ply as usize);
 
@@ -517,7 +527,7 @@ impl Engine {
                     };
 
                     self.tt.store(TTEntry {
-                        key: self.board.get_zob_key(),
+                        key: self.board.get_hash(),
                         depth: pc_depth + 1, // Safe depth assumption
                         score: safe_score as i32,
                         flag: TTFlag::LowerBound,
@@ -567,6 +577,12 @@ impl Engine {
             if se_score < singular_beta {
                 se_extension = 1;
             }
+            // else {
+            //     // Singular verification failed high, meaning there are
+            //     // multiple winning moves. We penalize the static eval for this node.
+            //     self.correction_history
+            //         .multi_cut_penalty(stm_val, pawn_hash);
+            // }
         }
         //// Singular Extension
 
@@ -794,6 +810,36 @@ impl Engine {
         } else {
             TTFlag::Exact
         };
+
+        //// Correction History Updation
+        if !info.abort
+            && best_move_this_node != Move::NULL
+            && best_move_this_node.flag().is_quiet()
+            && !in_check
+            && excluded_move == Move::NULL
+            && max_eval.abs() < MATE - MAX_PLY as i16
+        {
+            let tt_lower = fail_high;
+            let tt_upper = max_eval <= original_alpha;
+
+            let dominated_by_static = (tt_lower && max_eval <= static_eval)
+                || (tt_upper && max_eval >= static_eval);
+
+            if !dominated_by_static {
+                let diff = max_eval as i32 - static_eval as i32;
+                
+                // Multiply by the 256 grain to match the scaling in get()
+                let err = diff.clamp(-128, 128) * CORR_GRAIN as i32;
+                
+                self.correction_history.update(
+                    self.board.side_to_move().val(),
+                    pawn_hash,
+                    err,
+                    depth as i32,
+                );
+            }
+        }
+        //// Correction History Updation
 
         // Adjusting for mate score
         let mut score_to_store = max_eval;
@@ -1068,7 +1114,7 @@ impl Engine {
         let mut tt_flag = None;
 
         info.stats.tt_probes += 1;
-        if let Some(entry) = self.tt.probe(self.board.get_zob_key()) {
+        if let Some(entry) = self.tt.probe(self.board.get_hash()) {
             info.stats.tt_hits += 1;
             tt_move = entry.best_move();
 
@@ -1099,11 +1145,30 @@ impl Engine {
             }
         }
 
-        let in_check = self.board.in_check();
         let mut best_score = -INF;
 
+        let in_check = self.board.in_check();
+        let stm_val = self.board.side_to_move().val();
+        let pawn_hash = compute_pawn_hash(&self.board);
+
+        let base_eval = self.evaluate(ply as usize);
+
+        // stand_pat evaluation
+                
+                
+                
+        let mut stand_pat = if !in_check {
+            // clamping the data to be between 32 centipawns
+            let correction = self.correction_history.get(stm_val, pawn_hash).clamp(-32, 32);
+            // Prevent correction from accidentally creating a fake mate score
+            (base_eval as i32 + correction)
+                .clamp(-MATE as i32 + MAX_PLY as i32, MATE as i32 - MAX_PLY as i32)
+                as i16
+        } else {
+            base_eval
+        };
+
         // Stand pat
-        let mut stand_pat = self.evaluate(ply as usize);
         if !in_check {
             // Cap the stand_pat score using TT bounds
             if let Some(score) = tt_score {
@@ -1287,7 +1352,7 @@ impl Engine {
         }
 
         self.tt.store(TTEntry {
-            key: self.board.get_zob_key(),
+            key: self.board.get_hash(),
             depth: 0,
             score: score_to_store as i32,
             flag,
@@ -1310,7 +1375,7 @@ impl Engine {
         let mut visited_keys = Vec::new();
 
         loop {
-            let key = self.board.get_zob_key();
+            let key = self.board.get_hash();
             if let Some(entry) = self.tt.probe(key) {
                 let mv = entry.best_move();
 

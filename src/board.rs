@@ -24,6 +24,24 @@ pub fn mask(idx: usize) -> u64 {
     1u64 << idx
 }
 
+pub fn compute_pawn_hash(board: &Board) -> u64 {
+    let mut hash = 0;
+    let zob = ZOBRIST_TABLE.get().unwrap();
+
+    // pieces
+    let white_pawn_idx = Piece::to_idx(Piece::WHITE | Piece::PAWN);
+    let black_pawn_idx = Piece::to_idx(Piece::BLACK | Piece::PAWN);
+    for piece in [white_pawn_idx, black_pawn_idx] {
+        let mut bb = board.bitboards[piece];
+
+        while let Some(sq) = pop_lsb(&mut bb) {
+            hash ^= zob[piece][sq];
+        }
+    }
+
+    hash
+}
+
 fn compute_hash(board: &Board) -> u64 {
     let mut hash = 0;
 
@@ -64,8 +82,9 @@ pub struct Board {
     mailbox: [PieceInfo; 64],
     castling: CastlingRights,
     side_to_move: Color,
-    pub en_passant: Option<u8>,
-    zobrist_key: u64,
+    en_passant: Option<u8>,
+    hash: u64,
+    pawn_hash: u64,
     history: History,
     last_irreversible: usize,
     halfmove_clock: usize,
@@ -76,7 +95,7 @@ pub struct Board {
 }
 
 impl Board {
-    pub fn new() -> Self {
+    fn new() -> Self {
         let bitboards = [0u64; 12];
         let occupancy: [u64; 3] = [0; 3];
         let mailbox: [PieceInfo; 64] = [0u8; 64];
@@ -88,7 +107,8 @@ impl Board {
             side_to_move: Color::White,
             castling: CastlingRights::new(),
             en_passant: None,
-            zobrist_key: 0,
+            hash: 0,
+            pawn_hash: 0,
             history: History::new(),
             last_irreversible: 0,
             halfmove_clock: 0,
@@ -123,7 +143,8 @@ impl Board {
 
         board.halfmove_clock = 0;
         board.bitboards = bitboards;
-        board.zobrist_key = compute_hash(&board);
+        board.hash = compute_hash(&board);
+        board.pawn_hash = compute_pawn_hash(&board);
         board.build_mailbox();
         board.build_occupancy();
         board.init_pesto_score();
@@ -204,7 +225,8 @@ impl Board {
 
         board.build_occupancy();
         board.build_mailbox();
-        board.zobrist_key = compute_hash(&board);
+        board.hash = compute_hash(&board);
+        board.pawn_hash = compute_hash(&board);
         board.build_mailbox();
         board.build_occupancy();
         board.init_pesto_score();
@@ -238,7 +260,7 @@ impl Board {
         let captured = self.piece_on(captured_sq);
 
         // Constructing undo
-        self.history.push(self.zobrist_key);
+        self.history.push(self.hash);
         let undo = Undo::new(
             captured,
             self.castling,
@@ -248,9 +270,9 @@ impl Board {
         );
 
         // Update zobrist: remove piece from 'from' and remove old EP
-        self.zobrist_key ^= zob[piece_idx][from];
+        self.hash ^= zob[piece_idx][from];
         if let Some(sq) = self.en_passant {
-            self.zobrist_key ^= ep_keys[sq as usize % 8];
+            self.hash ^= ep_keys[sq as usize % 8];
         }
 
         // update last_irreversible and halfmove_clock
@@ -264,7 +286,7 @@ impl Board {
         // Handling captures
         if captured != Piece::NONE {
             let cap_idx = Piece::to_idx(captured);
-            self.zobrist_key ^= zob[cap_idx][captured_sq]; // Update zobrist for capture
+            self.hash ^= zob[cap_idx][captured_sq]; // Update zobrist for capture
             self.remove_piece(captured, captured_sq);
         }
 
@@ -284,10 +306,10 @@ impl Board {
             let promo_pieces = [Piece::KNIGHT, Piece::BISHOP, Piece::ROOK, Piece::QUEEN];
             let promo_piece = color_bit | promo_pieces[promo_type as usize];
 
-            self.zobrist_key ^= zob[Piece::to_idx(promo_piece)][to]; // Update zobrist for promo
+            self.hash ^= zob[Piece::to_idx(promo_piece)][to]; // Update zobrist for promo
             self.add_piece(promo_piece, to);
         } else {
-            self.zobrist_key ^= zob[piece_idx][to]; // Update zobrist for normal move
+            self.hash ^= zob[piece_idx][to]; // Update zobrist for normal move
         }
 
         // castling
@@ -302,10 +324,10 @@ impl Board {
             let r_idx = Piece::to_idx(r_pce);
 
             if flag == MoveFlag::KING_CASTLE {
-                self.zobrist_key ^= zob[r_idx][king_pos + 3] ^ zob[r_idx][king_pos + 1];
+                self.hash ^= zob[r_idx][king_pos + 3] ^ zob[r_idx][king_pos + 1];
                 self.move_piece_quiet(king_pos + 3, king_pos + 1);
             } else {
-                self.zobrist_key ^= zob[r_idx][king_pos - 4] ^ zob[r_idx][king_pos - 1];
+                self.hash ^= zob[r_idx][king_pos - 4] ^ zob[r_idx][king_pos - 1];
                 self.move_piece_quiet(king_pos - 4, king_pos - 1);
             }
         }
@@ -313,24 +335,24 @@ impl Board {
         // updating en_passant square
         self.en_passant = if flag == MoveFlag::DOUBLE_PUSH {
             let ep_sq = (from + to) / 2;
-            self.zobrist_key ^= ep_keys[ep_sq as usize % 8]; // Update zobrist for new EP
+            self.hash ^= ep_keys[ep_sq as usize % 8]; // Update zobrist for new EP
             Some(ep_sq as u8)
         } else {
             None
         };
 
         //// Handling castling rights
-        self.zobrist_key ^= castling_keys[self.castling.0 as usize]; // Remove old rights hash
+        self.hash ^= castling_keys[self.castling.0 as usize]; // Remove old rights hash
 
         self.castling.update(from, to);
 
-        self.zobrist_key ^= castling_keys[self.castling.0 as usize]; // Add new rights hash
+        self.hash ^= castling_keys[self.castling.0 as usize]; // Add new rights hash
 
         // Post move activities
         self.side_to_move = self.side_to_move.opponent();
-        self.zobrist_key ^= *side_key; // Update zobrist for side
+        self.hash ^= *side_key; // Update zobrist for side
 
-        debug_assert_eq!(self.zobrist_key, compute_hash(self), "Zobrist mismatch");
+        debug_assert_eq!(self.hash, compute_hash(self), "Zobrist mismatch");
 
         undo
     }
@@ -399,7 +421,7 @@ impl Board {
         self.castling = undo.prev_castling_rights;
         self.last_irreversible = undo.prev_last_irreversible;
         self.halfmove_clock = undo.prev_halfmove_clock;
-        self.zobrist_key = self.history.pop();
+        self.hash = self.history.pop();
 
         // self.update_zobrist_key(mov, undo);
 
@@ -595,7 +617,7 @@ impl Board {
 
     #[inline(always)]
     pub fn is_repetition(&self) -> bool {
-        let cur = self.zobrist_key;
+        let cur = self.hash;
         let mut count = 1;
 
         for i in (self.last_irreversible..self.history.len()).rev() {
@@ -703,12 +725,12 @@ impl Board {
 
         // 1. Flip the side (This matches your if board.side_to_move == Color::Black check)
         // We XOR the key regardless of current color to "toggle" it
-        self.zobrist_key ^= side_key;
+        self.hash ^= side_key;
 
         // 2. Clear En Passant from the hash
         if let Some(sq) = self.en_passant {
             let file = sq % 8;
-            self.zobrist_key ^= ep_keys[file as usize];
+            self.hash ^= ep_keys[file as usize];
         }
 
         // 3. Update the board state
@@ -718,7 +740,7 @@ impl Board {
         self.side_to_move = self.side_to_move.opponent();
 
         debug_assert_eq!(
-            self.zobrist_key,
+            self.hash,
             compute_hash(self),
             "make_null_move: Zobrist mismatch"
         );
@@ -731,17 +753,17 @@ impl Board {
 
         // 1. Flip side back
         self.side_to_move = self.side_to_move.opponent();
-        self.zobrist_key ^= side_key;
+        self.hash ^= side_key;
 
         // 2. Restore En Passant
         self.en_passant = old_epsq;
         if let Some(sq) = self.en_passant {
             let file = sq % 8;
-            self.zobrist_key ^= ep_keys[file as usize];
+            self.hash ^= ep_keys[file as usize];
         }
 
         debug_assert_eq!(
-            self.zobrist_key,
+            self.hash,
             compute_hash(self),
             "unmake_null_move: Zobrist mismatch"
         );
@@ -886,8 +908,8 @@ impl Board {
     }
 
     #[inline(always)]
-    pub fn get_zob_key(&self) -> u64 {
-        self.zobrist_key
+    pub fn get_hash(&self) -> u64 {
+        self.hash
     }
 
     #[inline(always)]

@@ -16,6 +16,7 @@ pub struct Engine {
     pub counter_moves: CountermoveTable,
     pub eval_history: EvalHistory,
     pub capture_history: CaptureHistory,
+    pub correction_history: CorrectionHistory,
     pub killers: [[Move; 2]; MAX_PLY],
     pub eval_buf: EvalBuf,
     pub accumulators: [[[i16; HL1]; 2]; MAX_PLY],
@@ -31,6 +32,7 @@ impl Engine {
             counter_moves: CountermoveTable::new(),
             eval_history: EvalHistory::new(),
             capture_history: CaptureHistory::new(),
+            correction_history: CorrectionHistory::new(),
             killers: [[Move::NULL; 2]; MAX_PLY],
             eval_buf: EvalBuf::new(),
             accumulators: [[[0; HL1]; 2]; MAX_PLY],
@@ -45,6 +47,7 @@ impl Engine {
         self.counter_moves = CountermoveTable::new();
         self.eval_history = EvalHistory::new();
         self.capture_history = CaptureHistory::new();
+        self.correction_history = CorrectionHistory::new();
         self.killers = [[Move::NULL; 2]; MAX_PLY];
         self.eval_buf = EvalBuf::new();
         self.accumulators = [[[0; HL1]; 2]; MAX_PLY];
@@ -235,5 +238,47 @@ impl CaptureHistory {
 
         let h = &mut self.table[att_idx][vic_type_idx][to];
         *h += bonus - (*h * bonus.abs()) / MAX_CAP_HISTORY;
+    }
+}
+
+const CORR_HIST_SIZE: usize = 16384; // must be a power of 2
+const MAX_CORR_HISTORY: usize = 16384;
+pub const CORR_GRAIN: usize = 256; // multiplier for higher precision score while avoiding floats
+
+// Using CORR_GRAIN * 2 halves the table's output, naturally dampening the correction.
+const CORR_SCALE: i32 = CORR_GRAIN as i32 * 2;
+
+pub struct CorrectionHistory {
+    // [stm color][pawn_key % size]
+    table: [[i32; CORR_HIST_SIZE]; 2],
+}
+
+impl CorrectionHistory {
+    pub fn new() -> Self {
+        Self {
+            table: [[0; CORR_HIST_SIZE]; 2],
+        }
+    }
+
+    pub fn get(&self, stm: usize, pawn_key: u64) -> i32 {
+        let idx = (pawn_key as usize) & (CORR_HIST_SIZE - 1);
+        self.table[stm][idx] / CORR_SCALE
+    }
+
+    pub fn update(&mut self, stm: usize, pawn_key: u64, err: i32, depth: i32) {
+        let idx = (pawn_key as usize) & (CORR_HIST_SIZE - 1);
+        let entry = &mut self.table[stm][idx];
+
+        // using quadratic formula for weight calculation
+        let weight = (depth * depth + 2 * depth + 1).min(128);
+
+        // fixed point EMA interpolation blending old value with new error
+        let interp = (*entry * (1024 - weight) + err * weight) / 1024;
+
+        *entry = interp.clamp(-(MAX_CORR_HISTORY as i32), MAX_CORR_HISTORY as i32);
+    }
+
+    pub fn clear(&mut self) {
+        self.table = [[0; CORR_HIST_SIZE]; 2];
     }
 }
