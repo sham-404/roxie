@@ -2,7 +2,7 @@
 
 <p align="center">
 A modern UCI chess engine written from scratch in <b>Rust</b>.<br>
-Currently playing at <b>3000+ Elo</b>, with the long-term goal of reaching <b>3500 Elo</b>.
+Currently rated at <b>2682 Elo (CCRL)</b>.
 </p>
 
 ---
@@ -13,7 +13,7 @@ Currently playing at <b>3000+ Elo</b>, with the long-term goal of reaching <b>35
 
 The project began as a way to learn how chess engines work. Over time, it evolved into a serious long-term project through continuous experimentation, profiling, tuning, and thousands of self-play and engine-vs-engine games.
 
-Today, Roxie has surpassed the **3000 Elo** milestone and continues to improve with every release.
+Today, Roxie has achieved an official **CCRL rating of 2682 Elo** for version 0.6.3 and continues to improve with every release.
 
 ---
 

@@ -4,7 +4,7 @@ All notable changes to Roxie are documented in this file.
 
 ---
 
-### unreleased
+### v0.6.4
 
 ### Added 
 - SIMD instructions added, noticable NPS increase detected
@@ -15,6 +15,7 @@ All notable changes to Roxie are documented in this file.
 - Added EvalHistory for lmp, and enabled lmp (Late Move Pruning) after a long time
 - Added Singular Extension
 - Added Probablistic Cut (ProbCut) for search
+- Added Capture History
 
 ### Improved
 - Reduced the if branching for quiets and captures for performance, but not so significant tho.
