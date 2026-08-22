@@ -226,7 +226,7 @@ impl Board {
         board.build_occupancy();
         board.build_mailbox();
         board.hash = compute_hash(&board);
-        board.pawn_hash = compute_hash(&board);
+        board.pawn_hash = compute_pawn_hash(&board);
         board.build_mailbox();
         board.build_occupancy();
         board.init_pesto_score();
@@ -267,10 +267,15 @@ impl Board {
             self.en_passant,
             self.last_irreversible,
             self.halfmove_clock,
+            self.pawn_hash,
         );
 
         // Update zobrist: remove piece from 'from' and remove old EP
         self.hash ^= zob[piece_idx][from];
+        if Piece::get_type(cur_piece) == Piece::PAWN {
+            self.pawn_hash ^= zob[piece_idx][from];
+        }
+
         if let Some(sq) = self.en_passant {
             self.hash ^= ep_keys[sq as usize % 8];
         }
@@ -287,6 +292,10 @@ impl Board {
         if captured != Piece::NONE {
             let cap_idx = Piece::to_idx(captured);
             self.hash ^= zob[cap_idx][captured_sq]; // Update zobrist for capture
+            if Piece::get_type(captured) == Piece::PAWN {
+                self.pawn_hash ^= zob[cap_idx][captured_sq];
+            }
+
             self.remove_piece(captured, captured_sq);
         }
 
@@ -310,6 +319,9 @@ impl Board {
             self.add_piece(promo_piece, to);
         } else {
             self.hash ^= zob[piece_idx][to]; // Update zobrist for normal move
+            if Piece::get_type(cur_piece) == Piece::PAWN {
+                self.pawn_hash ^= zob[piece_idx][to];
+            }
         }
 
         // castling
@@ -353,6 +365,11 @@ impl Board {
         self.hash ^= *side_key; // Update zobrist for side
 
         debug_assert_eq!(self.hash, compute_hash(self), "Zobrist mismatch");
+        debug_assert_eq!(
+            self.pawn_hash,
+            compute_pawn_hash(self),
+            "Pawn hash mismatch"
+        );
 
         undo
     }
@@ -422,6 +439,7 @@ impl Board {
         self.last_irreversible = undo.prev_last_irreversible;
         self.halfmove_clock = undo.prev_halfmove_clock;
         self.hash = self.history.pop();
+        self.pawn_hash = undo.prev_pawn_hash;
 
         // self.update_zobrist_key(mov, undo);
 
@@ -910,6 +928,11 @@ impl Board {
     #[inline(always)]
     pub fn get_hash(&self) -> u64 {
         self.hash
+    }
+
+    #[inline(always)]
+    pub fn get_pawn_hash(&self) -> u64 {
+        self.pawn_hash
     }
 
     #[inline(always)]

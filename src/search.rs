@@ -1,5 +1,13 @@
 use crate::{
-    board::{Board, compute_pawn_hash, mask}, r#const::{BLACK_PAWN_ATTACKS, KING_ATTACKS, KNIGHT_ATTACKS, MAX_PLY, WHITE_PAWN_ATTACKS}, engine::{CORR_GRAIN, Engine}, items::{Color, Move, MoveFlag, MoveList, Piece, PieceInfo}, magics::{get_bishop_move_bits, get_rook_move_bits}, move_pick::MovePicker, tt::{TTEntry, TTFlag}, uci::{GoControl, MAX_DEPTH}, uci_print,
+    board::{Board, mask},
+    r#const::{BLACK_PAWN_ATTACKS, KING_ATTACKS, KNIGHT_ATTACKS, MAX_PLY, WHITE_PAWN_ATTACKS},
+    engine::{CORR_GRAIN, Engine},
+    items::{Color, Move, MoveFlag, MoveList, Piece, PieceInfo},
+    magics::{get_bishop_move_bits, get_rook_move_bits},
+    move_pick::MovePicker,
+    tt::{TTEntry, TTFlag},
+    uci::{GoControl, MAX_DEPTH},
+    uci_print,
 };
 
 use std::{
@@ -411,7 +419,7 @@ impl Engine {
 
         let in_check = self.board.in_check();
         let stm_val = self.board.side_to_move().val();
-        let pawn_hash = compute_pawn_hash(&self.board);
+        let pawn_hash = self.board.get_pawn_hash();
 
         let base_eval = self.evaluate(ply as usize);
 
@@ -822,15 +830,15 @@ impl Engine {
             let tt_lower = fail_high;
             let tt_upper = max_eval <= original_alpha;
 
-            let dominated_by_static = (tt_lower && max_eval <= static_eval)
-                || (tt_upper && max_eval >= static_eval);
+            let dominated_by_static =
+                (tt_lower && max_eval <= static_eval) || (tt_upper && max_eval >= static_eval);
 
             if !dominated_by_static {
                 let diff = max_eval as i32 - static_eval as i32;
-                
+
                 // Multiply by the 256 grain to match the scaling in get()
                 let err = diff.clamp(-128, 128) * CORR_GRAIN as i32;
-                
+
                 self.correction_history.update(
                     self.board.side_to_move().val(),
                     pawn_hash,
@@ -1149,17 +1157,18 @@ impl Engine {
 
         let in_check = self.board.in_check();
         let stm_val = self.board.side_to_move().val();
-        let pawn_hash = compute_pawn_hash(&self.board);
+        let pawn_hash = self.board.get_pawn_hash();
 
         let base_eval = self.evaluate(ply as usize);
 
         // stand_pat evaluation
-                
-                
-                
+
         let mut stand_pat = if !in_check {
             // clamping the data to be between 32 centipawns
-            let correction = self.correction_history.get(stm_val, pawn_hash).clamp(-32, 32);
+            let correction = self
+                .correction_history
+                .get(stm_val, pawn_hash)
+                .clamp(-32, 32);
             // Prevent correction from accidentally creating a fake mate score
             (base_eval as i32 + correction)
                 .clamp(-MATE as i32 + MAX_PLY as i32, MATE as i32 - MAX_PLY as i32)
