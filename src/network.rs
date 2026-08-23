@@ -196,7 +196,7 @@ impl Network {
         (600.0 * y.atanh()) as i32
     }
 
-    fn build_acc(&self, board: &Board) -> [i16; HL1 * 2] {
+    pub fn build_acc(&self, board: &Board) -> [i16; HL1 * 2] {
         let mut white_feat = [50000usize; 30];
         let mut black_feat = [50000usize; 30];
 
@@ -589,18 +589,18 @@ fn get_hkp_feature_idx(king_pos: usize, piece_idx: usize, pos: usize) -> usize {
 }
 
 impl Engine {
-    pub fn setup_accumulator(&mut self) {
-        if let Some(nn) = NETWORK.get() {
-            let rebuild = nn.build_acc(&self.board);
-            if self.board.side_to_move() == Color::White {
-                self.accumulators[0][WHITE].copy_from_slice(&rebuild[..HL1]);
-                self.accumulators[0][BLACK].copy_from_slice(&rebuild[HL1..]);
-            } else {
-                self.accumulators[0][BLACK].copy_from_slice(&rebuild[..HL1]);
-                self.accumulators[0][WHITE].copy_from_slice(&rebuild[HL1..]);
-            };
-        }
-    }
+    // pub fn setup_accumulator(&mut self) {
+    //     if let Some(nn) = NETWORK.get() {
+    //         let rebuild = nn.build_acc(&self.board);
+    //         if self.board.side_to_move() == Color::White {
+    //             self.accumulators[0][WHITE].copy_from_slice(&rebuild[..HL1]);
+    //             self.accumulators[0][BLACK].copy_from_slice(&rebuild[HL1..]);
+    //         } else {
+    //             self.accumulators[0][BLACK].copy_from_slice(&rebuild[..HL1]);
+    //             self.accumulators[0][WHITE].copy_from_slice(&rebuild[HL1..]);
+    //         };
+    //     }
+    // }
 
     pub fn update_nnue(&mut self, mv: &Move, undo: &Undo, ply: usize) {
         let Some(nn) = NETWORK.get() else {
@@ -608,9 +608,9 @@ impl Engine {
         };
 
         // self.accumulators[ply + 1] = nn.build_acc(&self.board);
-        self.accumulators[ply + 1] = self.accumulators[ply];
+        *self.accumulators.get_mut(ply + 1) = self.accumulators.get(ply);
 
-        let acc = &mut self.accumulators[ply + 1];
+        let acc = self.accumulators.get_mut(ply + 1);
 
         let (from, to, flag) = (mv.from(), mv.to(), mv.flag());
 
@@ -720,7 +720,7 @@ impl Engine {
     }
 
     pub fn update_nnue_null_move(&mut self, ply: usize) {
-        self.accumulators[ply + 1] = self.accumulators[ply];
+        *self.accumulators.get_mut(ply + 1) = self.accumulators.get(ply);
         return;
     }
 }

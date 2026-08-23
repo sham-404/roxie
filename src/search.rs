@@ -1,13 +1,5 @@
 use crate::{
-    board::{Board, mask},
-    r#const::{BLACK_PAWN_ATTACKS, KING_ATTACKS, KNIGHT_ATTACKS, MAX_PLY, WHITE_PAWN_ATTACKS},
-    engine::{CORR_GRAIN, Engine},
-    items::{Color, Move, MoveFlag, MoveList, Piece, PieceInfo},
-    magics::{get_bishop_move_bits, get_rook_move_bits},
-    move_pick::MovePicker,
-    tt::{TTEntry, TTFlag},
-    uci::{GoControl, MAX_DEPTH},
-    uci_print,
+    board::{Board, mask}, r#const::{BLACK_PAWN_ATTACKS, KING_ATTACKS, KNIGHT_ATTACKS, MAX_PLY, WHITE_PAWN_ATTACKS}, engine::{CORR_GRAIN, Engine, Killers}, items::{Color, Move, MoveFlag, MoveList, Piece, PieceInfo}, magics::{get_bishop_move_bits, get_rook_move_bits}, move_pick::MovePicker, tt::{TTEntry, TTFlag}, uci::{GoControl, MAX_DEPTH}, uci_print,
 };
 
 use std::{
@@ -51,8 +43,8 @@ impl Engine {
     {
         let mut info = SearchInfo::new();
 
-        self.killers = [[Move::NULL; 2]; MAX_PLY];
-        self.setup_accumulator();
+        self.killers = Killers::new();
+        self.accumulators.setup(&self.board);
         self.tt.inc_generation();
 
         let mut last_complete_info = info.clone();
@@ -604,7 +596,7 @@ impl Engine {
         let mut quiet_searched = 0;
 
         //// Actual searching loop
-        let mut picker = MovePicker::new(tt_move, self.killers[ply as usize], prev_move, false);
+        let mut picker = MovePicker::new(tt_move, self.killers.get(ply), prev_move, false);
         let mut mv_searched = 0;
 
         while let Some(mv) = self.pick_next_mv(&mut picker) {
@@ -743,7 +735,7 @@ impl Engine {
                 fail_high = true;
 
                 if is_quiet {
-                    self.store_killer(mv, ply as usize);
+                    self.killers.store(mv, ply);
 
                     let stm = self.board.side_to_move().val();
                     let bonus = (depth * depth).min(400) as i32;
@@ -1008,7 +1000,7 @@ impl Engine {
             r -= hist_adjustment.clamp(-4, 4);
 
             // Counter and killer move adjustment
-            if mv == self.counter_moves.get(prev_move) || self.killers[ply as usize].contains(&mv) {
+            if mv == self.counter_moves.get(prev_move) || self.killers.get(ply).contains(&mv) {
                 r -= 1;
             }
 
@@ -1208,7 +1200,7 @@ impl Engine {
 
         let mut picker = MovePicker::new(
             tt_move,
-            self.killers[ply as usize],
+            self.killers.get(ply),
             prev_move,
             qsearch_picker,
         );
@@ -1315,8 +1307,9 @@ impl Engine {
         movelist: &mut MoveList,
     ) {
         let counter_mv = self.counter_moves.get(prev_move);
-        let killer_1 = self.killers[ply][0];
-        let killer_2 = self.killers[ply][1];
+        let killers = self.killers.get(ply as i32);
+        let killer_1 = killers[0];
+        let killer_2 = killers[1];
 
         for i in 0..movelist.len() {
             let mv = movelist.moves[i];
@@ -1368,14 +1361,6 @@ impl Engine {
             best_move: mv,
             age: self.tt.get_generation(),
         });
-    }
-
-    #[inline(always)]
-    fn store_killer(&mut self, mv: Move, ply: usize) {
-        if self.killers[ply][0] != mv {
-            self.killers[ply][1] = self.killers[ply][0];
-            self.killers[ply][0] = mv;
-        }
     }
 
     fn gen_pv(&mut self) -> Vec<Move> {

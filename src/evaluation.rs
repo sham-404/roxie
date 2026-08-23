@@ -612,19 +612,20 @@ const TEMPO_BONUS: i32 = 10;
 impl Engine {
     pub fn evaluate(&mut self, ply: usize) -> i16 {
         if let Some(nn) = NETWORK.get() {
-            let mut acc = [0; HL1 * 2];
+            let mut acc_for_eval = [0; HL1 * 2];
+            let acc = self.accumulators.get(ply);
             match self.board.side_to_move() {
                 Color::White => {
-                    acc[..HL1].copy_from_slice(&self.accumulators[ply][WHITE]);
-                    acc[HL1..].copy_from_slice(&self.accumulators[ply][BLACK]);
+                    acc_for_eval[..HL1].copy_from_slice(&acc[WHITE]);
+                    acc_for_eval[HL1..].copy_from_slice(&acc[BLACK]);
                 }
                 Color::Black => {
-                    acc[..HL1].copy_from_slice(&self.accumulators[ply][BLACK]);
-                    acc[HL1..].copy_from_slice(&self.accumulators[ply][WHITE]);
+                    acc_for_eval[..HL1].copy_from_slice(&acc[BLACK]);
+                    acc_for_eval[HL1..].copy_from_slice(&acc[WHITE]);
                 }
             };
 
-            let score = nn.eval_hkp_with_acc(&mut self.eval_buf, &acc) as i32;
+            let score = nn.eval_hkp_with_acc(&mut self.eval_buf, &acc_for_eval) as i32;
             return scaled_score_for_50_mv_rule(&self.board, score) as i16;
         }
 

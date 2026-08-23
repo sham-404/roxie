@@ -1,8 +1,8 @@
 use crate::{
     board::Board,
-    r#const::MAX_PLY,
-    items::{Move, Piece, PieceInfo},
-    network::{EvalBuf, HL1},
+    r#const::{BLACK, MAX_PLY, WHITE},
+    items::{Color, Move, Piece, PieceInfo},
+    network::{EvalBuf, HL1, NETWORK},
     search::MAX_HISTORY,
     tt::TranspositionTable,
     uci_print,
@@ -17,9 +17,9 @@ pub struct Engine {
     pub eval_history: EvalHistory,
     pub capture_history: CaptureHistory,
     pub correction_history: CorrectionHistory,
-    pub killers: [[Move; 2]; MAX_PLY],
+    pub killers: Killers,
     pub eval_buf: EvalBuf,
-    pub accumulators: [[[i16; HL1]; 2]; MAX_PLY],
+    pub accumulators: Accumulators,
 }
 
 impl Engine {
@@ -33,9 +33,9 @@ impl Engine {
             eval_history: EvalHistory::new(),
             capture_history: CaptureHistory::new(),
             correction_history: CorrectionHistory::new(),
-            killers: [[Move::NULL; 2]; MAX_PLY],
+            killers: Killers::new(),
             eval_buf: EvalBuf::new(),
-            accumulators: [[[0; HL1]; 2]; MAX_PLY],
+            accumulators: Accumulators::new(),
         }
     }
 
@@ -48,9 +48,9 @@ impl Engine {
         self.eval_history = EvalHistory::new();
         self.capture_history = CaptureHistory::new();
         self.correction_history = CorrectionHistory::new();
-        self.killers = [[Move::NULL; 2]; MAX_PLY];
+        self.killers = Killers::new();
         self.eval_buf = EvalBuf::new();
-        self.accumulators = [[[0; HL1]; 2]; MAX_PLY];
+        self.accumulators = Accumulators::new();
     }
 
     #[inline(always)]
@@ -81,6 +81,34 @@ impl HistoryTable {
     #[inline(always)]
     pub fn get(&self, stm: usize, from: usize, to: usize) -> i32 {
         self.table[stm][from][to]
+    }
+}
+
+pub struct Killers {
+    table: [[Move; 2]; MAX_PLY],
+}
+
+impl Killers {
+    #[inline(always)]
+    pub fn new() -> Self {
+        Self {
+            table: [[Move::NULL; 2]; MAX_PLY],
+        }
+    }
+
+    #[inline(always)]
+    pub fn get(&self, ply: i32) -> [Move; 2] {
+        self.table[ply as usize]
+    }
+
+    #[inline(always)]
+    pub fn store(&mut self, mv: Move, ply: i32) {
+        let ply = ply as usize;
+
+        if self.table[ply][0] != mv {
+            self.table[ply][1] = self.table[ply][0];
+            self.table[ply][0] = mv;
+        }
     }
 }
 
@@ -280,5 +308,41 @@ impl CorrectionHistory {
 
     pub fn clear(&mut self) {
         self.table = [[0; CORR_HIST_SIZE]; 2];
+    }
+}
+
+pub struct Accumulators {
+    table: [[[i16; HL1]; 2]; MAX_PLY],
+}
+
+impl Accumulators {
+    #[inline(always)]
+    pub fn new() -> Self {
+        Self {
+            table: [[[0; HL1]; 2]; MAX_PLY],
+        }
+    }
+
+    #[inline(always)]
+    pub fn get_mut(&mut self, ply: usize) -> &mut [[i16; HL1]; 2] {
+        &mut self.table[ply]
+    }
+
+    #[inline(always)]
+    pub fn get(&self, ply: usize) -> [[i16; HL1]; 2] {
+        self.table[ply]
+    }
+
+    pub fn setup(&mut self, board: &Board) {
+        if let Some(nn) = NETWORK.get() {
+            let rebuild = nn.build_acc(board);
+            if board.side_to_move() == Color::White {
+                self.table[0][WHITE].copy_from_slice(&rebuild[..HL1]);
+                self.table[0][BLACK].copy_from_slice(&rebuild[HL1..]);
+            } else {
+                self.table[0][BLACK].copy_from_slice(&rebuild[..HL1]);
+                self.table[0][WHITE].copy_from_slice(&rebuild[HL1..]);
+            };
+        }
     }
 }
