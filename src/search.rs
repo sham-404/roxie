@@ -417,11 +417,10 @@ impl Engine {
 
         // Static evaluation
         let static_eval = if !in_check {
-            // clamping the data to be between 32 centipawns
             let correction = self
                 .correction_history
-                .get(stm_val, pawn_hash)
-                .clamp(-32, 32);
+                .get(stm_val, pawn_hash);
+
             // Prevent correction from accidentally creating a fake mate score
             (base_eval as i32 + correction)
                 .clamp(-MATE as i32 + MAX_PLY as i32, MATE as i32 - MAX_PLY as i32)
@@ -826,7 +825,7 @@ impl Engine {
                 (tt_lower && max_eval <= static_eval) || (tt_upper && max_eval >= static_eval);
 
             if !dominated_by_static {
-                let diff = max_eval as i32 - static_eval as i32;
+                let diff = max_eval as i32 - base_eval as i32;
 
                 // Multiply by the 256 grain to match the scaling in get()
                 let err = diff.clamp(-128, 128) * CORR_GRAIN as i32;
@@ -1159,8 +1158,8 @@ impl Engine {
             // clamping the data to be between 32 centipawns
             let correction = self
                 .correction_history
-                .get(stm_val, pawn_hash)
-                .clamp(-32, 32);
+                .get(stm_val, pawn_hash);
+
             // Prevent correction from accidentally creating a fake mate score
             (base_eval as i32 + correction)
                 .clamp(-MATE as i32 + MAX_PLY as i32, MATE as i32 - MAX_PLY as i32)
