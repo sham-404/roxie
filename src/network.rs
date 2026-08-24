@@ -582,6 +582,99 @@ impl Network {
 
         acc
     }
+
+    pub fn apply_feature_update(
+        acc: &mut [[i16; HL1]; 2],
+        w: &[i16],
+        w_act: usize,
+        b_act: usize,
+        remove: bool,
+    ) {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            if is_x86_feature_detected!("avx2") {
+                return unsafe {
+                    Self::apply_feature_update_avx2(acc, w, w_act, b_act, remove)
+                };
+            }
+        }
+
+        Self::apply_feature_update_scalar(acc, w, w_act, b_act, remove);
+    }
+
+    fn apply_feature_update_scalar(
+        acc: &mut [[i16; HL1]; 2],
+        w: &[i16],
+        w_act: usize,
+        b_act: usize,
+        remove: bool,
+    ) {
+        for neuron in 0..HL1 {
+            unsafe {
+                if remove {
+                    *acc.get_unchecked_mut(WHITE).get_unchecked_mut(neuron) -=
+                        *w.get_unchecked(w_act * HL1 + neuron);
+                    *acc.get_unchecked_mut(BLACK).get_unchecked_mut(neuron) -=
+                        *w.get_unchecked(b_act * HL1 + neuron);
+                } else {
+                    *acc.get_unchecked_mut(WHITE).get_unchecked_mut(neuron) +=
+                        *w.get_unchecked(w_act * HL1 + neuron);
+                    *acc.get_unchecked_mut(BLACK).get_unchecked_mut(neuron) +=
+                        *w.get_unchecked(b_act * HL1 + neuron);
+                }
+            }
+        }
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[target_feature(enable = "avx2")]
+    unsafe fn apply_feature_update_avx2(
+        acc: &mut [[i16; HL1]; 2],
+        w: &[i16],
+        w_act: usize,
+        b_act: usize,
+        remove: bool,
+    ) {
+        let (acc_w_ptr, acc_b_ptr) = unsafe {
+            (
+                acc.get_unchecked_mut(WHITE).as_mut_ptr(),
+                acc.get_unchecked_mut(BLACK).as_mut_ptr(),
+            )
+        };
+        let mut i = 0;
+
+        while i + 16 <= HL1 {
+            unsafe {
+                let w_w = _mm256_loadu_si256(w.as_ptr().add(w_act * HL1 + i) as *const __m256i);
+                let w_b = _mm256_loadu_si256(w.as_ptr().add(b_act * HL1 + i) as *const __m256i);
+
+                let a_w = _mm256_loadu_si256(acc_w_ptr.add(i) as *const __m256i);
+                let a_b = _mm256_loadu_si256(acc_b_ptr.add(i) as *const __m256i);
+
+                if remove {
+                    _mm256_storeu_si256(acc_w_ptr.add(i) as *mut __m256i, _mm256_sub_epi16(a_w, w_w));
+                    _mm256_storeu_si256(acc_b_ptr.add(i) as *mut __m256i, _mm256_sub_epi16(a_b, w_b));
+                } else {
+                    _mm256_storeu_si256(acc_w_ptr.add(i) as *mut __m256i, _mm256_add_epi16(a_w, w_w));
+                    _mm256_storeu_si256(acc_b_ptr.add(i) as *mut __m256i, _mm256_add_epi16(a_b, w_b));
+                }
+            }
+            i += 16;
+        }
+
+        while i < HL1 {
+            unsafe {
+                if remove {
+                    *acc_w_ptr.add(i) -= *w.get_unchecked(w_act * HL1 + i);
+                    *acc_b_ptr.add(i) -= *w.get_unchecked(b_act * HL1 + i);
+                } else {
+                    *acc_w_ptr.add(i) += *w.get_unchecked(w_act * HL1 + i);
+                    *acc_b_ptr.add(i) += *w.get_unchecked(b_act * HL1 + i);
+                }
+            }
+            i += 1;
+        }
+    }
 }
 
 fn get_hkp_feature_idx(king_pos: usize, piece_idx: usize, pos: usize) -> usize {
@@ -700,22 +793,24 @@ impl Engine {
 
         // Added features
         for idx in 0..a_cnt {
-            let (w_act, b_act) = (w_added[idx], b_added[idx]);
-
-            for neuron in 0..HL1 {
-                acc[WHITE][neuron] += nn.w1[w_act * (HL1) + neuron];
-                acc[BLACK][neuron] += nn.w1[b_act * (HL1) + neuron];
-            }
+            Network::apply_feature_update(
+                acc,
+                &nn.w1,
+                w_added[idx],
+                b_added[idx],
+                false,
+            );
         }
 
         // Removed features
         for idx in 0..r_cnt {
-            let (w_act, b_act) = (w_removed[idx], b_removed[idx]);
-
-            for neuron in 0..HL1 {
-                acc[WHITE][neuron] -= nn.w1[w_act * (HL1) + neuron];
-                acc[BLACK][neuron] -= nn.w1[b_act * (HL1) + neuron];
-            }
+            Network::apply_feature_update(
+                acc,
+                &nn.w1,
+                w_removed[idx],
+                b_removed[idx],
+                true,
+            );
         }
     }
 

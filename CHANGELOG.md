@@ -4,6 +4,17 @@ All notable changes to Roxie are documented in this file.
 
 ---
 
+### Unreleased
+
+### Added
+- SIMD support for nnue accumulator updation
+- Killers table and accumulator as a separate struct field for modularity
+
+### Improved
+- Uses Incremental pawn hash for correction history, and made few mathematical improvements there
+
+---
+
 ### v0.6.4
 
 ### Added 
