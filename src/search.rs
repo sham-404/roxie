@@ -64,10 +64,6 @@ impl Engine {
             let last_iteration_nodes = info.nodes;
             info.nodes += 1;
 
-            // making the search of depth 1 completely mandatory
-            // as it guarentees us to return a valid move
-            info.is_mandatory = 1 == d;
-
             // Aspiration window setup
             let mut delta = 50i32; // Use i32 for safe math
             let mut alpha = -INF;
@@ -84,21 +80,7 @@ impl Engine {
                 let orig_alpha = alpha;
                 let orig_beta = beta;
 
-                let move_list = self.board.gen_moves();
-
-                best_move = if move_list.len() != 0 {
-                    if let Some(&mv) = move_list
-                        .as_slice()
-                        .iter()
-                        .find(|&&mv| self.board.is_legal_mv(mv))
-                    {
-                        mv
-                    } else {
-                        Move::NULL
-                    }
-                } else {
-                    Move::NULL
-                };
+                best_move = Move::NULL;
                 best_score = -INF;
 
                 let mut tt_move = Move::NULL;
@@ -239,13 +221,26 @@ impl Engine {
                 break;
             }
 
-            // // safety check
-            // if best_move == Move::NULL {
-            //     let mv_list = self.board.gen_moves();
-            //     if mv_list.len() != 0 {
-            //         best_move = mv_list.get(0);
-            //     }
-            // }
+            // safety check
+            if best_move == Move::NULL {
+                let tt_move = self
+                    .tt
+                    .probe(self.board.get_hash())
+                    .map_or(Move::NULL, |info| info.best_move());
+                let mut picker = MovePicker::new(tt_move, self.killers.get(0), Move::NULL, false);
+
+                while let Some(mv) = self.pick_next_mv(&mut picker) {
+                    let undo = self.board.make_move(&mv);
+                    if self.board.in_check_after_moving() {
+                        self.board.unmake_move(&mv, &undo);
+                        continue;
+                    }
+
+                    self.board.unmake_move(&mv, &undo);
+                    best_move = mv;
+                    break;
+                }
+            }
 
             // Manual storing for root node in TT
             let root_key = self.board.get_hash();
@@ -552,7 +547,7 @@ impl Engine {
         //// ProbCut (Probablistic Cut)
 
         //// Singular Extension
-        let mut se_extension = 0;
+        let mut se_extension = 0i32;
 
         // Only trigger on high depths, when we aren't already doing a singular search,
         // when we have a valid TT move, and when the TT depth is sufficient.
@@ -586,13 +581,20 @@ impl Engine {
             // the TT score minus the margin. Thus TT move is singular
             if se_score < singular_beta {
                 se_extension = 1;
+
+                if se_score < singular_beta - 30 {
+                    se_extension = 2
+                }
+            } else {
+                // beta cutoff
+                if singular_beta >= beta {
+                    return singular_beta;
+                }
+
+                // there are multiple good moves, so we no need to
+                // search the tt deep
+                se_extension = -1;
             }
-            // else {
-            //     // Singular verification failed high, meaning there are
-            //     // multiple winning moves. We penalize the static eval for this node.
-            //     self.correction_history
-            //         .multi_cut_penalty(stm_val, pawn_hash);
-            // }
         }
         //// Singular Extension
 
@@ -703,7 +705,7 @@ impl Engine {
 
             // Taking account for extended depth for singular extention
             let next_depth = if mv == tt_move {
-                depth + se_extension
+                (depth as i32 + se_extension).max(0) as u16
             } else {
                 depth
             };
@@ -1990,7 +1992,6 @@ pub struct SearchInfo {
     pub best_move: Move,
     pub nodes: u64,
     pub abort: bool,
-    pub is_mandatory: bool,
     pub pv: Vec<Move>,
 
     pub stats: SearchStats,
@@ -2006,7 +2007,6 @@ impl SearchInfo {
             score: 0,
             nodes: 0,
             abort: false,
-            is_mandatory: true,
             pv: Vec::new(),
 
             stats: SearchStats::new(),
@@ -2053,11 +2053,6 @@ impl SearchInfo {
     }
 
     fn check_limits(&mut self, limits: &SearchLimits) {
-        // not checking time limits if it is a mandatory search
-        if self.is_mandatory {
-            return;
-        }
-
         // cheking if stop command is made
         if limits.stop_signal.load(Ordering::Relaxed) {
             self.abort = true;
