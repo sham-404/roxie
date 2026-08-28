@@ -1,8 +1,8 @@
 use crate::{
     board::Board,
-    r#const::{BLACK, MAX_PLY, WHITE},
     items::{Color, Move, Piece, PieceInfo},
     network::{EvalBuf, HL1, NETWORK},
+    r#const::{BLACK, MAX_PLY, WHITE},
     search::MAX_HISTORY,
     tt::TranspositionTable,
     uci_print,

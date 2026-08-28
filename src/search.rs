@@ -1,5 +1,13 @@
 use crate::{
-    board::{Board, mask}, r#const::{BLACK_PAWN_ATTACKS, KING_ATTACKS, KNIGHT_ATTACKS, MAX_PLY, WHITE_PAWN_ATTACKS}, engine::{CORR_GRAIN, Engine, Killers}, items::{Color, Move, MoveFlag, MoveList, Piece, PieceInfo}, magics::{get_bishop_move_bits, get_rook_move_bits}, move_pick::MovePicker, tt::{TTEntry, TTFlag}, uci::{GoControl, MAX_DEPTH}, uci_print,
+    board::{Board, mask},
+    r#const::{BLACK_PAWN_ATTACKS, KING_ATTACKS, KNIGHT_ATTACKS, MAX_PLY, WHITE_PAWN_ATTACKS},
+    engine::{CORR_GRAIN, Engine, Killers},
+    items::{Color, Move, MoveFlag, MoveList, Piece, PieceInfo},
+    magics::{get_bishop_move_bits, get_rook_move_bits},
+    move_pick::MovePicker,
+    tt::{TTEntry, TTFlag},
+    uci::{GoControl, MAX_DEPTH},
+    uci_print,
 };
 
 use std::{
@@ -417,9 +425,7 @@ impl Engine {
 
         // Static evaluation
         let static_eval = if !in_check {
-            let correction = self
-                .correction_history
-                .get(stm_val, pawn_hash);
+            let correction = self.correction_history.get(stm_val, pawn_hash);
 
             // Prevent correction from accidentally creating a fake mate score
             (base_eval as i32 + correction)
@@ -430,16 +436,20 @@ impl Engine {
         };
 
         self.eval_history.store(static_eval, in_check, ply as usize);
+        let is_improving = self
+            .eval_history
+            .is_improving(static_eval, in_check, ply as usize);
 
         //// Reverse Futility Pruning (Static Null Move Pruning) //
+        let rfp_depth_limit = if is_improving { 5 } else { 3 };
         if !in_check
-            && depth <= 4
+            && depth <= rfp_depth_limit
             && beta.abs() < MATE - MAX_PLY as i16
             && excluded_move == Move::NULL
         {
             info.stats.rfp_attempts += 1;
 
-            let margin = depth as i16 * 120; // 120 cp per depth as margin
+            let margin = depth as i16 * (100 - if is_improving { 25 } else { 0 });
 
             if static_eval - margin >= beta {
                 info.stats.rfp_cutoffs += 1;
@@ -462,6 +472,7 @@ impl Engine {
             limits,
             info,
             static_eval,
+            is_improving,
         ) {
             return cutoff_score;
         }
@@ -613,9 +624,6 @@ impl Engine {
                 // late move pruning //
                 let is_non_pv = alpha + 1 == beta;
                 let mut lmp_threshold = 3 + (depth * depth) as usize;
-                let is_improving =
-                    self.eval_history
-                        .is_improving(static_eval, in_check, ply as usize);
 
                 if !is_improving {
                     lmp_threshold /= 2;
@@ -634,8 +642,9 @@ impl Engine {
             } else if mv_idx > 0 {
                 // SEE pruning //
                 let is_non_pv = alpha + 1 == beta;
+                let see_depth_limit = if is_improving { 4 } else { 2 };
 
-                if depth <= 5
+                if depth <= see_depth_limit
                     && is_non_pv
                     && !in_check
                     && mv != tt_move
@@ -644,7 +653,7 @@ impl Engine {
                     && !self.board.gives_check(mv)
                 {
                     info.stats.see_prune_attempts += 1;
-                    let margin = depth as i32 * 80;
+                    let margin = depth as i32 * (60 - if is_improving { 20 } else { 0 });
 
                     if self.board.see(&mv) < -margin {
                         info.stats.see_prunes_happened += 1;
@@ -655,11 +664,12 @@ impl Engine {
             }
 
             // Futility Pruning //
-            if depth < 3 && mv_idx > 0 && is_quiet && !in_check {
+            let fp_depth_limit = if is_improving { 4 } else { 2 };
+            if depth < fp_depth_limit && mv_idx > 0 && is_quiet && !in_check {
                 // If static eval + margin can't even beat alpha,
                 // this quiet move is highly unlikely to change the node status.
 
-                let futility_margin = depth as i16 * 150;
+                let futility_margin = depth as i16 * (120 - if is_improving { 30 } else { 0 });
                 if static_eval + futility_margin <= alpha {
                     // We must verify the move doesn't give a check before skipping it
                     // for safeplay
@@ -702,6 +712,7 @@ impl Engine {
                 mv,
                 mv_idx,
                 quiet_searched,
+                is_improving,
                 SearchParams {
                     depth: next_depth,
                     alpha,
@@ -870,6 +881,7 @@ impl Engine {
         limits: &SearchLimits,
         info: &mut SearchInfo,
         static_eval: i16,
+        is_improving: bool,
     ) -> Option<i16> {
         let SearchParams {
             depth,
@@ -881,7 +893,8 @@ impl Engine {
         } = params;
 
         // Conditions for NMP
-        if depth > 3
+        let nmp_depth_limit = if is_improving { 2 } else { 4 };
+        if depth > nmp_depth_limit
             && excluded_move == Move::NULL
             && beta.abs() < MATE - MAX_PLY as i16
             && static_eval >= beta
@@ -890,7 +903,11 @@ impl Engine {
         {
             info.stats.nmp_attemps += 1;
 
-            let r = 3 + depth / 6;
+            let mut r = 3 + depth / 6;
+            if !is_improving {
+                r = r.saturating_sub(1);
+            }
+
             let nmp_depth = (depth - 1).saturating_sub(r);
 
             let old_epsq = self.board.make_null_move();
@@ -932,6 +949,7 @@ impl Engine {
         mv: Move,
         mv_idx: usize,
         quiet_searched: usize,
+        is_improving: bool,
         params: SearchParams,
         limits: &SearchLimits,
         info: &mut SearchInfo,
@@ -974,7 +992,9 @@ impl Engine {
         }
 
         // checking whether lmr is applicable
-        let can_reduce = quiet_searched > 1 && depth > 3 && !in_check && mv.flag().is_quiet();
+        let lmr_depth_limit = if is_improving { 3 } else { 4 };
+        let can_reduce =
+            quiet_searched > 1 && depth > lmr_depth_limit && !in_check && mv.flag().is_quiet();
 
         // Late move reduction //
         let reduction = if can_reduce {
@@ -997,6 +1017,10 @@ impl Engine {
             let hist_adjustment = hist_score / adjustment_fac;
 
             r -= hist_adjustment.clamp(-4, 4);
+
+            if !is_improving {
+                r -= 1;
+            }
 
             // Counter and killer move adjustment
             if mv == self.counter_moves.get(prev_move) || self.killers.get(ply).contains(&mv) {
@@ -1156,9 +1180,7 @@ impl Engine {
 
         let mut stand_pat = if !in_check {
             // clamping the data to be between 32 centipawns
-            let correction = self
-                .correction_history
-                .get(stm_val, pawn_hash);
+            let correction = self.correction_history.get(stm_val, pawn_hash);
 
             // Prevent correction from accidentally creating a fake mate score
             (base_eval as i32 + correction)
@@ -1197,12 +1219,7 @@ impl Engine {
         let orig_alpha = alpha;
         let mut best_move_this_node = Move::NULL;
 
-        let mut picker = MovePicker::new(
-            tt_move,
-            self.killers.get(ply),
-            prev_move,
-            qsearch_picker,
-        );
+        let mut picker = MovePicker::new(tt_move, self.killers.get(ply), prev_move, qsearch_picker);
         let mut mv_searched = 0;
 
         while let Some(mv) = self.pick_next_mv(&mut picker) {
