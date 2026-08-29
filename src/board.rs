@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use crate::r#const::*;
 use crate::evaluation::{EG_TABLE, GAME_PHASE_VAL, MG_TABLE};
 use crate::items::*;
@@ -6,6 +8,77 @@ use crate::move_pick::QUIET_MV_MARGIN;
 use crate::zobrist::{CASTLING_KEYS, ENPASSANT_KEYS, SIDE_KEY, ZOBRIST_TABLE};
 
 const PIECE_VALS: [i32; 6] = [100, 320, 330, 500, 900, 0];
+
+// BETWEEN_TABLE[sq1][sq2] = all squares between sq1 and sq2 if valid
+pub static BETWEEN_TABLE: OnceLock<[[u64; 64]; 64]> = OnceLock::new();
+// LINE_TABLE[sq1][sq2] = whole file or diag consisting sq1 and sq2 if valid
+pub static LINE_TABLE: OnceLock<[[u64; 64]; 64]> = OnceLock::new();
+
+pub fn init_ray_tables() {
+    let mut lines = [[0u64; 64]; 64];
+    let mut between = [[0u64; 64]; 64];
+
+    for i in 0..64 {
+        for j in 0..64 {
+            if i == j {
+                continue;
+            }
+
+            let r_atk = get_rook_move_bits(i, 0);
+            let b_atk = get_bishop_move_bits(i, 0);
+
+            if (r_atk & mask(j)) != 0 {
+                between[i][j] = get_rook_move_bits(i, mask(j)) & get_rook_move_bits(j, mask(i));
+
+                let rank_i = i / 8;
+                let file_i = i % 8;
+                if rank_i == j / 8 {
+                    lines[i][j] = 0xFFu64 << (8 * rank_i); // entire rank
+                } else {
+                    lines[i][j] = 0x0101010101010101u64 << file_i; // entire file
+                }
+            } else if (b_atk & mask(j)) != 0 {
+                between[i][j] = get_bishop_move_bits(i, mask(j)) & get_bishop_move_bits(j, mask(i));
+
+                // Trace the exact single diagonal line
+                let r_step = if (j / 8) as i32 > (i / 8) as i32 {
+                    1
+                } else {
+                    -1
+                };
+                let f_step = if (j % 8) as i32 > (i % 8) as i32 {
+                    1
+                } else {
+                    -1
+                };
+
+                let mut line = 0u64;
+                let mut r = (i / 8) as i32;
+                let mut f = (i % 8) as i32;
+
+                // Trace forward to the board edge
+                while r >= 0 && r < 8 && f >= 0 && f < 8 {
+                    line |= mask((r * 8 + f) as usize);
+                    r += r_step;
+                    f += f_step;
+                }
+
+                // Trace backward to the board edge
+                r = (i / 8) as i32;
+                f = (i % 8) as i32;
+                while r >= 0 && r < 8 && f >= 0 && f < 8 {
+                    line |= mask((r * 8 + f) as usize);
+                    r -= r_step;
+                    f -= f_step;
+                }
+                lines[i][j] = line;
+            }
+        }
+    }
+
+    let _ = BETWEEN_TABLE.set(between);
+    let _ = LINE_TABLE.set(lines);
+}
 
 #[inline(always)]
 pub fn pop_lsb(bb: &mut u64) -> Option<usize> {
@@ -2090,13 +2163,143 @@ impl Board {
         is_legal
     }
 
+    #[inline(always)]
+    pub fn is_legal_fast(&mut self, mv: Move, checkers: u64, pinned: u64) -> bool {
+        let from = mv.from();
+        let to = mv.to();
+        let flag = mv.flag();
+
+        let piece_col = if self.side_to_move == Color::White {
+            Piece::WHITE
+        } else {
+            Piece::BLACK
+        };
+        let king_sq = self.bb(piece_col | Piece::KING).trailing_zeros() as usize;
+
+        // if king moved or it is en_passant, we fallback to relatively fast, bitboards
+        // only mutated legality check, is_legal_mv()
+        if from == king_sq || flag == MoveFlag::EN_PASSANT {
+            return self.is_legal_mv(mv);
+        }
+
+        if checkers.count_ones() > 1 {
+            // Double check. Thus only king can move to escape the check. since king moves are
+            // validated in the edge case, this is not a king move, making it an illegal move
+            return false;
+        }
+
+        // Single check
+        if checkers.count_ones() == 1 {
+            let checker_sq = checkers.trailing_zeros() as usize;
+            let between_table = BETWEEN_TABLE.get().unwrap();
+
+            // target_mask is the squares between attacker and king
+            let target_mask = mask(checker_sq) | between_table[king_sq][checker_sq];
+
+            // if our piece doesn't land on the target_mask, we couldn't
+            // evade the check, thus it is illegal
+            if (mask(to) & target_mask) == 0 {
+                return false;
+            }
+        }
+
+        // Handling pins
+        if (pinned & mask(from)) != 0 {
+            let line_table = LINE_TABLE.get().unwrap();
+
+            // if the piece is pinned, we can move only in the line of pin, else we
+            // leave the king in check. thus it's illegal if we move away from the
+            // line of pin
+            if (mask(to) & line_table[king_sq][from]) == 0 {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    pub fn checkers_and_pinned(&self) -> (u64, u64) {
+        let us = self.side_to_move;
+        let piece_col = if us == Color::White {
+            Piece::WHITE
+        } else {
+            Piece::BLACK
+        };
+
+        let enemy = Piece::enemy(piece_col);
+
+        let king_bb = self.bb(piece_col | Piece::KING);
+        let king_sq = king_bb.trailing_zeros() as usize;
+
+        let all_occ = self.all_occ();
+        let own_occ = self.occ(&us);
+
+        let mut checkers = 0u64;
+        let mut pinned = 0u64;
+
+        // Pawns and Knights (Direct attackers only, they cannot pin pieces)
+        let pawn_attacks = match us {
+            Color::White => WHITE_PAWN_ATTACKS[king_sq],
+            Color::Black => BLACK_PAWN_ATTACKS[king_sq],
+        };
+
+        checkers |= pawn_attacks & self.bb(enemy | Piece::PAWN);
+        checkers |= KNIGHT_ATTACKS[king_sq] & self.bb(enemy | Piece::KNIGHT);
+
+        // Sliders (Rooks, Bishops, Queens) -> these check or pin the king
+        let enemy_rooks = self.bb(enemy | Piece::ROOK) | self.bb(enemy | Piece::QUEEN);
+        let enemy_bishops = self.bb(enemy | Piece::BISHOP) | self.bb(enemy | Piece::QUEEN);
+
+        // finding possible pins by using 0 as occupancy, so if a ray hit enemy piece
+        // on a blank board with respect to king_sq, then it could pin us
+        let possible_rook_pinners = get_rook_move_bits(king_sq, 0) & enemy_rooks;
+        let possible_bishop_pinners = get_bishop_move_bits(king_sq, 0) & enemy_bishops;
+
+        let between_table = BETWEEN_TABLE.get().unwrap();
+
+        // check the rook and queen straight rays
+        let mut pinner_bb = possible_rook_pinners;
+        while let Some(pinner_sq) = pop_lsb(&mut pinner_bb) {
+            let between = between_table[king_sq][pinner_sq] & all_occ;
+
+            if between == 0 {
+                // no piece is between the king and possible pinner, so direct check is delivered
+                checkers |= mask(pinner_sq);
+            } else if between.count_ones() == 1 {
+                if (between & own_occ) != 0 {
+                    // if the blocked piece is ours, then we are pinned
+                    pinned |= between;
+                }
+            }
+        }
+
+        // check bishop and queen diag rays
+        let mut pinner_bb = possible_bishop_pinners;
+        while let Some(pinner_sq) = pop_lsb(&mut pinner_bb) {
+            let between = between_table[king_sq][pinner_sq] & all_occ;
+
+            if between == 0 {
+                // no piece is between the king and possible pinner, so direct check is delivered
+                checkers |= mask(pinner_sq);
+            } else if between.count_ones() == 1 {
+                if (between & own_occ) != 0 {
+                    // if the blocked piece is ours, then we are pinned
+                    pinned |= between;
+                }
+            }
+        }
+
+        (checkers, pinned)
+    }
+
     pub fn filter_illegal(&mut self, moves: &mut MoveList) {
         let mut last_legal_mv_idx: isize = -1;
+        let (checkers, pinned) = self.checkers_and_pinned();
 
         for idx in 0..moves.len() {
             let mv = moves.moves[idx];
 
-            if self.is_legal_mv(mv) {
+            if self.is_legal_fast(mv, checkers, pinned) {
                 moves.moves[(last_legal_mv_idx + 1) as usize] = mv;
                 last_legal_mv_idx += 1;
             }

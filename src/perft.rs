@@ -6,25 +6,24 @@ pub fn perft(board: &mut Board, depth: u32) -> u64 {
     }
 
     let move_list = board.gen_moves();
+    let (checkers, pinned) = board.checkers_and_pinned();
 
     if depth == 1 {
         return move_list
             .as_slice()
             .iter()
-            .filter(|&&mv| board.is_legal_mv(mv))
+            .filter(|&&mv| board.is_legal_fast(mv, checkers, pinned))
             .count() as u64;
     }
 
     let mut nodes = 0;
 
     for mov in move_list.as_slice() {
-        let undo = board.make_move(mov);
-
-        if board.in_check_after_moving() {
-            board.unmake_move(mov, &undo);
+        if !board.is_legal_fast(*mov, checkers, pinned) {
             continue;
         }
 
+        let undo = board.make_move(mov);
         nodes += perft(board, depth - 1);
         board.unmake_move(mov, &undo);
     }
@@ -34,14 +33,15 @@ pub fn perft(board: &mut Board, depth: u32) -> u64 {
 
 pub fn perft_divide(board: &mut Board, depth: u32) -> u64 {
     let move_list = board.gen_moves();
+    let (checkers, pinned) = board.checkers_and_pinned();
     let mut total_nodes = 0;
 
     for mov in move_list.as_slice() {
-        let undo = board.make_move(&mov);
-        if board.in_check_after_moving() {
-            board.unmake_move(mov, &undo);
+        if !board.is_legal_fast(*mov, checkers, pinned) {
             continue;
         }
+
+        let undo = board.make_move(&mov);
 
         let nodes = if depth > 1 {
             perft(board, depth - 1)

@@ -57,6 +57,8 @@ impl Engine {
 
         let mut last_complete_info = info.clone();
 
+        let (checkers, pinned) = self.board.checkers_and_pinned();
+
         // Iterative Deepening Search loop
         for d in 1..=limits.depth.unwrap_or(MAX_DEPTH) {
             let mut best_move: Move;
@@ -95,11 +97,11 @@ impl Engine {
                 let mut mv_searched = 0;
 
                 while let Some(mv) = self.pick_next_mv(&mut picker) {
-                    let undo = self.board.make_move(&mv);
-                    if self.board.in_check_after_moving() {
-                        self.board.unmake_move(&mv, &undo);
+                    if !self.board.is_legal_fast(mv, checkers, pinned) {
                         continue;
                     }
+
+                    let undo = self.board.make_move(&mv);
 
                     self.update_nnue(&mv, &undo, 0);
 
@@ -230,13 +232,9 @@ impl Engine {
                 let mut picker = MovePicker::new(tt_move, self.killers.get(0), Move::NULL, false);
 
                 while let Some(mv) = self.pick_next_mv(&mut picker) {
-                    let undo = self.board.make_move(&mv);
-                    if self.board.in_check_after_moving() {
-                        self.board.unmake_move(&mv, &undo);
+                    if !self.board.is_legal_fast(mv, checkers, pinned) {
                         continue;
                     }
-
-                    self.board.unmake_move(&mv, &undo);
                     best_move = mv;
                     break;
                 }
@@ -473,6 +471,8 @@ impl Engine {
         }
         //// NULL move pruning
 
+        let (checkers, pinned) = self.board.checkers_and_pinned();
+
         //// ProbCut (Probablistic Cut)
         if depth >= 5
             && !in_check
@@ -496,11 +496,11 @@ impl Engine {
                     continue;
                 }
 
-                let undo = self.board.make_move(&mv);
-                if self.board.in_check_after_moving() {
-                    self.board.unmake_move(&mv, &undo);
+                if !self.board.is_legal_fast(mv, checkers, pinned) {
                     continue;
                 }
+
+                let undo = self.board.make_move(&mv);
 
                 info.stats.probcut_attempts += 1;
                 self.update_nnue(&mv, &undo, ply as usize);
@@ -700,11 +700,11 @@ impl Engine {
             }
             // Futility Pruning //
 
-            let undo = self.board.make_move(&mv);
-            if self.board.in_check_after_moving() {
-                self.board.unmake_move(&mv, &undo);
+            if !self.board.is_legal_fast(mv, checkers, pinned) {
                 continue;
             }
+
+            let undo = self.board.make_move(&mv);
 
             if is_quiet {
                 quiet_list.push(mv);
@@ -1231,6 +1231,8 @@ impl Engine {
             }
         }
 
+        let (checkers, pinned) = self.board.checkers_and_pinned();
+
         let qsearch_picker = !in_check;
         let orig_alpha = alpha;
         let mut best_move_this_node = Move::NULL;
@@ -1262,11 +1264,11 @@ impl Engine {
                 // delta pruning //
             }
 
-            let undo = self.board.make_move(&mv);
-            if self.board.in_check_after_moving() {
-                self.board.unmake_move(&mv, &undo);
+            if !self.board.is_legal_fast(mv, checkers, pinned) {
                 continue;
             }
+
+            let undo = self.board.make_move(&mv);
             let mv_idx = mv_searched;
             mv_searched += 1;
 
