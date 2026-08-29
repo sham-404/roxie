@@ -665,6 +665,20 @@ impl Engine {
                 // SEE pruning //
             }
 
+            // History Pruning
+            let history_pruning_depth = if is_improving { 3 } else { 2 };
+            let total_hist = self.history.get(stm_val, mv.from(), mv.to());
+
+            if depth <= history_pruning_depth && is_quiet && !in_check && alpha + 1 == beta {
+                info.stats.history_prune_attempts += 1;
+                let history_margin = -((MAX_HISTORY - 1500) / 8) * depth as i32;
+
+                if total_hist < history_margin {
+                    info.stats.history_pruned += 1;
+                    continue;
+                }
+            }
+
             // Futility Pruning //
             let fp_depth_limit = if is_improving { 4 } else { 2 };
             if depth < fp_depth_limit && mv_idx > 0 && is_quiet && !in_check {
@@ -1456,6 +1470,9 @@ pub struct SearchStats {
     pub see_prune_attempts: usize,
     pub see_prunes_happened: usize,
 
+    pub history_prune_attempts: usize,
+    pub history_pruned: usize,
+
     pub rfp_attempts: usize,
     pub rfp_cutoffs: usize,
 
@@ -1495,6 +1512,8 @@ impl SearchStats {
             lmp_prunes: 0,
             see_prune_attempts: 0,
             see_prunes_happened: 0,
+            history_prune_attempts: 0,
+            history_pruned: 0,
             rfp_attempts: 0,
             rfp_cutoffs: 0,
             probcut_attempts: 0,
