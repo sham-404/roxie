@@ -59,6 +59,22 @@ impl Engine {
 
         let (checkers, pinned) = self.board.checkers_and_pinned();
 
+        // safety thing, grabbing a legal move at the start so that
+        // search always returns a valid move
+        let tt_move = self
+            .tt
+            .probe(self.board.get_hash())
+            .map_or(Move::NULL, |info| info.best_move());
+        let mut picker = MovePicker::new(tt_move, self.killers.get(0), Move::NULL, false);
+
+        while let Some(mv) = self.pick_next_mv(&mut picker) {
+            if !self.board.is_legal_fast(mv, checkers, pinned) {
+                continue;
+            }
+            last_complete_info.best_move = mv;
+            break;
+        }
+
         // Iterative Deepening Search loop
         for d in 1..=limits.depth.unwrap_or(MAX_DEPTH) {
             let mut best_move: Move;
@@ -221,23 +237,6 @@ impl Engine {
                 // last info print if search is aborted midway
                 on_iteration(&last_complete_info);
                 break;
-            }
-
-            // safety check
-            if best_move == Move::NULL {
-                let tt_move = self
-                    .tt
-                    .probe(self.board.get_hash())
-                    .map_or(Move::NULL, |info| info.best_move());
-                let mut picker = MovePicker::new(tt_move, self.killers.get(0), Move::NULL, false);
-
-                while let Some(mv) = self.pick_next_mv(&mut picker) {
-                    if !self.board.is_legal_fast(mv, checkers, pinned) {
-                        continue;
-                    }
-                    best_move = mv;
-                    break;
-                }
             }
 
             // Manual storing for root node in TT
@@ -909,7 +908,7 @@ impl Engine {
         } = params;
 
         // Conditions for NMP
-        let nmp_depth_limit = if is_improving { 2 } else { 4 };
+        let nmp_depth_limit = if is_improving { 3 } else { 4 };
         if depth > nmp_depth_limit
             && excluded_move == Move::NULL
             && beta.abs() < MATE - MAX_PLY as i16
@@ -1008,7 +1007,7 @@ impl Engine {
         }
 
         // checking whether lmr is applicable
-        let lmr_depth_limit = if is_improving { 3 } else { 4 };
+        let lmr_depth_limit = if is_improving { 2 } else { 3 };
         let can_reduce =
             quiet_searched > 1 && depth > lmr_depth_limit && !in_check && mv.flag().is_quiet();
 
