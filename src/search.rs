@@ -76,7 +76,7 @@ impl Engine {
         }
 
         // Iterative Deepening Search loop
-        for d in 1..=limits.depth.unwrap_or(MAX_DEPTH) {
+        'ids_loop: for d in 1..=limits.depth.unwrap_or(MAX_DEPTH) {
             let mut best_move: Move;
             let mut best_score: i16;
             let last_iteration_nodes = info.nodes;
@@ -179,8 +179,17 @@ impl Engine {
 
                     self.board.unmake_move(&mv, &undo);
 
+                    // if aborted, use the partial resutls and skip the whole loop
                     if info.abort {
-                        break;
+                        last_complete_info.nodes = info.nodes;
+                        last_complete_info.seldepth = info.seldepth;
+                        last_complete_info.stats = info.stats.clone();
+                        last_complete_info.depth = d;
+                        last_complete_info.pv = self.gen_pv();
+
+                        // last info print if search is aborted midway
+                        on_iteration(&last_complete_info);
+                        break 'ids_loop;
                     }
 
                     if score > best_score {
@@ -191,10 +200,6 @@ impl Engine {
                     if score > alpha {
                         alpha = score;
                     }
-                }
-
-                if info.abort {
-                    break;
                 }
 
                 // aspiration failed low
@@ -223,19 +228,6 @@ impl Engine {
                 }
 
                 // successful aspiration search
-                break;
-            }
-
-            // if aborted, dont update the whole result
-            if info.abort {
-                last_complete_info.nodes = info.nodes;
-                last_complete_info.seldepth = info.seldepth;
-                last_complete_info.stats = info.stats.clone();
-                last_complete_info.depth = d;
-                last_complete_info.pv = self.gen_pv();
-
-                // last info print if search is aborted midway
-                on_iteration(&last_complete_info);
                 break;
             }
 
@@ -664,19 +656,19 @@ impl Engine {
                 // SEE pruning //
             }
 
-            // History Pruning
-            let history_pruning_depth = if is_improving { 3 } else { 2 };
-            let total_hist = self.history.get(stm_val, mv.from(), mv.to());
-
-            if depth <= history_pruning_depth && is_quiet && !in_check && alpha + 1 == beta {
-                info.stats.history_prune_attempts += 1;
-                let history_margin = -((MAX_HISTORY - 1500) / 8) * depth as i32;
-
-                if total_hist < history_margin {
-                    info.stats.history_pruned += 1;
-                    continue;
-                }
-            }
+            // // History Pruning
+            // let history_pruning_depth = if is_improving { 3 } else { 2 };
+            // let total_hist = self.history.get(stm_val, mv.from(), mv.to());
+            //
+            // if depth <= history_pruning_depth && is_quiet && !in_check && alpha + 1 == beta {
+            //     info.stats.history_prune_attempts += 1;
+            //     let history_margin = -((MAX_HISTORY - 1500) / 8) * depth as i32;
+            //
+            //     if total_hist < history_margin {
+            //         info.stats.history_pruned += 1;
+            //         continue;
+            //     }
+            // }
 
             // Futility Pruning //
             let fp_depth_limit = if is_improving { 4 } else { 2 };
