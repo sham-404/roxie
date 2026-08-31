@@ -9,6 +9,9 @@ venv/
 *.nnue
 *.csv
 
+# Ignoring the binary produced by makefile
+roxie*
+
 !tests/README.md
 !tests/chess_moves.pgn
 !tests/match.py
