@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
+
 use crate::{items::Move, search::MATE, uci_print};
 
 const TT_SLOT_SIZE: usize = 4;
@@ -118,20 +120,61 @@ impl TTPacked {
         ((self.info & TTPacked::AGE_MASK) >> TTPacked::AGE_SHIFT) as u8
     }
 
-    fn default() -> Self {
-        Self { key: 0, info: 0 }
+    // fn default() -> Self {
+    //     Self { key: 0, info: 0 }
+    // }
+}
+
+pub struct AtomicTTEntry {
+    info: AtomicU64,
+    key: AtomicU64,
+}
+
+impl AtomicTTEntry {
+    #[inline(always)]
+    pub const fn new() -> Self {
+        Self {
+            info: AtomicU64::new(0),
+            key: AtomicU64::new(0),
+        }
+    }
+
+    #[inline(always)]
+    pub fn load(&self) -> TTPacked {
+        let info = self.info.load(Ordering::Relaxed);
+        let key = self.key.load(Ordering::Relaxed);
+
+        TTPacked {
+            key: info ^ key, // XORing key with info (to avoid retrieving fault data)
+            info: info,
+        }
+    }
+
+    #[inline(always)]
+    pub fn store(&self, packed_entry: &TTPacked) {
+        let key = packed_entry.key ^ packed_entry.info;
+
+        self.info.store(packed_entry.info, Ordering::Relaxed);
+        self.key.store(key, Ordering::Relaxed);
     }
 }
 
 #[repr(align(64))]
-#[derive(Clone, Copy)]
 pub struct TTBucket {
-    pub slots: [TTPacked; TT_SLOT_SIZE],
+    pub slots: [AtomicTTEntry; TT_SLOT_SIZE],
+}
+
+impl Default for TTBucket {
+    fn default() -> Self {
+        Self {
+            slots: std::array::from_fn(|_| AtomicTTEntry::new()),
+        }
+    }
 }
 
 pub struct TranspositionTable {
     table: Vec<TTBucket>,
-    generation: u8,
+    generation: AtomicU8,
     mask: usize,
 }
 
@@ -152,14 +195,14 @@ impl TranspositionTable {
         // println!("entry size: {}", bucket_size / TT_SLOT_SIZE);
         // println!("tt size: {}mb", num_buckets * bucket_size / (1024 * 1024));
 
+        let mut table = Vec::with_capacity(num_buckets);
+        for _ in 0..num_buckets {
+            table.push(TTBucket::default());
+        }
+
         Self {
-            table: vec![
-                TTBucket {
-                    slots: [TTPacked::default(); TT_SLOT_SIZE]
-                };
-                num_buckets
-            ],
-            generation: 0,
+            table,
+            generation: AtomicU8::new(0),
             mask: num_buckets - 1,
         }
     }
@@ -174,42 +217,45 @@ impl TranspositionTable {
         );
     }
 
-    pub fn probe(&self, key: u64) -> Option<&TTPacked> {
+    pub fn probe(&self, key: u64) -> Option<TTPacked> {
         let index = key as usize & self.mask;
         let bucket = &self.table[index];
 
         for slot in &bucket.slots {
-            if slot.key == key {
-                return Some(slot);
+            let packed_entry = slot.load();
+            if packed_entry.key == key {
+                return Some(packed_entry);
             }
         }
 
         None
     }
 
-    pub fn store(&mut self, mut new_entry: TTEntry) {
+    pub fn store(&self, mut new_entry: TTEntry) {
         let mut new_packed = TTPacked::new(new_entry);
         let index = new_packed.key as usize & self.mask;
-        let bucket = &mut self.table[index];
+        let bucket = &self.table[index];
 
         let mut victim_idx = 0;
         let mut lowest_score = i32::MAX;
+        let cur_gen = self.generation.load(Ordering::Relaxed);
 
         for i in 0..TT_SLOT_SIZE {
             let slot = &bucket.slots[i];
+            let tt_entry = slot.load();
 
             // filling empty slots immediately
-            if slot.key == 0 {
-                bucket.slots[i] = new_packed;
+            if tt_entry.key == 0 {
+                slot.store(&new_packed);
                 return;
             }
 
             // exact key match
-            if slot.key == new_packed.key {
+            if tt_entry.key == new_packed.key {
                 // If Q-search is trying to store a NULL move, and we already
                 // have a perfectly good move from a previous search, rescue it.
                 if new_entry.best_move == Move::NULL {
-                    let old_move = slot.best_move();
+                    let old_move = tt_entry.best_move();
                     if old_move != Move::NULL {
                         new_entry.best_move = old_move;
                         new_packed = TTPacked::new(new_entry); // Repack with the rescued move
@@ -217,14 +263,14 @@ impl TranspositionTable {
                 }
 
                 // Overwrite if the new depth is greater or equal
-                if new_packed.depth() >= slot.depth() {
-                    bucket.slots[i] = new_packed;
+                if new_packed.depth() >= tt_entry.depth() {
+                    slot.store(&new_packed);
                 }
                 return;
             }
 
             // track the victim
-            let score = replace_score(slot, self.generation);
+            let score = replace_score(&tt_entry, cur_gen);
             if score < lowest_score {
                 lowest_score = score;
                 victim_idx = i;
@@ -232,25 +278,25 @@ impl TranspositionTable {
         }
 
         // Overwrite the worst node in the bucket
-        bucket.slots[victim_idx] = new_packed;
+        bucket.slots[victim_idx].store(&new_packed);
     }
 
     #[inline(always)]
     pub fn clear(&mut self) {
-        self.table.fill(TTBucket {
-            slots: [TTPacked::default(); TT_SLOT_SIZE],
-        });
-        self.generation = 0;
+        for i in 0..self.table.len() {
+            self.table[i] = TTBucket::default();
+        }
+        self.generation = AtomicU8::new(0);
     }
 
     #[inline(always)]
-    pub fn inc_generation(&mut self) {
-        self.generation = self.generation.wrapping_add(1);
+    pub fn inc_generation(&self) {
+        self.generation.fetch_add(1, Ordering::Release);
     }
 
     #[inline(always)]
     pub fn get_generation(&self) -> u8 {
-        self.generation
+        self.generation.load(Ordering::Relaxed)
     }
 }
 
