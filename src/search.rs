@@ -52,8 +52,8 @@ impl Engine {
         // Set the abort flag to false, do it only on the root search
         // (thread_id = 0) so that worker threads dont interfere with
         // the abort flag. only root search is responsible for stoping
-        // the search. overall, the whole shared state is mutated only by 
-        // the main search, except probing the tt by the worker threads 
+        // the search. overall, the whole shared state is mutated only by
+        // the main search, except probing the tt by the worker threads
         // of course
         if self.thread_id == 0 {
             self.shared.abort.store(false, Ordering::Relaxed);
@@ -93,7 +93,9 @@ impl Engine {
             info.nodes += 1;
 
             // Aspiration window setup
-            let mut delta = 50i32; // Use i32 for safe math
+            let deltas: [i32; 4] = [50, 15, 100, 200]; // Use i32 for safe math
+            let mut delta = deltas[self.thread_id as usize % 4];
+
             let mut alpha = -INF;
             let mut beta = INF;
 
@@ -2115,7 +2117,7 @@ impl SearchInfo {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct SearchLimits {
     pub depth: Option<u16>,
     pub nodes: Option<u64>,

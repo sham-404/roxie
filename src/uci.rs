@@ -10,7 +10,13 @@ use std::{
 };
 
 use crate::{
-    board::Board, r#const::MAX_PLY, engine::{Engine, SharedState}, items::Move, perft::perft_divide, search::SearchLimits, tt::TranspositionTable,
+    board::Board,
+    r#const::MAX_PLY,
+    engine::{Engine, SharedState},
+    items::Move,
+    perft::perft_divide,
+    search::SearchLimits,
+    tt::TranspositionTable,
 };
 
 pub const MAX_DEPTH: u16 = MAX_PLY as u16;
@@ -29,6 +35,8 @@ pub struct UCI {
     engine: Arc<Mutex<Engine>>,
     stop_signal: Arc<AtomicBool>,
     search_handle: Option<JoinHandle<()>>,
+
+    num_threads: u16,
     debug: bool,
     stats: bool,
 }
@@ -41,6 +49,7 @@ impl UCI {
             engine,
             stop_signal,
             search_handle: None,
+            num_threads: 1,
             debug: false,
             stats: false,
         }
@@ -49,6 +58,7 @@ impl UCI {
     fn options() {
         uci_print!("option name Hash type spin default 16 min 1 max 1048576");
         uci_print!("option name Clear Hash type button");
+        uci_print!("option name Threads type spin default 1 min 1 max 1024");
     }
 
     pub fn uci_loop(&mut self) {
@@ -150,15 +160,32 @@ impl UCI {
         let thread_engine = Arc::clone(&self.engine);
         let debug = self.debug;
         let stats = self.stats;
+        let num_threads = self.num_threads;
 
         self.search_handle = Some(thread::spawn(move || {
-            let mut engine_guard = thread_engine.lock().unwrap();
-            let data = engine_guard.search_ids(&limits, |info| {
-                info.print();
+            // root engine, handles time and actual search (idx = 0)
+            let mut base_engine = thread_engine.lock().unwrap();
 
-                if debug {
-                    info.stats.describe();
+            // worker threads (idx = 1..num_threads)
+            let data = thread::scope(|s| {
+                for id in 1..num_threads {
+                    let mut helper_engine = base_engine.child(id);
+
+                    s.spawn(move || {
+                        helper_engine.search_ids(&limits, |_| {});
+                    });
                 }
+
+                let best_info = base_engine.search_ids(&limits, |info| {
+                    info.print();
+                    if debug {
+                        info.stats.describe();
+                    }
+                });
+
+                base_engine.shared.abort.store(true, Ordering::Relaxed);
+
+                best_info
             });
 
             if stats {
@@ -223,7 +250,10 @@ impl UCI {
         }
     }
 
-    fn handle_setoption<'a>(&self, commands: &mut SplitWhitespace<'a>) {
+    fn handle_setoption<'a>(&mut self, commands: &mut SplitWhitespace<'a>) {
+        // Stopping the search if it is running
+        self.stop_search();
+
         // checking whether the next arg is "name"
         if commands.next() != Some("name") {
             uci_print!("Incomplete setoption parameters");
@@ -255,6 +285,26 @@ impl UCI {
                 };
 
                 engine.shared.tt.info();
+                return;
+            }
+
+            //// Option: Threads
+            Some(cmd) if cmd.eq_ignore_ascii_case("threads") => {
+                // checking whether the next arg is "value"
+                if commands.next() != Some("value") {
+                    uci_print!("Incomplete setoption parameters");
+                    return;
+                }
+
+                self.num_threads = match commands.next().and_then(|v| v.parse::<u16>().ok()) {
+                    Some(val) => val,
+                    None => {
+                        uci_print!("Invalid option");
+                        return;
+                    }
+                }
+                .clamp(1, 1024);
+
                 return;
             }
 
