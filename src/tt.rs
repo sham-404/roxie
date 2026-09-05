@@ -282,11 +282,14 @@ impl TranspositionTable {
     }
 
     #[inline(always)]
-    pub fn clear(&mut self) {
-        for i in 0..self.table.len() {
-            self.table[i] = TTBucket::default();
+    pub fn clear(&self) {
+        for bucket in self.table.iter() {
+            for slot in &bucket.slots {
+                slot.info.store(0, Ordering::Relaxed);
+                slot.key.store(0, Ordering::Relaxed);
+            }
         }
-        self.generation = AtomicU8::new(0);
+        self.generation.store(0, Ordering::Relaxed);
     }
 
     #[inline(always)]

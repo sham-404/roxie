@@ -1,32 +1,49 @@
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
 use crate::{
     board::Board,
+    r#const::{BLACK, MAX_PLY, WHITE},
     items::{Color, Move, Piece, PieceInfo},
     network::{EvalBuf, HL1, NETWORK},
-    r#const::{BLACK, MAX_PLY, WHITE},
     search::MAX_HISTORY,
     tt::TranspositionTable,
     uci_print,
 };
 
+#[derive(Clone)]
+pub struct SharedState {
+    pub tt: Arc<TranspositionTable>,
+    pub abort: Arc<AtomicBool>,
+}
+
 pub struct Engine {
     pub board: Board,
-    pub tt: TranspositionTable,
+
     pub history: HistoryTable,
     pub continuation_history: ContinuationHistory,
     pub counter_moves: CountermoveTable,
     pub eval_history: EvalHistory,
     pub capture_history: CaptureHistory,
     pub correction_history: CorrectionHistory,
+
     pub killers: Killers,
+
     pub eval_buf: EvalBuf,
     pub accumulators: Accumulators,
+
+    pub thread_id: u16,
+    // Shared States across all threads
+    pub shared: SharedState,
 }
 
 impl Engine {
     pub fn new() -> Self {
         Self {
             board: Board::start_pos(),
-            tt: TranspositionTable::new(16),
+
             history: HistoryTable::new(),
             continuation_history: ContinuationHistory::new(),
             counter_moves: CountermoveTable::new(),
@@ -34,14 +51,42 @@ impl Engine {
             capture_history: CaptureHistory::new(),
             correction_history: CorrectionHistory::new(),
             killers: Killers::new(),
+
             eval_buf: EvalBuf::new(),
             accumulators: Accumulators::new(),
+
+            thread_id: 0,
+            shared: SharedState {
+                tt: Arc::new(TranspositionTable::new(16)),
+                abort: Arc::new(AtomicBool::new(false)),
+            },
+        }
+    }
+
+    pub fn child(&self, thread_id: u16) -> Self {
+        Self {
+            board: self.board.clone(),
+
+            history: HistoryTable::new(),
+            continuation_history: ContinuationHistory::new(),
+            counter_moves: CountermoveTable::new(),
+            eval_history: EvalHistory::new(),
+            capture_history: CaptureHistory::new(),
+            correction_history: CorrectionHistory::new(),
+            killers: Killers::new(),
+
+            eval_buf: EvalBuf::new(),
+            accumulators: Accumulators::new(),
+
+            thread_id: thread_id,
+            shared: self.shared.clone(),
         }
     }
 
     pub fn reset(&mut self) {
         self.board = Board::start_pos();
-        self.tt.clear();
+        self.shared.tt.clear();
+        self.shared.abort.store(false, Ordering::Relaxed);
         self.history = HistoryTable::new();
         self.continuation_history = ContinuationHistory::new();
         self.counter_moves = CountermoveTable::new();
@@ -56,7 +101,7 @@ impl Engine {
     #[inline(always)]
     pub fn info(&self) {
         uci_print!("Roxie v{}\n", env!("CARGO_PKG_VERSION"));
-        self.tt.info();
+        self.shared.tt.info();
     }
 }
 

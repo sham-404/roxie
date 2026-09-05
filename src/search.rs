@@ -49,11 +49,20 @@ impl Engine {
     where
         F: FnMut(&SearchInfo),
     {
-        let mut info = SearchInfo::new();
+        // Set the abort flag to false, do it only on the root search
+        // (thread_id = 0) so that worker threads dont interfere with
+        // the abort flag. only root search is responsible for stoping
+        // the search. overall, the whole shared state is mutated only by 
+        // the main search, except probing the tt by the worker threads 
+        // of course
+        if self.thread_id == 0 {
+            self.shared.abort.store(false, Ordering::Relaxed);
+            self.shared.tt.inc_generation();
+        }
+        let mut info = SearchInfo::new(self.shared.abort.clone());
 
         self.killers = Killers::new();
         self.accumulators.setup(&self.board);
-        self.tt.inc_generation();
 
         let mut last_complete_info = info.clone();
 
@@ -62,6 +71,7 @@ impl Engine {
         // safety thing, grabbing a legal move at the start so that
         // search always returns a valid move
         let tt_move = self
+            .shared
             .tt
             .probe(self.board.get_hash())
             .map_or(Move::NULL, |info| info.best_move());
@@ -103,7 +113,7 @@ impl Engine {
 
                 let mut tt_move = Move::NULL;
                 info.stats.tt_probes += 1;
-                if let Some(entry) = self.tt.probe(self.board.get_hash()) {
+                if let Some(entry) = self.shared.tt.probe(self.board.get_hash()) {
                     info.stats.tt_hits += 1;
                     tt_move = entry.best_move();
                 }
@@ -180,7 +190,7 @@ impl Engine {
                     self.board.unmake_move(&mv, &undo);
 
                     // if aborted, use the partial resutls and skip the whole loop
-                    if info.abort {
+                    if info.get_abort() {
                         last_complete_info.nodes = info.nodes;
                         last_complete_info.seldepth = info.seldepth;
                         last_complete_info.stats = info.stats.clone();
@@ -204,13 +214,13 @@ impl Engine {
 
                 // aspiration failed low
                 if best_score <= orig_alpha {
-                    self.tt.store(TTEntry {
+                    self.shared.tt.store(TTEntry {
                         key: self.board.get_hash(),
                         depth: d,
                         score: best_score as i32,
                         flag: TTFlag::UpperBound,
                         best_move,
-                        age: self.tt.get_generation(),
+                        age: self.shared.tt.get_generation(),
                     });
 
                     alpha = (orig_alpha as i32 - delta).max(-INF as i32) as i16;
@@ -233,13 +243,13 @@ impl Engine {
 
             // Manual storing for root node in TT
             let root_key = self.board.get_hash();
-            self.tt.store(TTEntry {
+            self.shared.tt.store(TTEntry {
                 key: root_key,
                 depth: d,
                 score: best_score as i32,
                 flag: TTFlag::Exact,
                 best_move,
-                age: self.tt.get_generation(),
+                age: self.shared.tt.get_generation(),
             });
 
             info.depth = d;
@@ -272,7 +282,10 @@ impl Engine {
         limits: &SearchLimits,
         info: &mut SearchInfo,
     ) -> i16 {
-        info.check_limits(limits);
+        // Only check the limits on root search
+        if self.thread_id == 0 {
+            info.check_limits(limits);
+        }
 
         let SearchParams {
             depth,
@@ -284,7 +297,7 @@ impl Engine {
             excluded_move,
         } = params;
 
-        if info.abort {
+        if info.get_abort() {
             return alpha;
         }
 
@@ -320,7 +333,7 @@ impl Engine {
 
         info.stats.tt_probes += 1;
 
-        if let Some(entry) = self.tt.probe(key) {
+        if let Some(entry) = self.shared.tt.probe(key) {
             info.stats.tt_hits += 1;
 
             tt_move = entry.best_move();
@@ -377,7 +390,7 @@ impl Engine {
             );
 
             // probing tt, as we might have a move there now
-            if let Some(entry) = self.tt.probe(key) {
+            if let Some(entry) = self.shared.tt.probe(key) {
                 info.stats.iid_success += 1;
                 tt_move = entry.best_move();
             }
@@ -522,13 +535,13 @@ impl Engine {
                         pc_score
                     };
 
-                    self.tt.store(TTEntry {
+                    self.shared.tt.store(TTEntry {
                         key: self.board.get_hash(),
                         depth: pc_depth + 1, // Safe depth assumption
                         score: safe_score as i32,
                         flag: TTFlag::LowerBound,
                         best_move: mv,
-                        age: self.tt.get_generation(),
+                        age: self.shared.tt.get_generation(),
                     });
 
                     return safe_score;
@@ -829,7 +842,7 @@ impl Engine {
         };
 
         //// Correction History Updation
-        if !info.abort
+        if !info.get_abort()
             && best_move_this_node != Move::NULL
             && best_move_this_node.flag().is_quiet()
             && !in_check
@@ -868,14 +881,14 @@ impl Engine {
         }
 
         // dont store in the tt if excluded_move move has some move
-        if !info.abort && excluded_move == Move::NULL {
-            self.tt.store(TTEntry {
+        if !info.get_abort() && excluded_move == Move::NULL {
+            self.shared.tt.store(TTEntry {
                 key,
                 depth: depth,
                 score: score_to_store as i32,
                 flag,
                 best_move: best_move_this_node,
-                age: self.tt.get_generation(),
+                age: self.shared.tt.get_generation(),
             });
         }
 
@@ -961,7 +974,10 @@ impl Engine {
         limits: &SearchLimits,
         info: &mut SearchInfo,
     ) -> i16 {
-        info.check_limits(limits);
+        // Only check the limits on root search
+        if self.thread_id == 0 {
+            info.check_limits(limits);
+        }
 
         let SearchParams {
             depth,
@@ -1101,7 +1117,10 @@ impl Engine {
         info: &mut SearchInfo,
         limits: &SearchLimits,
     ) -> i16 {
-        info.check_limits(limits);
+        // Only check the limits on root search
+        if self.thread_id == 0 {
+            info.check_limits(limits);
+        }
 
         let SearchParams {
             mut alpha,
@@ -1111,7 +1130,7 @@ impl Engine {
             ..
         } = params;
 
-        if info.abort {
+        if info.get_abort() {
             return alpha;
         }
 
@@ -1144,7 +1163,7 @@ impl Engine {
         let mut tt_flag = None;
 
         info.stats.tt_probes += 1;
-        if let Some(entry) = self.tt.probe(self.board.get_hash()) {
+        if let Some(entry) = self.shared.tt.probe(self.board.get_hash()) {
             info.stats.tt_hits += 1;
             tt_move = entry.best_move();
 
@@ -1279,7 +1298,7 @@ impl Engine {
 
             self.board.unmake_move(&mv, &undo);
 
-            if info.abort {
+            if info.get_abort() {
                 return best_score;
             }
 
@@ -1314,7 +1333,7 @@ impl Engine {
             TTFlag::Exact
         };
 
-        if !info.abort {
+        if !info.get_abort() {
             self.q_tt_store(flag, best_score, best_move_this_node, ply);
         }
 
@@ -1378,13 +1397,13 @@ impl Engine {
             score_to_store -= ply as i16;
         }
 
-        self.tt.store(TTEntry {
+        self.shared.tt.store(TTEntry {
             key: self.board.get_hash(),
             depth: 0,
             score: score_to_store as i32,
             flag,
             best_move: mv,
-            age: self.tt.get_generation(),
+            age: self.shared.tt.get_generation(),
         });
     }
 
@@ -1395,7 +1414,7 @@ impl Engine {
 
         loop {
             let key = self.board.get_hash();
-            if let Some(entry) = self.tt.probe(key) {
+            if let Some(entry) = self.shared.tt.probe(key) {
                 let mv = entry.best_move();
 
                 // Stoping if the move is empty or we hit an infinite transposition cycle
@@ -2003,14 +2022,14 @@ pub struct SearchInfo {
     pub score: i16,
     pub best_move: Move,
     pub nodes: u64,
-    pub abort: bool,
+    pub abort: Arc<AtomicBool>,
     pub pv: Vec<Move>,
 
     pub stats: SearchStats,
 }
 
 impl SearchInfo {
-    pub fn new() -> SearchInfo {
+    pub fn new(abort_signal: Arc<AtomicBool>) -> SearchInfo {
         SearchInfo {
             start_time: Instant::now(),
             best_move: Move::NULL,
@@ -2018,11 +2037,15 @@ impl SearchInfo {
             seldepth: 0,
             score: 0,
             nodes: 0,
-            abort: false,
+            abort: abort_signal,
             pv: Vec::new(),
 
             stats: SearchStats::new(),
         }
+    }
+
+    pub fn get_abort(&self) -> bool {
+        self.abort.load(Ordering::Relaxed)
     }
 
     pub fn get_mate_depth(&self) -> Option<i16> {
@@ -2065,17 +2088,11 @@ impl SearchInfo {
     }
 
     fn check_limits(&mut self, limits: &SearchLimits) {
-        // cheking if stop command is made
-        if limits.stop_signal.load(Ordering::Relaxed) {
-            self.abort = true;
-            return;
-        }
-
         // checking if mate depth is enabled and reached
         if let Some(mate) = limits.mate {
             match self.get_mate_depth() {
                 Some(m) if m > 0 && m <= mate as i16 => {
-                    self.abort = true;
+                    self.abort.store(true, Ordering::Relaxed);
                 }
                 _ => {}
             }
@@ -2085,13 +2102,13 @@ impl SearchInfo {
         if self.nodes & 2047 == 0 {
             if let Some(nodes) = limits.nodes {
                 if self.nodes >= nodes {
-                    self.abort = true;
+                    self.abort.store(true, Ordering::Relaxed);
                 }
             }
 
             if let Some(limit) = limits.hard_time {
                 if self.start_time.elapsed() >= limit {
-                    self.abort = true;
+                    self.abort.store(true, Ordering::Relaxed);
                 }
             }
         }
@@ -2107,8 +2124,6 @@ pub struct SearchLimits {
     pub soft_time: Option<Duration>,
     pub infinite: bool,
     pub start_time: Instant,
-
-    pub stop_signal: Arc<AtomicBool>,
 }
 
 impl Default for SearchLimits {
@@ -2121,7 +2136,6 @@ impl Default for SearchLimits {
             mate: None,
             infinite: false,
             start_time: Instant::now(),
-            stop_signal: Arc::new(AtomicBool::new(false)),
         }
     }
 }

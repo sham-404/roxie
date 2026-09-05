@@ -397,6 +397,7 @@ impl MoveList {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct History {
     stack: [u64; 1024],
     len: usize,

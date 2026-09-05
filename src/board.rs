@@ -149,6 +149,7 @@ fn compute_hash(board: &Board) -> u64 {
     hash
 }
 
+#[derive(Clone, Copy)]
 pub struct Board {
     bitboards: [u64; 12],
     occupancy: [u64; 3],

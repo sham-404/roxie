@@ -10,8 +10,7 @@ use std::{
 };
 
 use crate::{
-    board::Board, r#const::MAX_PLY, engine::Engine, items::Move, perft::perft_divide,
-    search::SearchLimits, tt::TranspositionTable,
+    board::Board, r#const::MAX_PLY, engine::{Engine, SharedState}, items::Move, perft::perft_divide, search::SearchLimits, tt::TranspositionTable,
 };
 
 pub const MAX_DEPTH: u16 = MAX_PLY as u16;
@@ -36,9 +35,11 @@ pub struct UCI {
 
 impl UCI {
     pub fn new() -> Self {
+        let engine = Arc::new(Mutex::new(Engine::new()));
+        let stop_signal = engine.lock().unwrap().shared.abort.clone();
         Self {
-            engine: Arc::new(Mutex::new(Engine::new())),
-            stop_signal: Arc::new(AtomicBool::new(false)),
+            engine,
+            stop_signal,
             search_handle: None,
             debug: false,
             stats: false,
@@ -144,9 +145,7 @@ impl UCI {
             engine_guard.board.side_to_move()
         };
 
-        let mut limits = SearchLimits::from_go(&go_ctrl, stm);
-        limits.stop_signal = Arc::clone(&self.stop_signal);
-        self.stop_signal.store(false, Ordering::Relaxed);
+        let limits = SearchLimits::from_go(&go_ctrl, stm);
 
         let thread_engine = Arc::clone(&self.engine);
         let debug = self.debug;
@@ -250,16 +249,20 @@ impl UCI {
                 .clamp(1, 1_048_576);
 
                 let mut engine = self.engine.lock().unwrap();
-                engine.tt = TranspositionTable::new(val);
-                engine.tt.info();
+                engine.shared = SharedState {
+                    tt: Arc::new(TranspositionTable::new(val)),
+                    abort: Arc::clone(&engine.shared.abort),
+                };
+
+                engine.shared.tt.info();
                 return;
             }
 
             //// Option: Clear Hash
             Some(cmd) if cmd.eq_ignore_ascii_case("clear") => match commands.next() {
                 Some(cmd) if cmd.eq_ignore_ascii_case("hash") => {
-                    let mut engine = self.engine.lock().unwrap();
-                    engine.tt.clear();
+                    let engine = self.engine.lock().unwrap();
+                    engine.shared.tt.clear();
                     return;
                 }
 
