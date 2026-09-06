@@ -7,11 +7,20 @@ All notable changes to Roxie are documented in this file.
 ### Unreleased
 
 ### Added
+- MULTITHREADING is here!!!
 - SIMD support for nnue accumulator updation
 - Killers table and accumulator as a separate struct field for modularity
+- Introduced fallback move concept for search and removed mandatory complete depth 1 search
 
 ### Improved
 - Uses Incremental pawn hash for correction history, and made few mathematical improvements there
+- Used dedeicated structs for history and other tables
+- Used is_improving flag to dynamically change pruning conditions
+- Improved singular extension
+- Tightened the lmr and nmp margin
+
+### Fixed
+- Fixed small issues in correction history
 
 ---
 
