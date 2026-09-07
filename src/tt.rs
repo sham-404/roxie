@@ -294,7 +294,7 @@ impl TranspositionTable {
 
     #[inline(always)]
     pub fn inc_generation(&self) {
-        self.generation.fetch_add(1, Ordering::Release);
+        self.generation.fetch_add(1, Ordering::Relaxed);
     }
 
     #[inline(always)]

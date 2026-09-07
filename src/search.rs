@@ -58,6 +58,7 @@ impl Engine {
         if self.thread_id == 0 {
             self.shared.abort.store(false, Ordering::Relaxed);
             self.shared.tt.inc_generation();
+            self.shared.nodes.store(0, Ordering::Relaxed);
         }
         let mut info = SearchInfo::new(self.shared.abort.clone());
 
@@ -89,12 +90,13 @@ impl Engine {
         'ids_loop: for d in 1..=limits.depth.unwrap_or(MAX_DEPTH) {
             let mut best_move: Move;
             let mut best_score: i16;
-            let last_iteration_nodes = info.nodes;
+            let last_iteration_nodes_at_start = self.shared.nodes.load(Ordering::Relaxed);
             info.nodes += 1;
 
             // Aspiration window setup
-            let deltas: [i32; 4] = [50, 15, 100, 200]; // Use i32 for safe math
-            let mut delta = deltas[self.thread_id as usize % 4];
+            const DELTAS: [i32; 4] = [50, 15, 100, 200]; // Use i32 for safe math
+
+            let mut delta = DELTAS[self.thread_id as usize % 4];
 
             let mut alpha = -INF;
             let mut beta = INF;
@@ -193,7 +195,7 @@ impl Engine {
 
                     // if aborted, use the partial resutls and skip the whole loop
                     if info.get_abort() {
-                        last_complete_info.nodes = info.nodes;
+                        last_complete_info.nodes = self.shared.nodes.load(Ordering::Relaxed);
                         last_complete_info.seldepth = info.seldepth;
                         last_complete_info.stats = info.stats.clone();
                         last_complete_info.depth = d;
@@ -259,16 +261,23 @@ impl Engine {
             info.best_move = best_move;
             info.pv = self.gen_pv();
 
+            let last_iteration_nodes_at_end = self.shared.nodes.load(Ordering::Relaxed);
+
             info.stats.nodes_by_depth[d as usize] =
-                info.nodes as usize - last_iteration_nodes as usize;
-            info.stats.nodes = info.nodes as usize;
+                (last_iteration_nodes_at_end - last_iteration_nodes_at_start) as usize;
+            // total nodes of global count + unbatched nodes of current node (thread 0, as
+            // that nodes data only is used for printing and stuff)
+            info.stats.nodes = (last_iteration_nodes_at_end + (info.nodes & 2047)) as usize;
 
             last_complete_info = info.clone();
 
             on_iteration(&info);
 
             // if it reached the solf limit, searching further is probably useless
-            if let Some(time) = limits.soft_time {
+            // time is checked only by thread 0 (main search)
+            if self.thread_id == 0
+                && let Some(time) = limits.soft_time
+            {
                 if time <= info.start_time.elapsed() {
                     break;
                 }
@@ -287,6 +296,11 @@ impl Engine {
         // Only check the limits on root search
         if self.thread_id == 0 {
             info.check_limits(limits);
+        }
+
+        // Updating shared node count for all threads
+        if info.nodes > 0 && info.nodes & 2047 == 0 {
+            self.shared.nodes.fetch_add(2048, Ordering::Relaxed);
         }
 
         let SearchParams {
@@ -1122,6 +1136,11 @@ impl Engine {
         // Only check the limits on root search
         if self.thread_id == 0 {
             info.check_limits(limits);
+        }
+
+        // Updating shared nodes count for all threads
+        if info.nodes > 0 && info.nodes & 2047 == 0 {
+            self.shared.nodes.fetch_add(2048, Ordering::Relaxed);
         }
 
         let SearchParams {
@@ -2077,7 +2096,7 @@ impl SearchInfo {
             self.depth,
             self.seldepth,
             score,
-            self.nodes,
+            self.stats.nodes,
             self.nps(),
             self.start_time.elapsed().as_millis(),
             pv_str,
@@ -2086,7 +2105,7 @@ impl SearchInfo {
 
     fn nps(&self) -> u64 {
         let ms = self.start_time.elapsed().as_millis().max(1);
-        self.nodes * 1000 / ms as u64
+        self.stats.nodes as u64 * 1000 / ms as u64
     }
 
     fn check_limits(&mut self, limits: &SearchLimits) {

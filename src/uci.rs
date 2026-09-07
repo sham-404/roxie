@@ -166,8 +166,8 @@ impl UCI {
             // root engine, handles time and actual search (idx = 0)
             let mut base_engine = thread_engine.lock().unwrap();
 
-            // worker threads (idx = 1..num_threads)
             let data = thread::scope(|s| {
+                // worker threads (idx = 1..num_threads)
                 for id in 1..num_threads {
                     let mut helper_engine = base_engine.child(id);
 
@@ -176,6 +176,7 @@ impl UCI {
                     });
                 }
 
+                // main engine search (idx = 0)
                 let best_info = base_engine.search_ids(&limits, |info| {
                     info.print();
                     if debug {
@@ -282,6 +283,7 @@ impl UCI {
                 engine.shared = SharedState {
                     tt: Arc::new(TranspositionTable::new(val)),
                     abort: Arc::clone(&engine.shared.abort),
+                    nodes: Arc::clone(&engine.shared.nodes),
                 };
 
                 engine.shared.tt.info();

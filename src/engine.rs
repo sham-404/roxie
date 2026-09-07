@@ -1,6 +1,5 @@
 use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+    Arc, atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
 use crate::{
@@ -17,6 +16,16 @@ use crate::{
 pub struct SharedState {
     pub tt: Arc<TranspositionTable>,
     pub abort: Arc<AtomicBool>,
+    pub nodes: Arc<AtomicU64>
+}
+
+impl SharedState {
+    pub fn reset(&self) {
+        self.tt.clear();
+        self.abort.store(false, Ordering::Relaxed);
+        self.nodes.store(0, Ordering::Relaxed);
+    }
+    
 }
 
 pub struct Engine {
@@ -59,6 +68,7 @@ impl Engine {
             shared: SharedState {
                 tt: Arc::new(TranspositionTable::new(16)),
                 abort: Arc::new(AtomicBool::new(false)),
+                nodes: Arc::new(AtomicU64::new(0)),
             },
         }
     }
@@ -85,8 +95,6 @@ impl Engine {
 
     pub fn reset(&mut self) {
         self.board = Board::start_pos();
-        self.shared.tt.clear();
-        self.shared.abort.store(false, Ordering::Relaxed);
         self.history = HistoryTable::new();
         self.continuation_history = ContinuationHistory::new();
         self.counter_moves = CountermoveTable::new();
@@ -96,6 +104,7 @@ impl Engine {
         self.killers = Killers::new();
         self.eval_buf = EvalBuf::new();
         self.accumulators = Accumulators::new();
+        self.shared.reset();
     }
 
     #[inline(always)]
