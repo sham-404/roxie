@@ -1,5 +1,6 @@
 use std::sync::{
-    Arc, atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc,
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
 use crate::{
@@ -16,7 +17,7 @@ use crate::{
 pub struct SharedState {
     pub tt: Arc<TranspositionTable>,
     pub abort: Arc<AtomicBool>,
-    pub nodes: Arc<AtomicU64>
+    pub nodes: Arc<AtomicU64>,
 }
 
 impl SharedState {
@@ -25,7 +26,6 @@ impl SharedState {
         self.abort.store(false, Ordering::Relaxed);
         self.nodes.store(0, Ordering::Relaxed);
     }
-    
 }
 
 pub struct Engine {
@@ -156,7 +156,7 @@ impl Killers {
     }
 
     #[inline(always)]
-    pub fn store(&mut self, mv: Move, ply: i32) {
+    pub fn update(&mut self, mv: Move, ply: i32) {
         let ply = ply as usize;
 
         if self.table[ply][0] != mv {
@@ -178,7 +178,7 @@ impl CountermoveTable {
     }
 
     #[inline(always)]
-    pub fn store(&mut self, prev_mv: Move, cur_mv: Move) {
+    pub fn update(&mut self, prev_mv: Move, cur_mv: Move) {
         if prev_mv == Move::NULL {
             return;
         }
@@ -261,7 +261,7 @@ impl EvalHistory {
     }
 
     #[inline(always)]
-    pub fn store(&mut self, score: i16, in_check: bool, ply: usize) {
+    pub fn update(&mut self, score: i16, in_check: bool, ply: usize) {
         self.evals[ply] = score;
         self.checks[ply] = in_check;
     }

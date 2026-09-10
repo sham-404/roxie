@@ -448,7 +448,7 @@ impl Engine {
             base_eval
         };
 
-        self.eval_history.store(static_eval, in_check, ply as usize);
+        self.eval_history.update(static_eval, in_check, ply as usize);
         let is_improving = self
             .eval_history
             .is_improving(static_eval, in_check, ply as usize);
@@ -781,7 +781,7 @@ impl Engine {
                 fail_high = true;
 
                 if is_quiet {
-                    self.killers.store(mv, ply);
+                    self.killers.update(mv, ply);
 
                     let stm = self.board.side_to_move().val();
                     let bonus = (depth * depth).min(400) as i32;
@@ -808,7 +808,7 @@ impl Engine {
                         .update(&self.board, prev_move, mv, bonus);
 
                     // counter moves storing
-                    self.counter_moves.store(prev_move, mv);
+                    self.counter_moves.update(prev_move, mv);
                 } else if is_capture {
                     let bonus = (depth * depth).min(400) as i32;
 
@@ -2162,7 +2162,7 @@ impl Default for SearchLimits {
 }
 
 impl SearchLimits {
-    pub fn from_go(ctrl: &GoControl, stm: Color) -> Self {
+    pub fn from_go(ctrl: &GoControl, stm: Color, game_phase: i32) -> Self {
         let mut limits = SearchLimits::default();
         limits.depth = ctrl.depth;
         limits.infinite = ctrl.infinite;
@@ -2203,7 +2203,9 @@ impl SearchLimits {
         let safe_time_left = time_left.saturating_sub(50);
 
         if safe_time_left > 0 {
-            let moves_to_go = ctrl.movestogo.unwrap_or(30);
+            let moves_to_go = ctrl
+                .movestogo
+                .unwrap_or_else(|| (game_phase * 2).min(48).max(8) as u64);
 
             // Base allocation: spread remaining safe time over expected remaining moves
             let base_time = safe_time_left / moves_to_go;

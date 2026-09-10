@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::board::Board;
 
 pub fn perft(board: &mut Board, depth: u32) -> u64 {
@@ -32,6 +34,7 @@ pub fn perft(board: &mut Board, depth: u32) -> u64 {
 }
 
 pub fn perft_divide(board: &mut Board, depth: u32) -> u64 {
+    let start = Instant::now();
     let move_list = board.gen_moves();
     let (checkers, pinned) = board.checkers_and_pinned();
     let mut total_nodes = 0;
@@ -55,7 +58,11 @@ pub fn perft_divide(board: &mut Board, depth: u32) -> u64 {
         total_nodes += nodes;
     }
 
-    println!("\nTotal nodes: {}\n", total_nodes);
+    println!("\nTotal nodes: {}", total_nodes);
+    println!(
+        "Nodes per second (nps): {}",
+        (total_nodes * 1000) as u128 / start.elapsed().as_millis().max(1)
+    );
 
     total_nodes
 }

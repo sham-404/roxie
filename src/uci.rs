@@ -150,12 +150,12 @@ impl UCI {
         }
 
         let go_ctrl = GoControl::parse(&mut args);
-        let stm = {
-            let engine_guard = self.engine.lock().unwrap();
-            engine_guard.board.side_to_move()
+        let (stm, game_phase) = {
+            let board = self.engine.lock().unwrap().board;
+            (board.side_to_move(), board.get_game_phase())
         };
 
-        let limits = SearchLimits::from_go(&go_ctrl, stm);
+        let limits = SearchLimits::from_go(&go_ctrl, stm, game_phase);
 
         let thread_engine = Arc::clone(&self.engine);
         let debug = self.debug;
