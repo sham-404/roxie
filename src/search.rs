@@ -301,48 +301,42 @@ impl Engine {
                 let score_diff = (best_score as i32 - best_score_prev_depth as i32).abs();
                 let is_mate_score = best_score.abs() >= MATE - MAX_PLY as i16;
 
-                // 40 centipawns swing
+                // Move instability
+                if d > 4 && !best_mv_is_stable {
+                    time_factor *= 1.4;
+                }
+
+                // 40 centipawns swing detected
                 if d > 4 && score_diff > 40 && !is_mate_score {
                     // If the score drops or spikes significantly compared to the last depth,
                     // the position is volatile. so more time is given to resolve it.
-                    time_factor *= 1.5; // Extend time by 50%
-                } else if d >= 9 && total_nodes_this_depth > 0 && best_mv_is_stable {
+                    time_factor *= 1.25; // Extend time by 25%
+                }
+
+                // Confident, node dominated branch
+                if d >= 8 && total_nodes_this_depth > 0 && best_mv_is_stable {
                     // If best move took up majority of the nodes, it's likely obvious that it is best.
                     // Cut the time short so we don't waste it.
                     let fraction = best_mv_nodes as f64 / total_nodes_this_depth as f64;
 
-                    // If one move takes more than 80% of the nodes, we are highly confident.
-                    if fraction > 0.80 {
-                        time_factor *= 0.8; // reducing time by 20%
-                    }
+                    // If one move takes more than 60% of the nodes, we are highly confident
+                    // Smoothly reduce time based on dominance
+                    // 60% nodes -> ~0.9x factor. 100% nodes -> 0.5x factor
+                    let reduction = (1.5 - fraction).clamp(0.5, 1.0);
+                    time_factor *= reduction;
                 }
 
-                // Apply the factor to hard time so it doesn't crash unfinished searches
-                // It should be calculated first, soft time is updated wrt hard time.
-                // so order of execution matters
-                if let Some(orig_hard) = limits.hard_time {
-                    let new_millis = (orig_hard.as_millis() as f64 * time_factor) as u64;
-                    let max_safe = limits
-                        .max_time
-                        .map(|m| m.as_millis() as u64)
-                        .unwrap_or(u64::MAX);
+                let orig_soft = limits.soft_time.unwrap().as_millis() as f64;
+                let new_soft_millis = (orig_soft * time_factor) as u64;
 
-                    local_limits.hard_time = Some(Duration::from_millis(new_millis.min(max_safe)));
-                }
+                let hard_millis = local_limits
+                    .hard_time
+                    .map(|h| h.as_millis() as u64)
+                    .unwrap_or(u64::MAX);
 
-                // Apply the factor to our working soft time limit
-                if let Some(soft_time) = limits.soft_time {
-                    // Use the original limit as the baseline
-                    let new_millis = (soft_time.as_millis() as f64 * time_factor) as u64;
-                    // Never exceed the hard time limit
-                    let hard_millis = local_limits
-                        .hard_time
-                        .map(|h| h.as_millis() as u64)
-                        .unwrap_or(u64::MAX);
-
-                    cur_soft_time = Some(Duration::from_millis(new_millis.min(hard_millis)));
-                    local_limits.soft_time = cur_soft_time;
-                }
+                // Update only the current working soft limit. Hard time remains untouched.
+                cur_soft_time = Some(Duration::from_millis(new_soft_millis.min(hard_millis)));
+                local_limits.soft_time = cur_soft_time;
             }
             //// dynamic time management
 
@@ -2219,7 +2213,6 @@ pub struct SearchLimits {
     pub mate: Option<u16>,
     pub hard_time: Option<Duration>,
     pub soft_time: Option<Duration>,
-    pub max_time: Option<Duration>,
     pub infinite: bool,
     pub start_time: Instant,
 }
@@ -2229,7 +2222,6 @@ impl Default for SearchLimits {
         Self {
             soft_time: None,
             hard_time: None,
-            max_time: None,
             depth: None,
             nodes: None,
             mate: None,
@@ -2284,31 +2276,38 @@ impl SearchLimits {
             //// using game_phase to dynamically estimate the moves_to_go
             let moves_to_go = ctrl
                 .movestogo
-                .unwrap_or((game_phase * 2).min(48).max(8) as u64);
+                .unwrap_or((game_phase * 2).clamp(15, 45) as u64);
 
             // Base allocation: spread remaining safe time over expected remaining moves
             let base_time = safe_time_left / moves_to_go;
 
             // Use 3/4 of the increment (standard aggressive time management)
             let inc_time = increment * 3 / 4;
-            let allocated = base_time + inc_time;
 
-            // Absolute maximum time
-            limits.max_time = Some(Duration::from_millis(safe_time_left));
+            let max_optimum_fraction = if increment > 0 {
+                (safe_time_left * 7 / 10).max(1)
+            } else {
+                (safe_time_left / 4).max(1)
+            };
+
+            let optimum_time = (base_time + inc_time).min(max_optimum_fraction).max(1);
+
+            // Hard limit: The absolute maximum time we can spend if the position is crazy.
+            // Usually 3x to 5x the optimum time, capped heavily by remaining time.
+            let hard_limit = (optimum_time * 4).clamp(
+                // Hard Limit: min 20 max 80 % of safe_time
+                optimum_time,
+                safe_time_left * 8 / 10,
+            );
 
             // Soft Limit: Stop starting new depths early (60% of allocated)
-            limits.soft_time = Some(Duration::from_millis(allocated * 6 / 10));
-
-            // Hard Limit: min 20 max 80 % of safe_time
-            let hard_limit = (allocated * 2).max(20).min(safe_time_left * 8 / 10);
-
+            limits.soft_time = Some(Duration::from_millis(optimum_time));
             limits.hard_time = Some(Duration::from_millis(hard_limit));
         } else if time_left > 0 {
             // EMERGENCY MODE: We have less than 50ms on the actual clock
             // Give it 1ms soft time, and whatever is physically left on the clock (minus a tiny 5ms buffer).
             limits.soft_time = Some(Duration::from_millis(1));
             limits.hard_time = Some(Duration::from_millis(time_left.saturating_sub(5).max(1)));
-            limits.max_time = Some(Duration::from_millis(time_left.saturating_sub(5).max(1)));
         }
 
         limits
