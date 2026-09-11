@@ -151,8 +151,8 @@ impl UCI {
 
         let go_ctrl = GoControl::parse(&mut args);
         let (stm, game_phase) = {
-            let board = self.engine.lock().unwrap().board;
-            (board.side_to_move(), board.get_game_phase())
+            let engine_guard = self.engine.lock().unwrap();
+            (engine_guard.board.side_to_move(), engine_guard.board.get_game_phase())
         };
 
         let limits = SearchLimits::from_go(&go_ctrl, stm, game_phase);

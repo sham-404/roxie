@@ -86,6 +86,14 @@ impl Engine {
             break;
         }
 
+        // initialisations for dynamic time management
+        let mut local_limits = limits.clone();
+        let mut cur_soft_time = limits.soft_time;
+        let mut best_score_prev_depth = 0;
+        let mut best_mv_prev_depth = Move::NULL;
+        let mut total_nodes_this_depth: u64;
+        let mut best_mv_nodes: u64;
+
         // Iterative Deepening Search loop
         'ids_loop: for d in 1..=limits.depth.unwrap_or(MAX_DEPTH) {
             let mut best_move: Move;
@@ -108,7 +116,7 @@ impl Engine {
             }
 
             // aspiration re-search loop
-            loop {
+            'aspiration_loop: loop {
                 let orig_alpha = alpha;
                 let orig_beta = beta;
 
@@ -126,10 +134,15 @@ impl Engine {
                     MovePicker::new(tt_move, [Move::NULL, Move::NULL], Move::NULL, false);
                 let mut mv_searched = 0;
 
+                total_nodes_this_depth = 0;
+                best_mv_nodes = 0;
+
                 while let Some(mv) = self.pick_next_mv(&mut picker) {
                     if !self.board.is_legal_fast(mv, checkers, pinned) {
                         continue;
                     }
+
+                    let nodes_before_mv_search = info.nodes as u64;
 
                     let undo = self.board.make_move(&mv);
 
@@ -151,7 +164,7 @@ impl Engine {
                                 prev_move: mv,
                                 excluded_move: Move::NULL,
                             },
-                            &limits,
+                            &local_limits,
                             &mut info,
                         )
                     } else {
@@ -166,7 +179,7 @@ impl Engine {
                                 prev_move: mv,
                                 excluded_move: Move::NULL,
                             },
-                            &limits,
+                            &local_limits,
                             &mut info,
                         );
 
@@ -182,7 +195,7 @@ impl Engine {
                                     prev_move: mv,
                                     excluded_move: Move::NULL,
                                 },
-                                &limits,
+                                &local_limits,
                                 &mut info,
                             );
                         }
@@ -192,6 +205,11 @@ impl Engine {
                     // PV search //
 
                     self.board.unmake_move(&mv, &undo);
+
+                    let nodes_after_mv_search = info.nodes as u64;
+
+                    let nodes_searched = nodes_after_mv_search - nodes_before_mv_search;
+                    total_nodes_this_depth += nodes_searched;
 
                     // if aborted, use the partial resutls and skip the whole loop
                     if info.get_abort() {
@@ -209,6 +227,7 @@ impl Engine {
                     if score > best_score {
                         best_score = score;
                         best_move = mv;
+                        best_mv_nodes = nodes_searched;
                     }
 
                     if score > alpha {
@@ -230,7 +249,7 @@ impl Engine {
                     alpha = (orig_alpha as i32 - delta).max(-INF as i32) as i16;
                     beta = orig_beta;
                     delta = (delta * 2).min(INF as i32); // clamp delta
-                    continue;
+                    continue 'aspiration_loop;
                 }
 
                 // aspiration failed high
@@ -238,11 +257,11 @@ impl Engine {
                     alpha = orig_alpha;
                     beta = (orig_beta as i32 + delta).min(INF as i32) as i16;
                     delta = (delta * 2).min(INF as i32); // clamp delta
-                    continue;
+                    continue 'aspiration_loop;
                 }
 
                 // successful aspiration search
-                break;
+                break 'aspiration_loop;
             }
 
             // Manual storing for root node in TT
@@ -273,10 +292,61 @@ impl Engine {
 
             on_iteration(&info);
 
-            // if it reached the solf limit, searching further is probably useless
+            //// dynamic time management (DTM)
+            if self.thread_id == 0 && cur_soft_time.is_some() {
+                let mut time_factor = 1.0;
+
+                // Ensuring best move is stable in the first place
+                let best_mv_is_stable = best_move == best_mv_prev_depth;
+                let score_diff = (best_score as i32 - best_score_prev_depth as i32).abs();
+                let is_mate_score = best_score.abs() >= MATE - MAX_PLY as i16;
+
+                // Move instability
+                if d > 4 && !best_mv_is_stable {
+                    time_factor *= 1.4;
+                }
+
+                // 40 centipawns swing detected
+                if d > 4 && score_diff > 40 && !is_mate_score {
+                    // If the score drops or spikes significantly compared to the last depth,
+                    // the position is volatile. so more time is given to resolve it.
+                    time_factor *= 1.25; // Extend time by 25%
+                }
+
+                // Confident, node dominated branch
+                if d >= 8 && total_nodes_this_depth > 0 && best_mv_is_stable {
+                    // If best move took up majority of the nodes, it's likely obvious that it is best.
+                    // Cut the time short so we don't waste it.
+                    let fraction = best_mv_nodes as f64 / total_nodes_this_depth as f64;
+
+                    // If one move takes more than 60% of the nodes, we are highly confident
+                    // Smoothly reduce time based on dominance
+                    // 60% nodes -> ~0.9x factor. 100% nodes -> 0.5x factor
+                    let reduction = (1.5 - fraction).clamp(0.5, 1.0);
+                    time_factor *= reduction;
+                }
+
+                let orig_soft = limits.soft_time.unwrap().as_millis() as f64;
+                let new_soft_millis = (orig_soft * time_factor) as u64;
+
+                let hard_millis = local_limits
+                    .hard_time
+                    .map(|h| h.as_millis() as u64)
+                    .unwrap_or(u64::MAX);
+
+                // Update only the current working soft limit. Hard time remains untouched.
+                cur_soft_time = Some(Duration::from_millis(new_soft_millis.min(hard_millis)));
+                local_limits.soft_time = cur_soft_time;
+            }
+            //// dynamic time management
+
+            best_score_prev_depth = best_score;
+            best_mv_prev_depth = best_move;
+
+            // if it reached the cur solf limit, searching further is probably useless
             // time is checked only by thread 0 (main search)
             if self.thread_id == 0
-                && let Some(time) = limits.soft_time
+                && let Some(time) = cur_soft_time
             {
                 if time <= info.start_time.elapsed() {
                     break;
@@ -2203,9 +2273,10 @@ impl SearchLimits {
         let safe_time_left = time_left.saturating_sub(50);
 
         if safe_time_left > 0 {
+            //// using game_phase to dynamically estimate the moves_to_go
             let moves_to_go = ctrl
                 .movestogo
-                .unwrap_or_else(|| (game_phase * 2).min(48).max(8) as u64);
+                .unwrap_or((game_phase * 2).clamp(15, 45) as u64);
 
             // Base allocation: spread remaining safe time over expected remaining moves
             let base_time = safe_time_left / moves_to_go;
@@ -2213,14 +2284,24 @@ impl SearchLimits {
             // Use 3/4 of the increment (standard aggressive time management)
             let inc_time = increment * 3 / 4;
 
-            let allocated = base_time + inc_time;
+            let max_optimum_fraction = if increment > 0 {
+                (safe_time_left * 7 / 10).max(1)
+            } else {
+                (safe_time_left / 4).max(1)
+            };
+
+            let optimum_time = (base_time + inc_time).min(max_optimum_fraction).max(1);
+
+            // Hard limit: The absolute maximum time we can spend if the position is crazy.
+            // Usually 3x to 5x the optimum time, capped heavily by remaining time.
+            let hard_limit = (optimum_time * 4).clamp(
+                // Hard Limit: min 20 max 80 % of safe_time
+                optimum_time,
+                safe_time_left * 8 / 10,
+            );
 
             // Soft Limit: Stop starting new depths early (60% of allocated)
-            limits.soft_time = Some(Duration::from_millis(allocated * 6 / 10));
-
-            // Hard Limit: min 20 max 80 % of safe_time
-            let hard_limit = (allocated * 2).max(20).min(safe_time_left * 8 / 10);
-
+            limits.soft_time = Some(Duration::from_millis(optimum_time));
             limits.hard_time = Some(Duration::from_millis(hard_limit));
         } else if time_left > 0 {
             // EMERGENCY MODE: We have less than 50ms on the actual clock
