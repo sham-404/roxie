@@ -235,6 +235,10 @@ impl Engine {
                     }
                 }
 
+                if mv_searched == 0 {
+                    break 'aspiration_loop;
+                }
+
                 // aspiration failed low
                 if best_score <= orig_alpha {
                     self.shared.tt.store(TTEntry {
@@ -262,6 +266,12 @@ impl Engine {
 
                 // successful aspiration search
                 break 'aspiration_loop;
+            }
+
+            if best_move == Move::NULL {
+                info.score = if self.board.in_check() { -MATE } else { 0 };
+                on_iteration(&info);
+                break 'ids_loop;
             }
 
             // Manual storing for root node in TT
@@ -518,7 +528,8 @@ impl Engine {
             base_eval
         };
 
-        self.eval_history.update(static_eval, in_check, ply as usize);
+        self.eval_history
+            .update(static_eval, in_check, ply as usize);
         let is_improving = self
             .eval_history
             .is_improving(static_eval, in_check, ply as usize);
@@ -2150,7 +2161,12 @@ impl SearchInfo {
     }
 
     pub fn print(&self) {
-        let mut pv_str = String::new();
+        let mut pv_str = if self.pv.is_empty() {
+            String::new()
+        } else {
+            String::from("pv ")
+        };
+
         for mv in &self.pv {
             pv_str.push_str(&format!("{} ", mv.to_coord()));
         }
@@ -2162,7 +2178,7 @@ impl SearchInfo {
         };
 
         uci_print!(
-            "info depth {} seldepth {} score {} nodes {} nps {} time {} pv {}",
+            "info depth {} seldepth {} score {} nodes {} nps {} time {} {}",
             self.depth,
             self.seldepth,
             score,
