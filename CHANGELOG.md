@@ -8,11 +8,14 @@ All notable changes to Roxie are documented in this file.
 
 ### Added
 - MULTITHREADING is here!!!
+- Added Razoring
+- Added Dynamic Time Management (DTM)
 - SIMD support for nnue accumulator updation
 - Killers table and accumulator as a separate struct field for modularity
 - Introduced fallback move concept for search and removed mandatory complete depth 1 search
 
 ### Improved
+- Reduced DELTA margins and using 1.5 as multiplicative factor instead of 2
 - Uses Incremental pawn hash for correction history, and made few mathematical improvements there
 - Used dedeicated structs for history and other tables
 - Used is_improving flag to dynamically change pruning conditions
