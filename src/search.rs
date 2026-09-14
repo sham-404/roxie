@@ -102,7 +102,7 @@ impl Engine {
             info.nodes += 1;
 
             // Aspiration window setup
-            const DELTAS: [i32; 4] = [50, 15, 100, 200]; // Use i32 for safe math
+            const DELTAS: [i32; 4] = [20, 12, 30, 45]; // Use i32 for safe math
 
             let mut delta = DELTAS[self.thread_id as usize % 4];
 
@@ -252,7 +252,7 @@ impl Engine {
 
                     alpha = (orig_alpha as i32 - delta).max(-INF as i32) as i16;
                     beta = orig_beta;
-                    delta = (delta * 2).min(INF as i32); // clamp delta
+                    delta = ((delta as f32 * 1.5) as i32).min(INF as i32); // clamp delta
                     continue 'aspiration_loop;
                 }
 
@@ -260,7 +260,7 @@ impl Engine {
                 if best_score >= orig_beta {
                     alpha = orig_alpha;
                     beta = (orig_beta as i32 + delta).min(INF as i32) as i16;
-                    delta = (delta * 2).min(INF as i32); // clamp delta
+                    delta = ((delta as f32 * 1.5) as i32).min(INF as i32); // clamp delta
                     continue 'aspiration_loop;
                 }
 
@@ -1960,6 +1960,22 @@ impl SearchStats {
         );
 
         // ------------------------------------------------------------
+        // Razoring
+        // ------------------------------------------------------------
+
+        println!();
+        println!("── Razoring ──────────────────────────────────");
+
+        println!("Attempts:                 {}", self.razoring_attempts);
+
+        println!("Cutoffs:                  {}", self.razoring_cutoffs);
+
+        println!(
+            "Cutoff efficiency:        {:.3}%",
+            Self::pct(self.razoring_cutoffs, self.razoring_attempts)
+        );
+
+        // ------------------------------------------------------------
         // PROBCUT
         // ------------------------------------------------------------
 
@@ -2139,6 +2155,9 @@ impl SearchStats {
 
         println!("RFP attempted: {}", self.rfp_attempts);
         println!("RFP cutoffs: {}", self.rfp_cutoffs);
+
+        println!("Razoring attempted: {}", self.razoring_attempts);
+        println!("Razoring cutoffs: {}", self.razoring_cutoffs);
 
         println!("Prob Cut attempted: {}", self.probcut_attempts);
         println!("Prob Cut cutoffs: {}", self.probcut_cutoffs);
