@@ -552,6 +552,39 @@ impl Engine {
         }
         //// Reverse Futility Pruning (Static Null Move Pruning) //
 
+        //// Razoring
+        // Trigger only at very low depths when not in check
+        if depth <= 2 && !in_check && excluded_move == Move::NULL {
+            let razor_margin = 150 + (depth as i16 * 50);
+
+            // If our static eval is so bad that even adding the margin doesn't hit alpha,
+            // we assume no quiet move will save us.
+            if static_eval + razor_margin <= alpha {
+                info.stats.razoring_attempts += 1;
+
+                let q_score = self.quiescence(
+                    SearchParams {
+                        depth: 0,
+                        alpha,
+                        beta,
+                        ply,
+                        extension: 0,
+                        prev_move,
+                        excluded_move: Move::NULL,
+                    },
+                    info,
+                    limits,
+                );
+
+                // if qsearch also fails to hit alpha, we can safely prune this branch
+                if q_score <= alpha {
+                    info.stats.razoring_cutoffs += 1;
+                    return q_score;
+                }
+            }
+        }
+        //// Razoring
+
         //// NULL move pruning
         if let Some(cutoff_score) = self.nmp_search(
             SearchParams {
@@ -1590,6 +1623,9 @@ pub struct SearchStats {
     pub rfp_attempts: usize,
     pub rfp_cutoffs: usize,
 
+    pub razoring_attempts: usize,
+    pub razoring_cutoffs: usize,
+
     pub probcut_attempts: usize,
     pub probcut_cutoffs: usize,
 
@@ -1630,6 +1666,8 @@ impl SearchStats {
             history_pruned: 0,
             rfp_attempts: 0,
             rfp_cutoffs: 0,
+            razoring_attempts: 0,
+            razoring_cutoffs: 0,
             probcut_attempts: 0,
             probcut_cutoffs: 0,
             iid_attempts: 0,
