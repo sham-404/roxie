@@ -543,7 +543,7 @@ impl Engine {
         {
             info.stats.rfp_attempts += 1;
 
-            let margin = depth as i16 * (100 - if is_improving { 25 } else { 0 });
+            let margin = depth as i16 * (75 - if is_improving { 25 } else { 0 });
 
             if static_eval - margin >= beta {
                 info.stats.rfp_cutoffs += 1;
