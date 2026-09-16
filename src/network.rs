@@ -4,7 +4,11 @@ use std::{
     sync::OnceLock,
 };
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use std::arch::x86_64::*;
+
+#[cfg(target_arch = "aarch64")]
+use std::arch::aarch64::*;
 
 use crate::{
     board::{Board, pop_lsb},
@@ -51,7 +55,7 @@ pub fn init_nn(is_needed: bool) {
     NETWORK.get_or_init(|| {
         let mut reader = Cursor::new(NN_DATA);
         let nn = Network::load(&mut reader);
-        assert_eq!(reader.position() as usize, NN_DATA.len()); // ensures we read all the bytes
+        assert_eq!(reader.position() as usize, NN_DATA.len());
         nn
     });
 }
@@ -133,7 +137,7 @@ impl Network {
         let b4 = Network::quantize_to_i16(&b4);
 
         let pos = file.stream_position().unwrap();
-        assert_eq!(file_size, pos); // validating that we have reached the EOF
+        assert_eq!(file_size, pos);
 
         Network {
             w1,
@@ -209,7 +213,6 @@ impl Network {
         let mut feat_idx = 0usize;
         for (idx, &bb) in bb.iter().enumerate() {
             if idx == 5 || idx == 11 {
-                // skipping the kings
                 continue;
             }
 
@@ -217,11 +220,9 @@ impl Network {
 
             while let Some(sq) = pop_lsb(&mut piece_bb) {
                 if idx < 5 {
-                    // White pieces
                     white_feat[feat_idx] = get_hkp_feature_idx(w_king_pos, idx, sq);
                     black_feat[feat_idx] = get_hkp_feature_idx(b_king_pos, idx + 5, mirror(sq));
                 } else {
-                    // Black pieces
                     white_feat[feat_idx] = get_hkp_feature_idx(w_king_pos, idx - 1, sq);
                     black_feat[feat_idx] = get_hkp_feature_idx(b_king_pos, idx - 6, mirror(sq));
                 }
@@ -245,119 +246,28 @@ impl Network {
         acc
     }
 
-    // fn fill_acc(&self, feature: &[usize]) -> Vec<i16> {
-    //     // Start the accumulator pre-loaded with the biases
-    //     let mut acc = self.b1.clone();
-    //
-    //     for &act_feat in feature {
-    //         let offset = act_feat * HL1;
-    //
-    //         assert!(offset + HL1 <= self.w1.len());
-    //
-    //         unsafe {
-    //             for neuron_idx in 0..HL1 {
-    //                 let w = *self.w1.get_unchecked(offset + neuron_idx);
-    //                 *acc.get_unchecked_mut(neuron_idx) += w;
-    //             }
-    //         }
-    //     }
-    //
-    //     acc
-    // }
-
-    // fn process_layer(
-    //     inp_layer: &[i16],
-    //     out_layer: &mut [i16],
-    //     weight: &[i16],
-    //     bias: &[i16],
-    //     to_quantize: bool,
-    // ) {
-    //     let input_len = inp_layer.len();
-    //     let out_len = bias.len();
-    //
-    //     // ensuring our slices are large enough to prevent UB
-    //     assert!(out_layer.len() >= out_len);
-    //     assert!(weight.len() >= input_len * out_len);
-    //
-    //     for neuron_idx in 0..out_len {
-    //         let mut dot: i32 = 0;
-    //         let w_offset = neuron_idx * input_len;
-    //
-    //         // Bypassing the bound checks for each array access
-    //         unsafe {
-    //             for i in 0..input_len {
-    //                 let inp = *inp_layer.get_unchecked(i) as i32;
-    //                 let w = *weight.get_unchecked(w_offset + i) as i32;
-    //                 dot += inp * w;
-    //             }
-    //
-    //             let b = *bias.get_unchecked(neuron_idx) as i32;
-    //             let val = b + if to_quantize {
-    //                 (dot + (1 << (QP - 1))) >> QP
-    //             } else {
-    //                 dot
-    //             };
-    //
-    //             *out_layer.get_unchecked_mut(neuron_idx) = val as i16;
-    //         }
-    //     }
-    // }
-    //
-    // fn hard_tanh(min: i16, max: i16, layer: &mut [i16]) {
-    //     let len = layer.len();
-    //     let mut idx = 0;
-    //
-    //     unsafe {
-    //         while idx < len {
-    //             let val = (*layer.get_unchecked(idx)).clamp(min, max);
-    //             *layer.get_unchecked_mut(idx) = val;
-    //             idx += 1;
-    //         }
-    //     }
-    // }
-
     fn read_f32(file: &mut File, size: usize) -> Vec<f32> {
         let mut bytes = vec![0u8; size * 4];
         file.read_exact(&mut bytes).unwrap();
-
         let mut out = Vec::with_capacity(size);
-
         for chunk in bytes.chunks_exact(4) {
             out.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
         }
-
         out
     }
 
     fn read_i16(file: &mut impl Read, size: usize) -> Vec<i16> {
         let mut bytes = vec![0u8; size * 2];
         file.read_exact(&mut bytes).unwrap();
-
         let mut out = Vec::with_capacity(size);
-
         for chunk in bytes.chunks_exact(2) {
             out.push(i16::from_le_bytes([chunk[0], chunk[1]]));
         }
-
-        out
-    }
-
-    #[allow(dead_code)]
-    fn read_i32(file: &mut impl Read, size: usize) -> Vec<i32> {
-        let mut bytes = vec![0u8; size * 4];
-        file.read_exact(&mut bytes).unwrap();
-
-        let mut out = Vec::with_capacity(size);
-
-        for chunk in bytes.chunks_exact(4) {
-            out.push(i32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
-        }
-
         out
     }
 }
 
-// SIMD instructions
+// SIMD Implementation
 impl Network {
     pub fn process_layer(
         inp_layer: &[i16],
@@ -375,7 +285,118 @@ impl Network {
             }
         }
 
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            return unsafe {
+                Self::process_layer_neon(inp_layer, out_layer, weight, bias, to_quantize)
+            };
+        }
+
+        // Generic fallback for Wasm or legacy CPUs
         Self::process_layer_scalar(inp_layer, out_layer, weight, bias, to_quantize);
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[target_feature(enable = "avx2")]
+    unsafe fn process_layer_avx2(
+        inp_layer: &[i16],
+        out_layer: &mut [i16],
+        weight: &[i16],
+        bias: &[i16],
+        to_quantize: bool,
+    ) {
+        let input_len = inp_layer.len();
+        let out_len = bias.len();
+
+        unsafe {
+            for neuron_idx in 0..out_len {
+                let w_offset = neuron_idx * input_len;
+                let mut i = 0;
+                let mut acc = _mm256_setzero_si256();
+
+                while i + 16 <= input_len {
+                    let inp = _mm256_loadu_si256(inp_layer.as_ptr().add(i) as *const __m256i);
+                    let w = _mm256_loadu_si256(weight.as_ptr().add(w_offset + i) as *const __m256i);
+
+                    let prod = _mm256_madd_epi16(inp, w);
+                    acc = _mm256_add_epi32(acc, prod);
+                    i += 16;
+                }
+
+                let acc_128 = _mm_add_epi32(
+                    _mm256_castsi256_si128(acc),
+                    _mm256_extracti128_si256(acc, 1),
+                );
+                let mut sums = [0i32; 4];
+                _mm_storeu_si128(sums.as_mut_ptr() as *mut __m128i, acc_128);
+                let mut dot = sums[0] + sums[1] + sums[2] + sums[3];
+
+                while i < input_len {
+                    dot += (*inp_layer.get_unchecked(i) as i32)
+                        * (*weight.get_unchecked(w_offset + i) as i32);
+                    i += 1;
+                }
+
+                let b = *bias.get_unchecked(neuron_idx) as i32;
+                let val = b + if to_quantize {
+                    (dot + (1 << (QP - 1))) >> QP
+                } else {
+                    dot
+                };
+                *out_layer.get_unchecked_mut(neuron_idx) = val as i16;
+            }
+        }
+    }
+
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[target_feature(enable = "neon")]
+    unsafe fn process_layer_neon(
+        inp_layer: &[i16],
+        out_layer: &mut [i16],
+        weight: &[i16],
+        bias: &[i16],
+        to_quantize: bool,
+    ) {
+        let input_len = inp_layer.len();
+        let out_len = bias.len();
+
+        unsafe {
+            for neuron_idx in 0..out_len {
+                let w_offset = neuron_idx * input_len;
+                let mut i = 0;
+                let mut acc = vdupq_n_s32(0);
+
+                while i + 8 <= input_len {
+                    let inp = vld1q_s16(inp_layer.as_ptr().add(i));
+                    let w = vld1q_s16(weight.as_ptr().add(w_offset + i));
+
+                    // Replicate AVX2's madd behavior:
+                    // vmlal_s16 multiplies lower halves and accumulates to 32-bit.
+                    // vmlal_high_s16 multiplies upper halves and accumulates to 32-bit.
+                    acc = vmlal_s16(acc, vget_low_s16(inp), vget_low_s16(w));
+                    acc = vmlal_high_s16(acc, inp, w);
+
+                    i += 8;
+                }
+
+                // Sums the four 32-bit integers in the NEON register into a single i32
+                let mut dot = vaddvq_s32(acc);
+
+                while i < input_len {
+                    dot += (*inp_layer.get_unchecked(i) as i32)
+                        * (*weight.get_unchecked(w_offset + i) as i32);
+                    i += 1;
+                }
+
+                let b = *bias.get_unchecked(neuron_idx) as i32;
+                let val = b + if to_quantize {
+                    (dot + (1 << (QP - 1))) >> QP
+                } else {
+                    dot
+                };
+                *out_layer.get_unchecked_mut(neuron_idx) = val as i16;
+            }
+        }
     }
 
     fn process_layer_scalar(
@@ -411,62 +432,6 @@ impl Network {
         }
     }
 
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    #[target_feature(enable = "avx2")]
-    unsafe fn process_layer_avx2(
-        inp_layer: &[i16],
-        out_layer: &mut [i16],
-        weight: &[i16],
-        bias: &[i16],
-        to_quantize: bool,
-    ) {
-        let input_len = inp_layer.len();
-        let out_len = bias.len();
-
-        for neuron_idx in 0..out_len {
-            let w_offset = neuron_idx * input_len;
-            let mut i = 0;
-
-            unsafe {
-                let mut acc = _mm256_setzero_si256();
-
-                while i + 16 <= input_len {
-                    let inp = _mm256_loadu_si256(inp_layer.as_ptr().add(i) as *const __m256i);
-                    let w = _mm256_loadu_si256(weight.as_ptr().add(w_offset + i) as *const __m256i);
-
-                    let prod = _mm256_madd_epi16(inp, w);
-                    acc = _mm256_add_epi32(acc, prod);
-
-                    i += 16;
-                }
-
-                let acc_128 = _mm_add_epi32(
-                    _mm256_castsi256_si128(acc),
-                    _mm256_extracti128_si256(acc, 1),
-                );
-
-                let mut sums = [0i32; 4];
-                _mm_storeu_si128(sums.as_mut_ptr() as *mut __m128i, acc_128);
-                let mut dot = sums[0] + sums[1] + sums[2] + sums[3];
-
-                while i < input_len {
-                    dot += (*inp_layer.get_unchecked(i) as i32)
-                        * (*weight.get_unchecked(w_offset + i) as i32);
-                    i += 1;
-                }
-
-                let b = *bias.get_unchecked(neuron_idx) as i32;
-                let val = b + if to_quantize {
-                    (dot + (1 << (QP - 1))) >> QP
-                } else {
-                    dot
-                };
-
-                *out_layer.get_unchecked_mut(neuron_idx) = val as i16;
-            }
-        }
-    }
-
     pub fn hard_tanh(min: i16, max: i16, layer: &mut [i16]) {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
@@ -475,20 +440,12 @@ impl Network {
             }
         }
 
-        Self::hard_tanh_scalar(min, max, layer);
-    }
-
-    fn hard_tanh_scalar(min: i16, max: i16, layer: &mut [i16]) {
-        let len = layer.len();
-        let mut idx = 0;
-
-        while idx < len {
-            unsafe {
-                let val = (*layer.get_unchecked(idx)).clamp(min, max);
-                *layer.get_unchecked_mut(idx) = val;
-            }
-            idx += 1;
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            return unsafe { Self::hard_tanh_neon(min, max, layer) };
         }
+
+        Self::hard_tanh_scalar(min, max, layer);
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -496,18 +453,15 @@ impl Network {
     unsafe fn hard_tanh_avx2(min: i16, max: i16, layer: &mut [i16]) {
         let len = layer.len();
         let mut i = 0;
+        let v_min = _mm256_set1_epi16(min);
+        let v_max = _mm256_set1_epi16(max);
 
         unsafe {
-            let v_min = _mm256_set1_epi16(min);
-            let v_max = _mm256_set1_epi16(max);
-
             while i + 16 <= len {
                 let ptr = layer.as_mut_ptr().add(i);
-
                 let mut v = _mm256_loadu_si256(ptr as *const __m256i);
                 v = _mm256_max_epi16(v, v_min);
                 v = _mm256_min_epi16(v, v_max);
-
                 _mm256_storeu_si256(ptr as *mut __m256i, v);
                 i += 16;
             }
@@ -520,6 +474,44 @@ impl Network {
         }
     }
 
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[target_feature(enable = "neon")]
+    unsafe fn hard_tanh_neon(min: i16, max: i16, layer: &mut [i16]) {
+        let len = layer.len();
+        let mut i = 0;
+        let v_min = vdupq_n_s16(min);
+        let v_max = vdupq_n_s16(max);
+
+        unsafe {
+            while i + 8 <= len {
+                let ptr = layer.as_mut_ptr().add(i);
+                let mut v = vld1q_s16(ptr);
+                v = vmaxq_s16(v, v_min);
+                v = vminq_s16(v, v_max);
+                vst1q_s16(ptr, v);
+                i += 8;
+            }
+
+            while i < len {
+                let val = (*layer.get_unchecked(i)).clamp(min, max);
+                *layer.get_unchecked_mut(i) = val;
+                i += 1;
+            }
+        }
+    }
+
+    fn hard_tanh_scalar(min: i16, max: i16, layer: &mut [i16]) {
+        let len = layer.len();
+        let mut idx = 0;
+        while idx < len {
+            unsafe {
+                let val = (*layer.get_unchecked(idx)).clamp(min, max);
+                *layer.get_unchecked_mut(idx) = val;
+            }
+            idx += 1;
+        }
+    }
+
     pub fn fill_acc(&self, feature: &[usize]) -> Vec<i16> {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
@@ -528,58 +520,74 @@ impl Network {
             }
         }
 
-        self.fill_acc_scalar(feature)
-    }
-
-    fn fill_acc_scalar(&self, feature: &[usize]) -> Vec<i16> {
-        let mut acc = self.b1.clone();
-
-        for &act_feat in feature {
-            let offset = act_feat * HL1;
-
-            unsafe {
-                for neuron_idx in 0..HL1 {
-                    let w = *self.w1.get_unchecked(offset + neuron_idx);
-                    *acc.get_unchecked_mut(neuron_idx) += w;
-                }
-            }
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            return unsafe { self.fill_acc_neon(feature) };
         }
 
-        acc
+        self.fill_acc_scalar(feature)
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     #[target_feature(enable = "avx2")]
     unsafe fn fill_acc_avx2(&self, feature: &[usize]) -> Vec<i16> {
         let mut acc = self.b1.clone();
-
-        for &act_feat in feature {
-            let offset = act_feat * HL1;
-            let mut i = 0;
-
-            unsafe {
+        unsafe {
+            for &act_feat in feature {
+                let offset = act_feat * HL1;
+                let mut i = 0;
                 while i + 16 <= HL1 {
                     let w_256 =
                         _mm256_loadu_si256(self.w1.as_ptr().add(offset + i) as *const __m256i);
-
                     let acc_ptr = acc.as_mut_ptr().add(i);
                     let acc_256 = _mm256_loadu_si256(acc_ptr as *const __m256i);
-
-                    let sum = _mm256_add_epi16(acc_256, w_256);
-
-                    _mm256_storeu_si256(acc_ptr as *mut __m256i, sum);
-
+                    _mm256_storeu_si256(acc_ptr as *mut __m256i, _mm256_add_epi16(acc_256, w_256));
                     i += 16;
                 }
-
                 while i < HL1 {
-                    let w = *self.w1.get_unchecked(offset + i);
-                    *acc.get_unchecked_mut(i) += w;
+                    *acc.get_unchecked_mut(i) += *self.w1.get_unchecked(offset + i);
                     i += 1;
                 }
             }
         }
+        acc
+    }
 
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[target_feature(enable = "neon")]
+    unsafe fn fill_acc_neon(&self, feature: &[usize]) -> Vec<i16> {
+        let mut acc = self.b1.clone();
+        unsafe {
+            for &act_feat in feature {
+                let offset = act_feat * HL1;
+                let mut i = 0;
+                while i + 8 <= HL1 {
+                    let w_neon = vld1q_s16(self.w1.as_ptr().add(offset + i));
+                    let acc_ptr = acc.as_mut_ptr().add(i);
+                    let acc_neon = vld1q_s16(acc_ptr);
+                    vst1q_s16(acc_ptr, vaddq_s16(acc_neon, w_neon));
+                    i += 8;
+                }
+                while i < HL1 {
+                    *acc.get_unchecked_mut(i) += *self.w1.get_unchecked(offset + i);
+                    i += 1;
+                }
+            }
+        }
+        acc
+    }
+
+    fn fill_acc_scalar(&self, feature: &[usize]) -> Vec<i16> {
+        let mut acc = self.b1.clone();
+        for &act_feat in feature {
+            let offset = act_feat * HL1;
+            unsafe {
+                for neuron_idx in 0..HL1 {
+                    *acc.get_unchecked_mut(neuron_idx) +=
+                        *self.w1.get_unchecked(offset + neuron_idx);
+                }
+            }
+        }
         acc
     }
 
@@ -593,13 +601,114 @@ impl Network {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
             if is_x86_feature_detected!("avx2") {
-                return unsafe {
-                    Self::apply_feature_update_avx2(acc, w, w_act, b_act, remove)
-                };
+                return unsafe { Self::apply_feature_update_avx2(acc, w, w_act, b_act, remove) };
             }
         }
 
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            return unsafe { Self::apply_feature_update_neon(acc, w, w_act, b_act, remove) };
+        }
+
         Self::apply_feature_update_scalar(acc, w, w_act, b_act, remove);
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[target_feature(enable = "avx2")]
+    unsafe fn apply_feature_update_avx2(
+        acc: &mut [[i16; HL1]; 2],
+        w: &[i16],
+        w_act: usize,
+        b_act: usize,
+        remove: bool,
+    ) {
+        unsafe {
+            let acc_w_ptr = acc.get_unchecked_mut(WHITE).as_mut_ptr();
+            let acc_b_ptr = acc.get_unchecked_mut(BLACK).as_mut_ptr();
+            let mut i = 0;
+
+            while i + 16 <= HL1 {
+                let w_w = _mm256_loadu_si256(w.as_ptr().add(w_act * HL1 + i) as *const __m256i);
+                let w_b = _mm256_loadu_si256(w.as_ptr().add(b_act * HL1 + i) as *const __m256i);
+                let a_w = _mm256_loadu_si256(acc_w_ptr.add(i) as *const __m256i);
+                let a_b = _mm256_loadu_si256(acc_b_ptr.add(i) as *const __m256i);
+
+                if remove {
+                    _mm256_storeu_si256(
+                        acc_w_ptr.add(i) as *mut __m256i,
+                        _mm256_sub_epi16(a_w, w_w),
+                    );
+                    _mm256_storeu_si256(
+                        acc_b_ptr.add(i) as *mut __m256i,
+                        _mm256_sub_epi16(a_b, w_b),
+                    );
+                } else {
+                    _mm256_storeu_si256(
+                        acc_w_ptr.add(i) as *mut __m256i,
+                        _mm256_add_epi16(a_w, w_w),
+                    );
+                    _mm256_storeu_si256(
+                        acc_b_ptr.add(i) as *mut __m256i,
+                        _mm256_add_epi16(a_b, w_b),
+                    );
+                }
+                i += 16;
+            }
+
+            while i < HL1 {
+                if remove {
+                    *acc_w_ptr.add(i) -= *w.get_unchecked(w_act * HL1 + i);
+                    *acc_b_ptr.add(i) -= *w.get_unchecked(b_act * HL1 + i);
+                } else {
+                    *acc_w_ptr.add(i) += *w.get_unchecked(w_act * HL1 + i);
+                    *acc_b_ptr.add(i) += *w.get_unchecked(b_act * HL1 + i);
+                }
+                i += 1;
+            }
+        }
+    }
+
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[target_feature(enable = "neon")]
+    unsafe fn apply_feature_update_neon(
+        acc: &mut [[i16; HL1]; 2],
+        w: &[i16],
+        w_act: usize,
+        b_act: usize,
+        remove: bool,
+    ) {
+        unsafe {
+            let acc_w_ptr = acc.get_unchecked_mut(WHITE).as_mut_ptr();
+            let acc_b_ptr = acc.get_unchecked_mut(BLACK).as_mut_ptr();
+            let mut i = 0;
+
+            while i + 8 <= HL1 {
+                let w_w = vld1q_s16(w.as_ptr().add(w_act * HL1 + i));
+                let w_b = vld1q_s16(w.as_ptr().add(b_act * HL1 + i));
+                let a_w = vld1q_s16(acc_w_ptr.add(i));
+                let a_b = vld1q_s16(acc_b_ptr.add(i));
+
+                if remove {
+                    vst1q_s16(acc_w_ptr.add(i), vsubq_s16(a_w, w_w));
+                    vst1q_s16(acc_b_ptr.add(i), vsubq_s16(a_b, w_b));
+                } else {
+                    vst1q_s16(acc_w_ptr.add(i), vaddq_s16(a_w, w_w));
+                    vst1q_s16(acc_b_ptr.add(i), vaddq_s16(a_b, w_b));
+                }
+                i += 8;
+            }
+
+            while i < HL1 {
+                if remove {
+                    *acc_w_ptr.add(i) -= *w.get_unchecked(w_act * HL1 + i);
+                    *acc_b_ptr.add(i) -= *w.get_unchecked(b_act * HL1 + i);
+                } else {
+                    *acc_w_ptr.add(i) += *w.get_unchecked(w_act * HL1 + i);
+                    *acc_b_ptr.add(i) += *w.get_unchecked(b_act * HL1 + i);
+                }
+                i += 1;
+            }
+        }
     }
 
     fn apply_feature_update_scalar(
@@ -625,56 +734,6 @@ impl Network {
             }
         }
     }
-
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    #[target_feature(enable = "avx2")]
-    unsafe fn apply_feature_update_avx2(
-        acc: &mut [[i16; HL1]; 2],
-        w: &[i16],
-        w_act: usize,
-        b_act: usize,
-        remove: bool,
-    ) {
-        let (acc_w_ptr, acc_b_ptr) = unsafe {
-            (
-                acc.get_unchecked_mut(WHITE).as_mut_ptr(),
-                acc.get_unchecked_mut(BLACK).as_mut_ptr(),
-            )
-        };
-        let mut i = 0;
-
-        while i + 16 <= HL1 {
-            unsafe {
-                let w_w = _mm256_loadu_si256(w.as_ptr().add(w_act * HL1 + i) as *const __m256i);
-                let w_b = _mm256_loadu_si256(w.as_ptr().add(b_act * HL1 + i) as *const __m256i);
-
-                let a_w = _mm256_loadu_si256(acc_w_ptr.add(i) as *const __m256i);
-                let a_b = _mm256_loadu_si256(acc_b_ptr.add(i) as *const __m256i);
-
-                if remove {
-                    _mm256_storeu_si256(acc_w_ptr.add(i) as *mut __m256i, _mm256_sub_epi16(a_w, w_w));
-                    _mm256_storeu_si256(acc_b_ptr.add(i) as *mut __m256i, _mm256_sub_epi16(a_b, w_b));
-                } else {
-                    _mm256_storeu_si256(acc_w_ptr.add(i) as *mut __m256i, _mm256_add_epi16(a_w, w_w));
-                    _mm256_storeu_si256(acc_b_ptr.add(i) as *mut __m256i, _mm256_add_epi16(a_b, w_b));
-                }
-            }
-            i += 16;
-        }
-
-        while i < HL1 {
-            unsafe {
-                if remove {
-                    *acc_w_ptr.add(i) -= *w.get_unchecked(w_act * HL1 + i);
-                    *acc_b_ptr.add(i) -= *w.get_unchecked(b_act * HL1 + i);
-                } else {
-                    *acc_w_ptr.add(i) += *w.get_unchecked(w_act * HL1 + i);
-                    *acc_b_ptr.add(i) += *w.get_unchecked(b_act * HL1 + i);
-                }
-            }
-            i += 1;
-        }
-    }
 }
 
 fn get_hkp_feature_idx(king_pos: usize, piece_idx: usize, pos: usize) -> usize {
@@ -682,32 +741,17 @@ fn get_hkp_feature_idx(king_pos: usize, piece_idx: usize, pos: usize) -> usize {
 }
 
 impl Engine {
-    // pub fn setup_accumulator(&mut self) {
-    //     if let Some(nn) = NETWORK.get() {
-    //         let rebuild = nn.build_acc(&self.board);
-    //         if self.board.side_to_move() == Color::White {
-    //             self.accumulators[0][WHITE].copy_from_slice(&rebuild[..HL1]);
-    //             self.accumulators[0][BLACK].copy_from_slice(&rebuild[HL1..]);
-    //         } else {
-    //             self.accumulators[0][BLACK].copy_from_slice(&rebuild[..HL1]);
-    //             self.accumulators[0][WHITE].copy_from_slice(&rebuild[HL1..]);
-    //         };
-    //     }
-    // }
-
     pub fn update_nnue(&mut self, mv: &Move, undo: &Undo, ply: usize) {
         let Some(nn) = NETWORK.get() else {
             return;
         };
 
-        // self.accumulators[ply + 1] = nn.build_acc(&self.board);
         *self.accumulators.get_mut(ply + 1) = self.accumulators.get(ply);
 
         let acc = self.accumulators.get_mut(ply + 1);
 
         let (from, to, flag) = (mv.from(), mv.to(), mv.flag());
 
-        // board is already after make_move()
         let moved_piece = self.board.piece_on(to);
         if Piece::get_type(moved_piece) == Piece::KING {
             let rebuild = nn.build_acc(&self.board);
@@ -729,16 +773,10 @@ impl Engine {
 
         let mut w_removed = [0usize; 5];
         let mut w_added = [0usize; 5];
-
         let mut b_removed = [0usize; 5];
         let mut b_added = [0usize; 5];
-
         let mut r_cnt = 0;
         let mut a_cnt = 0;
-
-        //
-        // moved piece
-        //
 
         if flag.is_promo() {
             w_removed[r_cnt] =
@@ -766,10 +804,6 @@ impl Engine {
         );
         a_cnt += 1;
 
-        //
-        // captures
-        //
-
         if flag.is_capture() {
             let cap_sq = if flag == MoveFlag::EN_PASSANT {
                 if side == Piece::WHITE { to - 8 } else { to + 8 }
@@ -787,93 +821,17 @@ impl Engine {
             r_cnt += 1;
         }
 
-        //
-        // incremental accumulator update
-        //
-
-        // Added features
         for idx in 0..a_cnt {
-            Network::apply_feature_update(
-                acc,
-                &nn.w1,
-                w_added[idx],
-                b_added[idx],
-                false,
-            );
+            Network::apply_feature_update(acc, &nn.w1, w_added[idx], b_added[idx], false);
         }
 
-        // Removed features
         for idx in 0..r_cnt {
-            Network::apply_feature_update(
-                acc,
-                &nn.w1,
-                w_removed[idx],
-                b_removed[idx],
-                true,
-            );
+            Network::apply_feature_update(acc, &nn.w1, w_removed[idx], b_removed[idx], true);
         }
     }
 
     pub fn update_nnue_null_move(&mut self, ply: usize) {
         *self.accumulators.get_mut(ply + 1) = self.accumulators.get(ply);
         return;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::io::Cursor;
-
-    use crate::{
-        evaluation::init_pesto_table,
-        magics::init_magics,
-        network::{NN_DATA, Network, QP},
-        zobrist::init_zobrist,
-    };
-
-    #[test]
-    fn nn_check() {
-        init_pesto_table();
-        init_magics();
-
-        init_zobrist();
-
-        let mut cursor = Cursor::new(NN_DATA);
-        let nn = Network::load(&mut cursor);
-
-        println!("Quantized to 2 ^ {QP}");
-
-        println!("Min w1: {}", nn.w1.iter().min().unwrap());
-        println!("Max w1: {}", nn.w1.iter().max().unwrap());
-
-        println!("Min b1: {}", nn.b1.iter().min().unwrap());
-        println!("Max b1: {}", nn.b1.iter().max().unwrap());
-
-        println!("Min w2: {}", nn.w2.iter().min().unwrap());
-        println!("Max w2: {}", nn.w2.iter().max().unwrap());
-
-        println!("Min b2: {}", nn.b2.iter().min().unwrap());
-        println!("Max b2: {}", nn.b2.iter().max().unwrap());
-
-        println!("Min w3: {}", nn.w3.iter().min().unwrap());
-        println!("Max w3: {}", nn.w3.iter().max().unwrap());
-
-        println!("Min b3: {}", nn.b3.iter().min().unwrap());
-        println!("Max b3: {}", nn.b3.iter().max().unwrap());
-
-        println!("Min w4: {}", nn.w4.iter().min().unwrap());
-        println!("Max w4: {}", nn.w4.iter().max().unwrap());
-
-        println!("Min b4: {}", nn.b4.iter().min().unwrap());
-        println!("Max b4: {}", nn.b4.iter().max().unwrap());
-
-        println!("Min i8 {}", i8::MIN);
-        println!("Max i8 {}", i8::MAX);
-
-        println!("Min i16 {}", i16::MIN);
-        println!("Max i16 {}", i16::MAX);
-
-        println!("Min i32 {}", i32::MIN);
-        println!("Max i32 {}", i32::MAX);
     }
 }
