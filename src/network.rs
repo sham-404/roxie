@@ -4,7 +4,10 @@ use std::{
     sync::OnceLock,
 };
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(all(
+    any(target_arch = "x86", target_arch = "x86_64"),
+    target_feature = "avx2"
+))]
 use std::arch::x86_64::*;
 
 #[cfg(target_arch = "aarch64")]
@@ -269,6 +272,10 @@ impl Network {
 
 // SIMD Implementation
 impl Network {
+    #[cfg(all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        target_feature = "avx2"
+    ))]
     pub fn process_layer(
         inp_layer: &[i16],
         out_layer: &mut [i16],
@@ -276,27 +283,41 @@ impl Network {
         bias: &[i16],
         to_quantize: bool,
     ) {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            if is_x86_feature_detected!("avx2") {
-                return unsafe {
-                    Self::process_layer_avx2(inp_layer, out_layer, weight, bias, to_quantize)
-                };
-            }
-        }
-
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        {
-            return unsafe {
-                Self::process_layer_neon(inp_layer, out_layer, weight, bias, to_quantize)
-            };
-        }
-
-        // Generic fallback for Wasm or legacy CPUs
-        Self::process_layer_scalar(inp_layer, out_layer, weight, bias, to_quantize);
+        unsafe { Self::process_layer_avx2(inp_layer, out_layer, weight, bias, to_quantize) }
     }
 
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(target_arch = "aarch64")]
+    pub fn process_layer(
+        inp_layer: &[i16],
+        out_layer: &mut [i16],
+        weight: &[i16],
+        bias: &[i16],
+        to_quantize: bool,
+    ) {
+        unsafe { Self::process_layer_neon(inp_layer, out_layer, weight, bias, to_quantize) }
+    }
+
+    #[cfg(not(any(
+        all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            target_feature = "avx2"
+        ),
+        target_arch = "aarch64"
+    )))]
+    pub fn process_layer(
+        inp_layer: &[i16],
+        out_layer: &mut [i16],
+        weight: &[i16],
+        bias: &[i16],
+        to_quantize: bool,
+    ) {
+        Self::process_layer_scalar(inp_layer, out_layer, weight, bias, to_quantize)
+    }
+
+    #[cfg(all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        target_feature = "avx2"
+    ))]
     #[target_feature(enable = "avx2")]
     unsafe fn process_layer_avx2(
         inp_layer: &[i16],
@@ -348,8 +369,7 @@ impl Network {
         }
     }
 
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    #[target_feature(enable = "neon")]
+    #[cfg(target_arch = "aarch64")]
     unsafe fn process_layer_neon(
         inp_layer: &[i16],
         out_layer: &mut [i16],
@@ -370,16 +390,12 @@ impl Network {
                     let inp = vld1q_s16(inp_layer.as_ptr().add(i));
                     let w = vld1q_s16(weight.as_ptr().add(w_offset + i));
 
-                    // Replicate AVX2's madd behavior:
-                    // vmlal_s16 multiplies lower halves and accumulates to 32-bit.
-                    // vmlal_high_s16 multiplies upper halves and accumulates to 32-bit.
                     acc = vmlal_s16(acc, vget_low_s16(inp), vget_low_s16(w));
                     acc = vmlal_high_s16(acc, inp, w);
 
                     i += 8;
                 }
 
-                // Sums the four 32-bit integers in the NEON register into a single i32
                 let mut dot = vaddvq_s32(acc);
 
                 while i < input_len {
@@ -399,6 +415,13 @@ impl Network {
         }
     }
 
+    #[cfg(not(any(
+        all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            target_feature = "avx2"
+        ),
+        target_arch = "aarch64"
+    )))]
     fn process_layer_scalar(
         inp_layer: &[i16],
         out_layer: &mut [i16],
@@ -432,23 +455,34 @@ impl Network {
         }
     }
 
+    #[cfg(all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        target_feature = "avx2"
+    ))]
     pub fn hard_tanh(min: i16, max: i16, layer: &mut [i16]) {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            if is_x86_feature_detected!("avx2") {
-                return unsafe { Self::hard_tanh_avx2(min, max, layer) };
-            }
-        }
+        unsafe { Self::hard_tanh_avx2(min, max, layer) };
+    }
 
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        {
-            return unsafe { Self::hard_tanh_neon(min, max, layer) };
-        }
+    #[cfg(target_arch = "aarch64")]
+    pub fn hard_tanh(min: i16, max: i16, layer: &mut [i16]) {
+        unsafe { Self::hard_tanh_neon(min, max, layer) };
+    }
 
+    #[cfg(not(any(
+        all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            target_feature = "avx2"
+        ),
+        target_arch = "aarch64"
+    )))]
+    pub fn hard_tanh(min: i16, max: i16, layer: &mut [i16]) {
         Self::hard_tanh_scalar(min, max, layer);
     }
 
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        target_feature = "avx2"
+    ))]
     #[target_feature(enable = "avx2")]
     unsafe fn hard_tanh_avx2(min: i16, max: i16, layer: &mut [i16]) {
         let len = layer.len();
@@ -474,8 +508,7 @@ impl Network {
         }
     }
 
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    #[target_feature(enable = "neon")]
+    #[cfg(target_arch = "aarch64")]
     unsafe fn hard_tanh_neon(min: i16, max: i16, layer: &mut [i16]) {
         let len = layer.len();
         let mut i = 0;
@@ -500,6 +533,13 @@ impl Network {
         }
     }
 
+    #[cfg(not(any(
+        all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            target_feature = "avx2"
+        ),
+        target_arch = "aarch64"
+    )))]
     fn hard_tanh_scalar(min: i16, max: i16, layer: &mut [i16]) {
         let len = layer.len();
         let mut idx = 0;
@@ -512,23 +552,34 @@ impl Network {
         }
     }
 
+    #[cfg(all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        target_feature = "avx2"
+    ))]
     pub fn fill_acc(&self, feature: &[usize]) -> Vec<i16> {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            if is_x86_feature_detected!("avx2") {
-                return unsafe { self.fill_acc_avx2(feature) };
-            }
-        }
+        unsafe { self.fill_acc_avx2(feature) }
+    }
 
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        {
-            return unsafe { self.fill_acc_neon(feature) };
-        }
+    #[cfg(target_arch = "aarch64")]
+    pub fn fill_acc(&self, feature: &[usize]) -> Vec<i16> {
+        unsafe { self.fill_acc_neon(feature) }
+    }
 
+    #[cfg(not(any(
+        all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            target_feature = "avx2"
+        ),
+        target_arch = "aarch64"
+    )))]
+    pub fn fill_acc(&self, feature: &[usize]) -> Vec<i16> {
         self.fill_acc_scalar(feature)
     }
 
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        target_feature = "avx2"
+    ))]
     #[target_feature(enable = "avx2")]
     unsafe fn fill_acc_avx2(&self, feature: &[usize]) -> Vec<i16> {
         let mut acc = self.b1.clone();
@@ -553,8 +604,7 @@ impl Network {
         acc
     }
 
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    #[target_feature(enable = "neon")]
+    #[cfg(target_arch = "aarch64")]
     unsafe fn fill_acc_neon(&self, feature: &[usize]) -> Vec<i16> {
         let mut acc = self.b1.clone();
         unsafe {
@@ -577,6 +627,13 @@ impl Network {
         acc
     }
 
+    #[cfg(not(any(
+        all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            target_feature = "avx2"
+        ),
+        target_arch = "aarch64"
+    )))]
     fn fill_acc_scalar(&self, feature: &[usize]) -> Vec<i16> {
         let mut acc = self.b1.clone();
         for &act_feat in feature {
@@ -591,6 +648,10 @@ impl Network {
         acc
     }
 
+    #[cfg(all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        target_feature = "avx2"
+    ))]
     pub fn apply_feature_update(
         acc: &mut [[i16; HL1]; 2],
         w: &[i16],
@@ -598,22 +659,41 @@ impl Network {
         b_act: usize,
         remove: bool,
     ) {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            if is_x86_feature_detected!("avx2") {
-                return unsafe { Self::apply_feature_update_avx2(acc, w, w_act, b_act, remove) };
-            }
-        }
+        unsafe { Self::apply_feature_update_avx2(acc, w, w_act, b_act, remove) };
+    }
 
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        {
-            return unsafe { Self::apply_feature_update_neon(acc, w, w_act, b_act, remove) };
-        }
+    #[cfg(target_arch = "aarch64")]
+    pub fn apply_feature_update(
+        acc: &mut [[i16; HL1]; 2],
+        w: &[i16],
+        w_act: usize,
+        b_act: usize,
+        remove: bool,
+    ) {
+        unsafe { Self::apply_feature_update_neon(acc, w, w_act, b_act, remove) };
+    }
 
+    #[cfg(not(any(
+        all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            target_feature = "avx2"
+        ),
+        target_arch = "aarch64"
+    )))]
+    pub fn apply_feature_update(
+        acc: &mut [[i16; HL1]; 2],
+        w: &[i16],
+        w_act: usize,
+        b_act: usize,
+        remove: bool,
+    ) {
         Self::apply_feature_update_scalar(acc, w, w_act, b_act, remove);
     }
 
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(all(
+        any(target_arch = "x86", target_arch = "x86_64"),
+        target_feature = "avx2"
+    ))]
     #[target_feature(enable = "avx2")]
     unsafe fn apply_feature_update_avx2(
         acc: &mut [[i16; HL1]; 2],
@@ -668,8 +748,7 @@ impl Network {
         }
     }
 
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    #[target_feature(enable = "neon")]
+    #[cfg(target_arch = "aarch64")]
     unsafe fn apply_feature_update_neon(
         acc: &mut [[i16; HL1]; 2],
         w: &[i16],
@@ -711,6 +790,13 @@ impl Network {
         }
     }
 
+    #[cfg(not(any(
+        all(
+            any(target_arch = "x86", target_arch = "x86_64"),
+            target_feature = "avx2"
+        ),
+        target_arch = "aarch64"
+    )))]
     fn apply_feature_update_scalar(
         acc: &mut [[i16; HL1]; 2],
         w: &[i16],
