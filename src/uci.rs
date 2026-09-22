@@ -14,6 +14,7 @@ use crate::{
     r#const::MAX_PLY,
     engine::{Engine, SharedState},
     items::Move,
+    network::NETWORK,
     perft::perft_divide,
     search::SearchLimits,
     tt::TranspositionTable,
@@ -32,7 +33,7 @@ macro_rules! uci_print {
 }
 
 pub struct UCI {
-    engine: Arc<Mutex<Engine>>,
+    engine: Arc<Mutex<Box<Engine>>>,
     stop_signal: Arc<AtomicBool>,
     search_handle: Option<JoinHandle<()>>,
 
@@ -43,7 +44,7 @@ pub struct UCI {
 
 impl UCI {
     pub fn new() -> Self {
-        let engine = Arc::new(Mutex::new(Engine::new()));
+        let engine = Arc::new(Mutex::new(Box::new(Engine::new())));
         let stop_signal = engine.lock().unwrap().shared.abort.clone();
         Self {
             engine,
@@ -91,6 +92,14 @@ impl UCI {
                             uci_print!("Executing in normal mode");
                             self.debug = false;
                         }
+                    }
+
+                    "eval" => {
+                        let eval = NETWORK
+                            .get()
+                            .unwrap()
+                            .evaluate(&self.engine.lock().unwrap().board);
+                        uci_print!("Raw Evaluation Score: {} cp", eval);
                     }
 
                     "stats" => {
@@ -152,7 +161,10 @@ impl UCI {
         let go_ctrl = GoControl::parse(&mut args);
         let (stm, game_phase) = {
             let engine_guard = self.engine.lock().unwrap();
-            (engine_guard.board.side_to_move(), engine_guard.board.get_game_phase())
+            (
+                engine_guard.board.side_to_move(),
+                engine_guard.board.get_game_phase(),
+            )
         };
 
         let limits = SearchLimits::from_go(&go_ctrl, stm, game_phase);

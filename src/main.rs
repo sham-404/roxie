@@ -109,11 +109,11 @@ mod tests {
         init_all();
 
         let fens = [
-            "r2qkbr1/pb1nn3/1ppp3p/8/3P1p2/2PB1N1P/PPQN1PP1/2K1R2R w q - 2 15",
-            "r2qkb2/pb1nn3/1ppp2rp/8/3P1p2/2P2N1P/PPQN1PP1/2K1R2R w q - 0 16",
-            "r2qkbr1/pb1nn3/1ppp2Bp/8/3P1p2/2P2N1P/PPQN1PP1/2K1R2R b q - 3 15",
-            "8/7p/R5p1/2p1pkP1/7P/P4PK1/1r6/3q4 w - - 6 46",
             "6k1/pp6/3p4/2p1p3/2P1P1q1/1P1P2pP/P5P1/5K2 w - - 0 31",
+            "6k1/pp6/3p4/2p1p3/2P1P1bq/1P1P2pP/P3Q1P1/5K2 w - - 0 30",
+            "6k1/pp6/3p4/2p1p3/2P1P1Qq/1P1P2pP/P5P1/5K2 b - - 0 30",
+            "2k4r/pp3pp1/3N1p2/2pP1P1p/b3r1P1/P1P4P/2P5/R1R3K1 b - - 0 22",
+            "6k1/pp6/3p4/2p1p3/2P1P1P1/1P1P2p1/P5P1/5K2 b - - 0 31",
         ];
         let nn = NETWORK.get().unwrap();
 
@@ -121,7 +121,7 @@ mod tests {
         for fen in fens {
             let board = Board::load_fen(fen);
             let start = Instant::now();
-            let eval = nn.eval_hkp(&board);
+            let eval = nn.evaluate(&board);
             let duration = start.elapsed();
             let elapsed = duration.as_nanos();
 

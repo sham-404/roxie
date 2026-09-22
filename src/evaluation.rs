@@ -625,7 +625,7 @@ impl Engine {
                 }
             };
 
-            let score = nn.eval_hkp_with_acc(&mut self.eval_buf, &acc_for_eval) as i32;
+            let score = nn.eval_with_acc(&mut self.eval_buf, &acc_for_eval) as i32;
             return scaled_score_for_50_mv_rule(&self.board, score) as i16;
         }
 

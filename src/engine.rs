@@ -6,7 +6,7 @@ use std::sync::{
 use crate::{
     board::Board,
     r#const::{BLACK, MAX_PLY, WHITE},
-    items::{Color, Move, Piece, PieceInfo},
+    items::{Move, Piece, PieceInfo},
     network::{EvalBuf, HL1, NETWORK},
     search::MAX_HISTORY,
     tt::TranspositionTable,
@@ -332,13 +332,16 @@ const CORR_SCALE: i32 = CORR_GRAIN as i32 * 2;
 
 pub struct CorrectionHistory {
     // [stm color][pawn_key % size]
-    table: [[i32; CORR_HIST_SIZE]; 2],
+    table: Box<[[i32; CORR_HIST_SIZE]; 2]>,
 }
 
 impl CorrectionHistory {
     pub fn new() -> Self {
         Self {
-            table: [[0; CORR_HIST_SIZE]; 2],
+            table: vec![[0; CORR_HIST_SIZE]; 2]
+                .into_boxed_slice()
+                .try_into()
+                .unwrap(),
         }
     }
 
@@ -361,19 +364,25 @@ impl CorrectionHistory {
     }
 
     pub fn clear(&mut self) {
-        self.table = [[0; CORR_HIST_SIZE]; 2];
+        self.table = vec![[0; CORR_HIST_SIZE]; 2]
+            .into_boxed_slice()
+            .try_into()
+            .unwrap();
     }
 }
 
 pub struct Accumulators {
-    table: [[[i16; HL1]; 2]; MAX_PLY],
+    table: Box<[[[i16; HL1]; 2]; MAX_PLY]>,
 }
 
 impl Accumulators {
     #[inline(always)]
     pub fn new() -> Self {
         Self {
-            table: [[[0; HL1]; 2]; MAX_PLY],
+            table: vec![[[0; HL1]; 2]; MAX_PLY]
+                .into_boxed_slice()
+                .try_into()
+                .unwrap(),
         }
     }
 
@@ -390,13 +399,8 @@ impl Accumulators {
     pub fn setup(&mut self, board: &Board) {
         if let Some(nn) = NETWORK.get() {
             let rebuild = nn.build_acc(board);
-            if board.side_to_move() == Color::White {
-                self.table[0][WHITE].copy_from_slice(&rebuild[..HL1]);
-                self.table[0][BLACK].copy_from_slice(&rebuild[HL1..]);
-            } else {
-                self.table[0][BLACK].copy_from_slice(&rebuild[..HL1]);
-                self.table[0][WHITE].copy_from_slice(&rebuild[HL1..]);
-            };
+            self.table[0][WHITE].copy_from_slice(&rebuild[WHITE]);
+            self.table[0][BLACK].copy_from_slice(&rebuild[BLACK]);
         }
     }
 }
