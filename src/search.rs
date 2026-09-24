@@ -513,7 +513,7 @@ impl Engine {
         let in_check = self.board.in_check();
         let stm_val = self.board.side_to_move().val();
         let pawn_hash = self.board.get_pawn_hash();
-
+        let is_non_pv = alpha + 1 == beta;
         let base_eval = self.evaluate(ply as usize);
 
         // Static evaluation
@@ -536,7 +536,8 @@ impl Engine {
 
         //// Reverse Futility Pruning (Static Null Move Pruning) //
         let rfp_depth_limit = if is_improving { 5 } else { 3 };
-        if !in_check
+        if is_non_pv
+            && !in_check
             && depth <= rfp_depth_limit
             && beta.abs() < MATE - MAX_PLY as i16
             && excluded_move == Move::NULL
@@ -600,6 +601,7 @@ impl Engine {
             info,
             static_eval,
             is_improving,
+            is_non_pv,
         ) {
             return cutoff_score;
         }
@@ -758,7 +760,6 @@ impl Engine {
 
             if is_quiet && mv_idx > 0 {
                 // late move pruning //
-                let is_non_pv = alpha + 1 == beta;
                 let mut lmp_threshold = 3 + (depth * depth) as usize;
 
                 if !is_improving {
@@ -777,7 +778,6 @@ impl Engine {
                 // late move pruning //
             } else if mv_idx > 0 {
                 // SEE pruning //
-                let is_non_pv = alpha + 1 == beta;
                 let see_depth_limit = if is_improving { 4 } else { 2 };
 
                 if depth <= see_depth_limit
@@ -815,7 +815,7 @@ impl Engine {
 
             // Futility Pruning //
             let fp_depth_limit = if is_improving { 4 } else { 2 };
-            if depth < fp_depth_limit && mv_idx > 0 && is_quiet && !in_check {
+            if is_non_pv && depth < fp_depth_limit && mv_idx > 0 && is_quiet && !in_check {
                 // If static eval + margin can't even beat alpha,
                 // this quiet move is highly unlikely to change the node status.
 
@@ -1032,6 +1032,7 @@ impl Engine {
         info: &mut SearchInfo,
         static_eval: i16,
         is_improving: bool,
+        is_non_pv: bool,
     ) -> Option<i16> {
         let SearchParams {
             depth,
@@ -1044,7 +1045,7 @@ impl Engine {
 
         // Conditions for NMP
         let nmp_depth_limit = if is_improving { 3 } else { 4 };
-        if depth > nmp_depth_limit
+        if is_non_pv && depth > nmp_depth_limit
             && excluded_move == Move::NULL
             && beta.abs() < MATE - MAX_PLY as i16
             && static_eval >= beta
