@@ -288,9 +288,32 @@ impl Board {
             let bytes = ep_part.as_bytes();
             let file = (bytes[0] - b'a') as usize;
             let rank = (bytes[1] - b'1') as usize;
-            let sq = rank * 8 + file;
-            board.en_passant = Some(sq as u8);
-        }
+            let ep_sq = rank * 8 + file;
+
+            // if we are white, we must check if the ep square is being attacked
+            // by black, so we check where there is any black pawn in the square
+            // in which white pawn can attack if it is in the ep square
+            let (enemy_pawn, attacks) = if board.side_to_move == Color::White {
+                (Piece::BLACK | Piece::PAWN, WHITE_PAWN_ATTACKS)
+            } else {
+                (Piece::WHITE | Piece::PAWN, BLACK_PAWN_ATTACKS)
+            };
+
+            let mut attackers_bb = attacks[ep_sq as usize];
+            let mut is_capturable = false;
+
+            while let Some(atk_sq) = pop_lsb(&mut attackers_bb) {
+                if board.piece_on(atk_sq) == enemy_pawn {
+                    is_capturable = true;
+                    break; // found one attacker, no need to check the other
+                }
+            }
+
+            // Update zobrist only if en_passant is capturable
+            if is_capturable {
+                board.en_passant = Some(ep_sq as u8);
+            }
+        };
 
         match half_move {
             Some(count) => board.halfmove_clock = count.parse::<usize>().unwrap_or(0),
@@ -301,8 +324,6 @@ impl Board {
         board.build_mailbox();
         board.hash = compute_hash(&board);
         board.pawn_hash = compute_pawn_hash(&board);
-        board.build_mailbox();
-        board.build_occupancy();
         board.init_pesto_score();
 
         board
@@ -421,8 +442,33 @@ impl Board {
         // updating en_passant square
         self.en_passant = if flag == MoveFlag::DOUBLE_PUSH {
             let ep_sq = (from + to) / 2;
-            self.hash ^= ep_keys[ep_sq as usize % 8]; // Update zobrist for new EP
-            Some(ep_sq as u8)
+
+            // if we are white, we must check if the ep square is being attacked
+            // by black, so we check where there is any black pawn in the square
+            // in which white pawn can attack if it is in the ep square
+            let (enemy_pawn, attacks) = if self.side_to_move == Color::White {
+                (Piece::BLACK | Piece::PAWN, WHITE_PAWN_ATTACKS)
+            } else {
+                (Piece::WHITE | Piece::PAWN, BLACK_PAWN_ATTACKS)
+            };
+
+            let mut attackers_bb = attacks[ep_sq as usize];
+            let mut is_capturable = false;
+
+            while let Some(atk_sq) = pop_lsb(&mut attackers_bb) {
+                if self.piece_on(atk_sq) == enemy_pawn {
+                    is_capturable = true;
+                    break; // found one attacker, no need to check the other
+                }
+            }
+
+            // Update zobrist only if en_passant is capturable
+            if is_capturable {
+                self.hash ^= ep_keys[ep_sq as usize % 8];
+                Some(ep_sq as u8)
+            } else {
+                None
+            }
         } else {
             None
         };

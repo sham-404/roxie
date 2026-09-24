@@ -20,6 +20,7 @@ All notable changes to Roxie are documented in this file.
 - Reduced RFP margin
 - Reduced DELTA margins and using 1.5 as multiplicative factor instead of 2
 - Uses Incremental pawn hash for correction history, and made few mathematical improvements there
+- Hashes the en passant square only if it is capturable (improves hash efficiency)
 - Used dedeicated structs for history and other tables
 - Used is_improving flag to dynamically change pruning conditions
 - Improved singular extension
