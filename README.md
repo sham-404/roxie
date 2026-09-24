@@ -21,7 +21,7 @@ Today, Roxie has achieved an official **CCRL rating of 2682 Elo** for version 0.
 
 * ♟️ UCI compatible
 * ⚡ Written entirely in Rust
-* 🧠 Quantized HalfKP NNUE evaluation
+* 🧠 Quantized bucketed 768 -> (256 * 2) -> subnets NNUE evaluation
 * 🚀 Magic Bitboard move generation
 * 🔍 Modern alpha-beta search with advanced pruning and move ordering
 * 📈 Continuously tuned through thousands of self-play and engine matches
@@ -59,7 +59,7 @@ Roxie uses a modern alpha-beta search framework designed to search deeper while 
 
 ### 🧠 Evaluation
 
-* Quantized **HalfKP NNUE** evaluation
+* Quantized **Bucketed NNUE** evaluation
 * Efficient neural inference for positional evaluation
 * Classical evaluation terms blended with neural evaluation
 

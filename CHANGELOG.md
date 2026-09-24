@@ -7,7 +7,9 @@ All notable changes to Roxie are documented in this file.
 ### Unreleased
 
 ### Added
+- Swapped HalfKP with 8 bucketed piece square based nnue
 - MULTITHREADING is here!!!
+- Used rust's cfg so that the compiler selects the relevent code dynamically compiles based on the cpu architecture
 - Added Razoring
 - Added Dynamic Time Management (DTM)
 - SIMD support for nnue accumulator updation
@@ -15,6 +17,7 @@ All notable changes to Roxie are documented in this file.
 - Introduced fallback move concept for search and removed mandatory complete depth 1 search
 
 ### Improved
+- Reduced RFP margin
 - Reduced DELTA margins and using 1.5 as multiplicative factor instead of 2
 - Uses Incremental pawn hash for correction history, and made few mathematical improvements there
 - Used dedeicated structs for history and other tables
