@@ -217,6 +217,7 @@ impl TranspositionTable {
         );
     }
 
+    #[inline(always)]
     pub fn probe(&self, key: u64) -> Option<TTPacked> {
         let index = key as usize & self.mask;
         let bucket = &self.table[index];
@@ -293,6 +294,12 @@ impl TranspositionTable {
     }
 
     #[inline(always)]
+    pub fn get_entry_ptr(&self, hash: u64) -> *const TTBucket {
+        let index = (hash as usize) & self.mask;
+        unsafe { self.table.as_ptr().add(index) }
+    }
+
+    #[inline(always)]
     pub fn inc_generation(&self) {
         self.generation.fetch_add(1, Ordering::Relaxed);
     }
@@ -304,6 +311,7 @@ impl TranspositionTable {
 }
 
 const AGE_PENALTY: i32 = 12;
+#[inline(always)]
 fn replace_score(entry: &TTPacked, cur_gen: u8) -> i32 {
     let age = cur_gen.wrapping_sub(entry.age());
 

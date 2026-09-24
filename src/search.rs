@@ -849,6 +849,19 @@ impl Engine {
 
             mv_searched += 1;
 
+            //// TT prefetch
+            // We just made the move, so self.board.get_hash() now holds the child position's hash.
+            // So we are prefetching it to cache (L1 prolly) so that TT won't stall waiting for
+            // fetching it from the memory
+            #[cfg(target_arch = "x86_64")]
+            unsafe {
+                use core::arch::x86_64::{_MM_HINT_T0, _mm_prefetch};
+
+                let tt_ptr = self.shared.tt.get_entry_ptr(self.board.get_hash());
+                _mm_prefetch(tt_ptr as *const i8, _MM_HINT_T0);
+            }
+            //// TT prefetch
+
             self.update_nnue(&mv, &undo, ply as usize);
 
             // Taking account for extended depth for singular extention
@@ -1045,7 +1058,8 @@ impl Engine {
 
         // Conditions for NMP
         let nmp_depth_limit = if is_improving { 3 } else { 4 };
-        if is_non_pv && depth > nmp_depth_limit
+        if is_non_pv
+            && depth > nmp_depth_limit
             && excluded_move == Move::NULL
             && beta.abs() < MATE - MAX_PLY as i16
             && static_eval >= beta
