@@ -380,16 +380,19 @@ impl Network {
                 // --- White Perspective ---
                 let w_sq = sq ^ w_mask;
                 let w_idx = wb * 768 + idx * 64 + w_sq;
-                let w_weights = &self.w1[w_idx * 768..(w_idx + 1) * 768];
-                for i in 0..768 {
+
+                let w_weights = &self.w1[w_idx * HL1..(w_idx + 1) * HL1];
+                for i in 0..HL1 {
                     w_acc[i] += w_weights[i];
                 }
 
+                // --- Black Perspective ---
                 let b_idx = (idx + 6) % 12;
                 let b_sq = (sq ^ 56) ^ b_mask;
                 let b_feat_idx = bb_bucket * 768 + b_idx * 64 + b_sq;
-                let b_weights = &self.w1[b_feat_idx * 768..(b_feat_idx + 1) * 768];
-                for i in 0..768 {
+
+                let b_weights = &self.w1[b_feat_idx * HL1..(b_feat_idx + 1) * HL1];
+                for i in 0..HL1 {
                     b_acc[i] += b_weights[i];
                 }
             }
