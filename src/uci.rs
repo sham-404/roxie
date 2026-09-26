@@ -17,6 +17,7 @@ use crate::{
     network::NETWORK,
     perft::perft_divide,
     search::SearchLimits,
+    syzygy::tbprobe,
     tt::TranspositionTable,
 };
 
@@ -60,6 +61,7 @@ impl UCI {
         uci_print!("option name Hash type spin default 16 min 1 max 1048576");
         uci_print!("option name Clear Hash type button");
         uci_print!("option name Threads type spin default 1 min 1 max 1024");
+        uci_print!("option name SyzygyPath type string default <empty>");
     }
 
     pub fn uci_loop(&mut self) {
@@ -317,6 +319,29 @@ impl UCI {
                     }
                 }
                 .clamp(1, 1024);
+            }
+
+            //// Option: SyzygyPath
+            Some(cmd) if cmd.eq_ignore_ascii_case("syzygypath") => {
+                // checking whether the next arg is "value"
+                if commands.next() != Some("value") {
+                    tbprobe::init_tb("<empty>");
+                    uci_print!("info string Syzygy paths cleared");
+                    return;
+                }
+
+                // File paths can contain spaces, so we must collect the rest of the iterator
+                let path = commands.collect::<Vec<&str>>().join(" ");
+
+                if path.is_empty() {
+                    tbprobe::init_tb("<empty>");
+                    uci_print!("info string Syzygy paths cleared");
+                } else {
+                    tbprobe::init_tb(&path);
+                    uci_print!("info string Syzygy paths updated to: {}", path);
+                }
+
+                return;
             }
 
             //// Option: Clear Hash

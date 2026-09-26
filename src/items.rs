@@ -230,7 +230,7 @@ impl MoveFlag {
 }
 
 use crate::r#const::SQ_TO_COORD;
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Move(pub u16);
 // 0000   000000   000000 -> 16 bits
 // flag     to      from  -> encoding format
@@ -319,7 +319,7 @@ impl Undo {
             prev_castling_rights: castling,
             prev_last_irreversible: last_irreversible,
             prev_halfmove_clock: halfmove_clock,
-            prev_pawn_hash: pawn_hash, 
+            prev_pawn_hash: pawn_hash,
         }
     }
 }

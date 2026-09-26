@@ -10,6 +10,7 @@ pub mod params;
 pub mod perft;
 pub mod search;
 pub mod square;
+pub mod syzygy;
 pub mod tt;
 pub mod uci;
 pub mod zobrist;

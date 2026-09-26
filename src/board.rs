@@ -1022,6 +1022,11 @@ impl Board {
     }
 
     #[inline(always)]
+    pub fn get_en_passant(&self) -> Option<u8> {
+        self.en_passant
+    }
+
+    #[inline(always)]
     pub fn occ(&self, color: &Color) -> u64 {
         match color {
             Color::White => self.occupancy[WHITE],

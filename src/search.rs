@@ -6,6 +6,7 @@ use crate::{
     magics::{get_bishop_move_bits, get_rook_move_bits},
     move_pick::MovePicker,
     params::*,
+    syzygy::tbprobe,
     tt::{TTEntry, TTFlag},
     uci::{GoControl, MAX_DEPTH},
     uci_print,
@@ -87,6 +88,30 @@ impl Engine {
             }
             last_complete_info.best_move = mv;
             break;
+        }
+
+        // Check Syzygy tablebases at the root
+        let piece_count = self.board.all_occ().count_ones();
+        if piece_count <= tbprobe::TB_PIECES as u32 {
+            let mut tb_root_moves = tbprobe::TbRootMoves { moves: Vec::new() };
+            if tbprobe::root_probe_wdl(&mut self.board, true, &mut tb_root_moves)
+                && !tb_root_moves.moves.is_empty()
+            {
+                // Sort root moves by score descending to get the best one
+                tb_root_moves
+                    .moves
+                    .sort_by(|a, b| b.tb_score.cmp(&a.tb_score));
+                let best_tb_move = tb_root_moves.moves[0].clone();
+
+                info.tb_hits += 1;
+                info.depth = 1;
+                info.score = best_tb_move.tb_score as i16;
+                info.best_move = best_tb_move.mv;
+                info.pv = best_tb_move.pv;
+
+                on_iteration(&info);
+                return info;
+            }
         }
 
         // initialisations for dynamic time management
@@ -420,6 +445,52 @@ impl Engine {
         // Checking draws
         if self.board.is_draw() {
             return 0;
+        }
+
+        // Checking the syzygy tables
+        let piece_count = self.board.all_occ().count_ones();
+        if ply > 0 && piece_count <= tbprobe::TB_PIECES as u32 {
+            let mut tb_success = 0;
+
+            // probe_wdl handles captures, en passant, and delegates to the WDL table
+            let wdl = tbprobe::probe_wdl(&mut self.board, &mut tb_success);
+
+            if tb_success != 0 {
+                info.tb_hits += 1;
+
+                // Map the WDL score to your internal bounds
+                let tb_score = match wdl {
+                    -2 => -MATE + MAX_PLY as i16 + ply as i16, // Loss
+                    -1 => -2,                                  // Cursed Loss
+                    0 => 0,                                    // Draw
+                    1 => 2,                                    // Blessed Win
+                    2 => MATE - MAX_PLY as i16 - ply as i16,   // Win
+                    _ => 0,
+                };
+
+                // For wins/losses, restrict the alpha/beta window.
+                let bound = if wdl > 0 {
+                    1 // Lower 
+                } else if wdl < 0 {
+                    2 // Upper
+                } else {
+                    0 // Exact
+                };
+
+                if bound == 0
+                    || (bound == 1 && tb_score >= beta)
+                    || (bound == 2 && tb_score <= alpha)
+                {
+                    return tb_score;
+                }
+
+                if bound == 1 {
+                    alpha = alpha.max(tb_score);
+                }
+                if bound == 2 {
+                    beta = beta.min(tb_score);
+                }
+            }
         }
 
         // Probing the TT
@@ -2224,6 +2295,7 @@ pub struct SearchInfo {
     pub best_move: Move,
     pub nodes: u64,
     pub abort: Arc<AtomicBool>,
+    pub tb_hits: usize,
     pub pv: Vec<Move>,
 
     pub stats: SearchStats,
@@ -2238,6 +2310,7 @@ impl SearchInfo {
             seldepth: 0,
             score: 0,
             nodes: 0,
+            tb_hits: 0,
             abort: abort_signal,
             pv: Vec::new(),
 
@@ -2277,11 +2350,12 @@ impl SearchInfo {
         };
 
         uci_print!(
-            "info depth {} seldepth {} score {} nodes {} nps {} time {} {}",
+            "info depth {} seldepth {} score {} nodes {} tbhits {} nps {} time {} {}",
             self.depth,
             self.seldepth,
             score,
             self.stats.nodes,
+            self.tb_hits,
             self.nps(),
             self.start_time.elapsed().as_millis(),
             pv_str,
