@@ -65,6 +65,7 @@ impl Engine {
             self.shared.nodes.store(0, Ordering::Relaxed);
         }
         let mut info = SearchInfo::new(self.shared.abort.clone());
+        info.tb_pieces_limit = tbprobe::PROBE_MAX_PIECES.load(Ordering::Relaxed);
 
         self.killers = Killers::new();
         self.accumulators.setup(&self.board);
@@ -90,9 +91,8 @@ impl Engine {
             break;
         }
 
-        // Check Syzygy tablebases at the root
         let piece_count = self.board.all_occ().count_ones();
-        if piece_count <= tbprobe::TB_PIECES as u32 {
+        if piece_count <= info.tb_pieces_limit as u32 {
             let mut tb_root_moves = tbprobe::TbRootMoves { moves: Vec::new() };
             if tbprobe::root_probe_wdl(&mut self.board, true, &mut tb_root_moves)
                 && !tb_root_moves.moves.is_empty()
@@ -449,7 +449,7 @@ impl Engine {
 
         // Checking the syzygy tables
         let piece_count = self.board.all_occ().count_ones();
-        if ply > 0 && piece_count <= tbprobe::TB_PIECES as u32 {
+        if ply > 0 && piece_count <= info.tb_pieces_limit as u32 {
             let mut tb_success = 0;
 
             // probe_wdl handles captures, en passant, and delegates to the WDL table
@@ -2296,6 +2296,7 @@ pub struct SearchInfo {
     pub nodes: u64,
     pub abort: Arc<AtomicBool>,
     pub tb_hits: usize,
+    pub tb_pieces_limit: usize,
     pub pv: Vec<Move>,
 
     pub stats: SearchStats,
@@ -2311,6 +2312,7 @@ impl SearchInfo {
             score: 0,
             nodes: 0,
             tb_hits: 0,
+            tb_pieces_limit: 0,
             abort: abort_signal,
             pv: Vec::new(),
 

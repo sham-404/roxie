@@ -4,6 +4,7 @@ use crate::items::{Color, Move, MoveFlag, Piece};
 use crate::search::MATE;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, RwLock};
 
 pub const WDL: usize = 0;
@@ -16,6 +17,7 @@ pub const RANK_ENC: usize = 2;
 
 pub const TB_PIECES: usize = 7;
 pub const TB_HASHBITS: usize = 12;
+pub static PROBE_MAX_PIECES: AtomicUsize = AtomicUsize::new(0);
 
 #[rustfmt::skip]
 pub const OFF_DIAG: [i8; 64] = [
@@ -516,7 +518,9 @@ pub static TB_PATHS: LazyLock<RwLock<Vec<String>>> = LazyLock::new(|| RwLock::ne
 // Keyed by material key, as in Fathom's tbHash: a table is reachable both
 // through the key of its own name and through the key of its mirror, since
 // KvKQ is stored in KQvK.rtbw.
-pub static TB_CACHE: LazyLock<RwLock<HashMap<u64, Arc<BaseEntry>>>> =
+
+// Store Option<Arc<BaseEntry>> so None is cached as well
+pub static TB_CACHE: LazyLock<RwLock<HashMap<u64, Option<Arc<BaseEntry>>>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 
 pub fn init_tb(path_str: &str) {
@@ -525,15 +529,39 @@ pub fn init_tb(path_str: &str) {
     TB_CACHE.write().unwrap().clear();
 
     if path_str.is_empty() || path_str == "<empty>" {
+        PROBE_MAX_PIECES.store(0, Ordering::Relaxed);
         return;
     }
 
     let separator = if cfg!(windows) { ';' } else { ':' };
-    for p in path_str.split(separator) {
-        if !p.trim().is_empty() {
-            paths.push(p.trim().to_string());
+    let mut max_found_pieces = 0;
+
+    for dir_path in path_str
+        .split(separator)
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
+        paths.push(dir_path.to_string());
+
+        let Ok(entries) = std::fs::read_dir(dir_path) else {
+            continue;
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+
+            if !path.is_file() || path.extension().and_then(|s| s.to_str()) != Some("rtbw") {
+                continue;
+            }
+
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                let pieces = stem.chars().filter(|c| "KQRBNP".contains(*c)).count();
+                max_found_pieces = max_found_pieces.max(pieces);
+            }
         }
     }
+
+    PROBE_MAX_PIECES.store(max_found_pieces, Ordering::Relaxed);
 }
 
 pub fn find_tb_file(filename: &str) -> Option<PathBuf> {
@@ -1291,26 +1319,26 @@ fn fill_squares(
 // use. Fathom finds the table by material key and then opens the file named
 // prt_str(pos, flip): for a position whose colors are the mirror of the
 // table's, that is the flipped name, e.g. KQvK.rtbw for KvKQ.
+
 fn get_wdl_entry(board: &Board, key: u64) -> Option<Arc<BaseEntry>> {
-    if let Some(be) = TB_CACHE.read().unwrap().get(&key) {
-        return Some(be.clone());
+    // Check RAM cache (hits both Present and Missing entries)
+    if let Some(cached) = TB_CACHE.read().unwrap().get(&key) {
+        return cached.clone();
     }
 
     for file in [get_tb_filename(board, false), get_tb_filename(board, true)] {
-        let Some(be) = (unsafe { load_wdl_table(&file) }) else {
-            continue;
-        };
-        if key != be.key && key != be.sym_key {
-            continue;
+        if let Some(be) = unsafe { load_wdl_table(&file) } {
+            let entry = Arc::new(be);
+            let mut cache = TB_CACHE.write().unwrap();
+            cache.insert(entry.key, Some(entry.clone()));
+            cache.insert(entry.sym_key, Some(entry.clone()));
+            return Some(entry);
         }
-
-        let be = Arc::new(be);
-        let mut cache = TB_CACHE.write().unwrap();
-        cache.insert(be.key, be.clone());
-        cache.insert(be.sym_key, be.clone());
-        return Some(be);
     }
 
+    // Cache the MISS so we NEVER query the disk for the missing table
+    let mut cache = TB_CACHE.write().unwrap();
+    cache.insert(key, None);
     None
 }
 
