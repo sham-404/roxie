@@ -6,7 +6,10 @@ use crate::{
     magics::{get_bishop_move_bits, get_rook_move_bits},
     move_pick::MovePicker,
     params::*,
-    syzygy::tbprobe,
+    syzygy::{
+        tb_hash::TB_HASH,
+        tbprobe::{self, TbRootMoves},
+    },
     tt::{TTEntry, TTFlag},
     uci::{GoControl, MAX_DEPTH},
     uci_print,
@@ -72,15 +75,49 @@ impl Engine {
 
         let mut last_complete_info = info.clone();
 
+        //// Root WDL probing
+        let piece_count = self.board.all_occ().count_ones();
+        let mut tb_root_moves = TbRootMoves {
+            moves: Vec::with_capacity(256),
+        };
+        let mut best_root_tb_mv = Move::NULL;
+
+        if piece_count <= info.tb_pieces_limit as u32
+            && !self.board.get_castling_rights().has_rights()
+        {
+            // Use rule50 = true, has_repeated = false (assuming no repetitions at root)
+            if tbprobe::root_probe_dtz(&mut self.board, false, true, &mut tb_root_moves) {
+                info.tb_hits += 1;
+
+                // Sort by rank: +1000 for fast wins, 0 for draws, -1000 for slow losses
+                tb_root_moves
+                    .moves
+                    .sort_by(|a, b| b.tb_rank.cmp(&a.tb_rank));
+                best_root_tb_mv = tb_root_moves.moves[0].mv;
+
+                let best_score = tb_root_moves.moves[0].tb_score;
+                if best_score.abs() > 20000 {
+                    info.best_move = best_root_tb_mv;
+                    info.score = best_score as i16;
+                    info.depth = 1;
+                    info.pv = vec![best_root_tb_mv];
+                    return info;
+                }
+            }
+        }
+
         let (checkers, pinned) = self.board.checkers_and_pinned();
 
         // safety thing, grabbing a legal move at the start so that
         // search always returns a valid move
-        let tt_move = self
-            .shared
-            .tt
-            .probe(self.board.get_hash())
-            .map_or(Move::NULL, |info| info.best_move());
+        let tt_move = if best_root_tb_mv != Move::NULL {
+            best_root_tb_mv
+        } else {
+            self.shared
+                .tt
+                .probe(self.board.get_hash())
+                .map_or(Move::NULL, |info| info.best_move())
+        };
         let mut picker = MovePicker::new(tt_move, self.killers.get(0), Move::NULL, false);
 
         while let Some(mv) = self.pick_next_mv(&mut picker) {
@@ -89,29 +126,6 @@ impl Engine {
             }
             last_complete_info.best_move = mv;
             break;
-        }
-
-        let piece_count = self.board.all_occ().count_ones();
-        if piece_count <= info.tb_pieces_limit as u32 {
-            let mut tb_root_moves = tbprobe::TbRootMoves { moves: Vec::new() };
-            if tbprobe::root_probe_wdl(&mut self.board, true, &mut tb_root_moves)
-                && !tb_root_moves.moves.is_empty()
-            {
-                // Sort root moves by score descending to get the best one
-                tb_root_moves
-                    .moves
-                    .sort_by(|a, b| b.tb_score.cmp(&a.tb_score));
-                let best_tb_move = tb_root_moves.moves[0].clone();
-
-                info.tb_hits += 1;
-                info.depth = 1;
-                info.score = best_tb_move.tb_score as i16;
-                info.best_move = best_tb_move.mv;
-                info.pv = best_tb_move.pv;
-
-                on_iteration(&info);
-                return info;
-            }
         }
 
         // initialisations for dynamic time management
@@ -447,52 +461,6 @@ impl Engine {
             return 0;
         }
 
-        // Checking the syzygy tables
-        let piece_count = self.board.all_occ().count_ones();
-        if ply > 0 && piece_count <= info.tb_pieces_limit as u32 {
-            let mut tb_success = 0;
-
-            // probe_wdl handles captures, en passant, and delegates to the WDL table
-            let wdl = tbprobe::probe_wdl(&mut self.board, &mut tb_success);
-
-            if tb_success != 0 {
-                info.tb_hits += 1;
-
-                // Map the WDL score to your internal bounds
-                let tb_score = match wdl {
-                    -2 => -MATE + MAX_PLY as i16 + ply as i16, // Loss
-                    -1 => -2,                                  // Cursed Loss
-                    0 => 0,                                    // Draw
-                    1 => 2,                                    // Blessed Win
-                    2 => MATE - MAX_PLY as i16 - ply as i16,   // Win
-                    _ => 0,
-                };
-
-                // For wins/losses, restrict the alpha/beta window.
-                let bound = if wdl > 0 {
-                    1 // Lower 
-                } else if wdl < 0 {
-                    2 // Upper
-                } else {
-                    0 // Exact
-                };
-
-                if bound == 0
-                    || (bound == 1 && tb_score >= beta)
-                    || (bound == 2 && tb_score <= alpha)
-                {
-                    return tb_score;
-                }
-
-                if bound == 1 {
-                    alpha = alpha.max(tb_score);
-                }
-                if bound == 2 {
-                    beta = beta.min(tb_score);
-                }
-            }
-        }
-
         // Probing the TT
         let key = self.board.get_hash();
         let mut tt_move = Move::NULL;
@@ -532,6 +500,92 @@ impl Engine {
                 if alpha >= beta {
                     info.stats.tt_bound_cutoffs += 1;
                     return tt_score;
+                }
+            }
+        }
+
+        // Checking the syzygy tables. A singular search does not search
+        // excluded_move, so a tablebase result (which assumes every move is
+        // available) must not be used there.
+        let piece_count = self.board.all_occ().count_ones();
+        if ply > 0
+            && piece_count <= info.tb_pieces_limit as u32
+            && depth >= 4
+            && excluded_move == Move::NULL
+            && !self.board.get_castling_rights().has_rights()
+        {
+            let mut wdl = 0i8;
+            let mut success = false;
+
+            // probing the TB_HASH cache
+            if let Some((cached_wdl, cached_success)) = TB_HASH.probe(key) {
+                wdl = cached_wdl;
+                success = cached_success;
+                info.tb_hits += 1;
+            } else {
+                // TB_HASH fail
+                let mut tb_success = 0;
+                let probed_wdl = tbprobe::probe_wdl(&mut self.board, &mut tb_success);
+
+                if tb_success != 0 {
+                    info.tb_hits += 1;
+                    wdl = probed_wdl as i8;
+                    success = true;
+                }
+
+                TB_HASH.store(key, wdl, success);
+            }
+
+            if success {
+                let base_eval = self.evaluate(ply as usize);
+
+                let tb_score = match wdl {
+                    -2 => {
+                        // Loss
+                        // add a minor eval penalty so deeper losses look worse.
+                        let eval_penalty = (base_eval / 128).clamp(-50, 50) as i16;
+                        -20000 + ply as i16 + eval_penalty
+                    }
+                    -1 => -2, // Cursed Loss
+                    0 => 0,   // Draw
+                    1 => 2,   // Blessed Win
+                    2 => {
+                        // Win
+                        // add eval_bonus to force the engine to push toward the corner/mate
+                        // instead of shuffling endlessly
+                        let eval_bonus = (base_eval / 128).clamp(0, 50) as i16;
+                        20000 - ply as i16 + eval_bonus
+                    }
+                    _ => 0,
+                };
+
+                let bound = if wdl > 0 {
+                    1 // Lower Bound
+                } else if wdl < 0 {
+                    2 // Upper Bound
+                } else {
+                    0 // Exact
+                };
+
+                let is_exact = bound == 0 || self.board.halfmove_clock() == 0;
+
+                if is_exact || (bound == 1 && tb_score >= beta) || (bound == 2 && tb_score <= alpha)
+                {
+                    self.shared.tt.store(TTEntry {
+                        key,
+                        depth,
+                        score: tb_score as i32,
+                        flag: if is_exact {
+                            TTFlag::Exact
+                        } else if bound == 1 {
+                            TTFlag::LowerBound
+                        } else {
+                            TTFlag::UpperBound
+                        },
+                        best_move: Move::NULL,
+                        age: self.shared.tt.get_generation(),
+                    });
+                    return tb_score;
                 }
             }
         }
@@ -1572,7 +1626,7 @@ impl Engine {
         let flag = if best_score <= orig_alpha {
             TTFlag::UpperBound
         } else {
-            TTFlag::Exact
+            TTFlag::LowerBound
         };
 
         if !info.get_abort() {

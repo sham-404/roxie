@@ -499,7 +499,15 @@ pub struct BaseEntry {
     pub pawns: [u8; 2],
     pub dtm_loss_only: bool,
     pub ei: Vec<EncInfo>,
+    pub ei_dtz: Vec<EncInfo>,
     pub ready: bool,
+
+    // DTZ Table Metadata - use usize to allow implicit Send/Sync without boxing lifetime woes
+    pub dtz_map: usize,
+    pub piece_dtz_map_idx: [u16; 4],
+    pub pawn_dtz_map_idx: [[u16; 4]; 4],
+    pub piece_dtz_flags: u8,
+    pub pawn_dtz_flags: [u8; 4],
 }
 
 #[derive(Clone, Default)]
@@ -515,11 +523,6 @@ pub struct TbRootMoves {
 }
 
 pub static TB_PATHS: LazyLock<RwLock<Vec<String>>> = LazyLock::new(|| RwLock::new(Vec::new()));
-// Keyed by material key, as in Fathom's tbHash: a table is reachable both
-// through the key of its own name and through the key of its mirror, since
-// KvKQ is stored in KQvK.rtbw.
-
-// Store Option<Arc<BaseEntry>> so None is cached as well
 pub static TB_CACHE: LazyLock<RwLock<HashMap<u64, Option<Arc<BaseEntry>>>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 
@@ -767,9 +770,6 @@ pub unsafe fn setup_pairs(
             d.base[i] <<= 64 - (min_len + i);
         }
 
-        // sym_len[s] is the number of literal bytes the expansion of symbol s
-        // produces, minus one. A symbol whose second child is the 0x0fff
-        // sentinel is a leaf holding a single literal byte.
         let mut seen = vec![false; num_syms];
         for s in 0..num_syms {
             if !seen[s] {
@@ -781,9 +781,6 @@ pub unsafe fn setup_pairs(
     (d, new_offset, sizes)
 }
 
-// Recursively computes d.sym_len[s] and marks s as visited. Symbol patterns
-// form a DAG (a symbol may be referenced by many parents), so already
-// visited symbols are skipped.
 unsafe fn calc_sym_len(d: &mut PairsData, s: usize, seen: &mut [bool]) {
     unsafe {
         if s >= seen.len() {
@@ -820,10 +817,7 @@ unsafe fn calc_sym_len(d: &mut PairsData, s: usize, seen: &mut [bool]) {
     }
 }
 
-// Loads the WDL table stored in `<file_name>.rtbw`. The material, the piece
-// count and the pawn counts all come from that file's own name, so KvKQ
-// positions read the KQvK file and get KQvK's layout.
-pub unsafe fn load_wdl_table(file_name: &str) -> Option<BaseEntry> {
+pub unsafe fn load_tb_tables(file_name: &str) -> Option<BaseEntry> {
     unsafe {
         let path = find_tb_file(&format!("{}.rtbw", file_name))?;
         let tb_data = TbData::new(&path).ok()?;
@@ -869,11 +863,6 @@ pub unsafe fn load_wdl_table(file_name: &str) -> Option<BaseEntry> {
                 be.pawns.swap(0, 1);
             }
         } else {
-            // Fathom builds pcs[piece_type | color] while scanning the name,
-            // switching color at 'v' (both sides use upper case letters), and
-            // uses the compact KK encoding only when exactly two of those
-            // (color, piece type) combinations hold a single piece, i.e. just
-            // the two kings. KRvKN has four singles and is not KK encoded.
             let mut singles = 0;
             let mut counts: std::collections::HashMap<(bool, char), u8> =
                 std::collections::HashMap::new();
@@ -930,8 +919,6 @@ pub unsafe fn load_wdl_table(file_name: &str) -> Option<BaseEntry> {
             );
         }
 
-        // Fathom aligns to a 2 byte boundary once, after all the enc-info
-        // blocks, not after every one of them.
         if (data as usize) & 1 != 0 {
             data = data.add(1);
         }
@@ -965,10 +952,6 @@ pub unsafe fn load_wdl_table(file_name: &str) -> Option<BaseEntry> {
             }
         }
 
-        // Fathom stores the two halves of a split table next to each other:
-        // for each t the index/size/data block of ei[t] is followed by the
-        // one of ei[num_tables + t]. Walking ei[0..2 * num_tables] instead
-        // would hand out pointers into the wrong table.
         for t in 0..num_tables {
             if let Some(ref mut p) = be.ei[t].precomp {
                 p.index_table = data;
@@ -1011,6 +994,141 @@ pub unsafe fn load_wdl_table(file_name: &str) -> Option<BaseEntry> {
         }
 
         be.mmap[WDL] = Some(tb_data);
+
+        // --- Try Loading DTZ ---
+        if let Some(dtz_path) = find_tb_file(&format!("{}.rtbz", file_name)) {
+            if let Ok(dtz_tb) = TbData::new(&dtz_path) {
+                let dtz_ptr = dtz_tb.ptr();
+                let dtz_total_len = dtz_tb.len();
+                let magic = u32::from_le_bytes([
+                    *dtz_ptr,
+                    *dtz_ptr.add(1),
+                    *dtz_ptr.add(2),
+                    *dtz_ptr.add(3),
+                ]);
+
+                if magic == 0xa50c66d7 {
+                    let mut data = dtz_ptr.add(5);
+
+                    for _ in 0..num_tables {
+                        be.ei_dtz.push(EncInfo::default());
+                    }
+
+                    let mut tb_size = vec![0usize; num_tables];
+                    for t in 0..num_tables {
+                        tb_size[t] = init_enc_info(
+                            &mut be.ei_dtz[t],
+                            be.pawns,
+                            be.num,
+                            be.kk_enc,
+                            data,
+                            0,
+                            t,
+                            enc,
+                        );
+                        data = data.add(
+                            be.num as usize
+                                + 1
+                                + if be.has_pawns && be.pawns[1] > 0 {
+                                    1
+                                } else {
+                                    0
+                                },
+                        );
+                    }
+
+                    if (data as usize) & 1 != 0 {
+                        data = data.add(1);
+                    }
+
+                    let mut sizes = vec![[0usize; 3]; num_tables];
+                    for t in 0..num_tables {
+                        let mut flags = 0;
+                        let remaining = dtz_total_len - (data as usize - dtz_ptr as usize);
+                        let (d, off, s) = setup_pairs(
+                            std::slice::from_raw_parts(data, remaining),
+                            0,
+                            tb_size[t],
+                            &mut flags,
+                            DTZ,
+                        );
+                        be.ei_dtz[t].precomp = Some(d);
+                        sizes[t] = s;
+                        if !be.has_pawns {
+                            be.piece_dtz_flags = flags;
+                        } else {
+                            be.pawn_dtz_flags[t] = flags;
+                        }
+                        data = data.add(off);
+                    }
+
+                    be.dtz_map = data as usize;
+                    for t in 0..num_tables {
+                        let flags = if !be.has_pawns {
+                            be.piece_dtz_flags
+                        } else {
+                            be.pawn_dtz_flags[t]
+                        };
+                        if (flags & 2) != 0 {
+                            if (flags & 16) == 0 {
+                                for i in 0..4 {
+                                    let map_idx = if !be.has_pawns {
+                                        &mut be.piece_dtz_map_idx[i]
+                                    } else {
+                                        &mut be.pawn_dtz_map_idx[t][i]
+                                    };
+                                    *map_idx = (data as usize + 1 - be.dtz_map) as u16;
+                                    data = data.add(1 + (*data as usize));
+                                }
+                            } else {
+                                if (data as usize) & 1 != 0 {
+                                    data = data.add(1);
+                                }
+                                for i in 0..4 {
+                                    let map_idx = if !be.has_pawns {
+                                        &mut be.piece_dtz_map_idx[i]
+                                    } else {
+                                        &mut be.pawn_dtz_map_idx[t][i]
+                                    };
+                                    *map_idx = (data as usize + 2 - be.dtz_map) as u16;
+                                    let len = u16::from_le_bytes([*data, *data.add(1)]) as usize;
+                                    data = data.add(2 + 2 * len);
+                                }
+                            }
+                        }
+                    }
+
+                    if (data as usize) & 1 != 0 {
+                        data = data.add(1);
+                    }
+
+                    for t in 0..num_tables {
+                        if let Some(ref mut p) = be.ei_dtz[t].precomp {
+                            p.index_table = data;
+                            data = data.add(sizes[t][0]);
+                        }
+                    }
+                    for t in 0..num_tables {
+                        if let Some(ref mut p) = be.ei_dtz[t].precomp {
+                            p.size_table = data as *const u16;
+                            data = data.add(sizes[t][1]);
+                        }
+                    }
+                    for t in 0..num_tables {
+                        if let Some(ref mut p) = be.ei_dtz[t].precomp {
+                            let align = (data as usize + 0x3f) & !0x3f;
+                            data = align as *const u8;
+                            p.data = data;
+                            data = data.add(sizes[t][2]);
+                        }
+                    }
+
+                    be.has_dtz = true;
+                    be.mmap[DTZ] = Some(dtz_tb);
+                }
+            }
+        }
+
         be.ready = true;
         Some(be)
     }
@@ -1032,8 +1150,6 @@ pub fn leading_pawn(p: &mut [u8], be: &BaseEntry, enc: usize) -> usize {
 pub fn encode(p: &mut [u8], ei: &EncInfo, be: &BaseEntry, enc: usize) -> usize {
     let n = be.num as usize;
     let mut idx: usize;
-    // Number of pieces already consumed by the leading index(es). The
-    // remaining pieces are indexed in groups of identical types below.
     let mut k: usize;
 
     if (p[0] & 0x04) != 0 {
@@ -1095,8 +1211,6 @@ pub fn encode(p: &mut [u8], ei: &EncInfo, be: &BaseEntry, enc: usize) -> usize {
         }
         idx *= ei.factor[0];
     } else {
-        // The remaining pawns of the leading side are ordered by their
-        // twisted square value so that the index is canonical.
         for i in 1..(be.pawns[0] as usize) {
             for j in (i + 1)..(be.pawns[0] as usize) {
                 if PAWN_TWIST[enc - 1][p[i] as usize] < PAWN_TWIST[enc - 1][p[j] as usize] {
@@ -1112,7 +1226,6 @@ pub fn encode(p: &mut [u8], ei: &EncInfo, be: &BaseEntry, enc: usize) -> usize {
         }
         idx *= ei.factor[0];
 
-        // Pawns of the other color.
         if be.pawns[1] > 0 {
             let t = k + be.pawns[1] as usize;
             for i in k..t {
@@ -1215,9 +1328,6 @@ pub unsafe fn decompress_pairs(d: &PairsData, idx: usize) -> &[u8] {
 
         let mut sym: u32;
         loop {
-            // d.base is indexed from 0 while the code lengths run from
-            // m = min_len, hence the - m offset (Fathom keeps a pointer
-            // biased by -minLen for exactly this reason).
             let mut l = m;
             while l - m < d.base.len() && code < d.base[l - m] {
                 l += 1;
@@ -1256,12 +1366,6 @@ pub unsafe fn decompress_pairs(d: &PairsData, idx: usize) -> &[u8] {
     }
 }
 
-// Fathom's fill_squares(): appends the squares of every piece of the single
-// type described by pieces[i] to p, starting at index i, and returns the index
-// just past the last square written. Filling one type per call is what lets
-// the caller switch to a different piece list (the table selected by the
-// leading pawn) partway through, while the pawns of the leading side stay in
-// the order leading_pawn() established.
 fn fill_squares(
     board: &Board,
     pieces: &[u8; TB_PIECES],
@@ -1280,7 +1384,6 @@ fn fill_squares(
     } else {
         Piece::BLACK
     };
-    // flip exchanges the colors the table was built for
     let color = if flip {
         color ^ (Piece::WHITE | Piece::BLACK)
     } else {
@@ -1305,29 +1408,16 @@ fn fill_squares(
         bb &= bb - 1;
     }
 
-    if i == start {
-        // A legal position always has a piece of every type the table lists,
-        // so this cannot happen for a material-complete position. Skip the
-        // entry rather than spin forever if it ever does.
-        i + 1
-    } else {
-        i
-    }
+    if i == start { i + 1 } else { i }
 }
 
-// Returns the entry covering the position's material, loading it on first
-// use. Fathom finds the table by material key and then opens the file named
-// prt_str(pos, flip): for a position whose colors are the mirror of the
-// table's, that is the flipped name, e.g. KQvK.rtbw for KvKQ.
-
-fn get_wdl_entry(board: &Board, key: u64) -> Option<Arc<BaseEntry>> {
-    // Check RAM cache (hits both Present and Missing entries)
+fn get_tb_entry(board: &Board, key: u64) -> Option<Arc<BaseEntry>> {
     if let Some(cached) = TB_CACHE.read().unwrap().get(&key) {
         return cached.clone();
     }
 
     for file in [get_tb_filename(board, false), get_tb_filename(board, true)] {
-        if let Some(be) = unsafe { load_wdl_table(&file) } {
+        if let Some(be) = unsafe { load_tb_tables(&file) } {
             let entry = Arc::new(be);
             let mut cache = TB_CACHE.write().unwrap();
             cache.insert(entry.key, Some(entry.clone()));
@@ -1336,7 +1426,6 @@ fn get_wdl_entry(board: &Board, key: u64) -> Option<Arc<BaseEntry>> {
         }
     }
 
-    // Cache the MISS so we NEVER query the disk for the missing table
     let mut cache = TB_CACHE.write().unwrap();
     cache.insert(key, None);
     None
@@ -1345,13 +1434,12 @@ fn get_wdl_entry(board: &Board, key: u64) -> Option<Arc<BaseEntry>> {
 pub unsafe fn probe_wdl_table(board: &Board, success: &mut i32) -> i32 {
     let key = crate::syzygy::tbchess::calc_key(board, false);
 
-    // KvK: there is no table, the value is always a draw.
     if key == 0 {
         *success = 1;
         return 0;
     }
 
-    let be = match get_wdl_entry(board, key) {
+    let be = match get_tb_entry(board, key) {
         Some(be) => be,
         None => {
             *success = 0;
@@ -1368,7 +1456,6 @@ pub unsafe fn probe_wdl_table(board: &Board, success: &mut i32) -> i32 {
         let flip = key != be.key;
         (flip, (board.side_to_move() == Color::White) == flip)
     } else {
-        // For symmetric material the table covers both sides to move.
         (board.side_to_move() != Color::White, false)
     };
 
@@ -1382,10 +1469,6 @@ pub unsafe fn probe_wdl_table(board: &Board, success: &mut i32) -> i32 {
         }
         idx
     } else {
-        // The leading pawn decides which of the four tables is used, so it has
-        // to be determined from ei[0] before the rest is filled in. Only the
-        // leading side's pawns are taken from that first piece list; every
-        // remaining square comes from the selected table's list.
         let mut i = fill_squares(board, &be.ei[0].pieces, flip, flip_mask(flip), &mut p, 0);
         let t = leading_pawn(&mut p, &be, FILE_ENC);
         let idx = t + if bside { 4 } else { 0 };
@@ -1409,6 +1492,120 @@ pub unsafe fn probe_wdl_table(board: &Board, success: &mut i32) -> i32 {
 
         *success = 1;
         w[0] as i32 - 2
+    }
+}
+
+pub unsafe fn probe_dtz_table(board: &Board, wdl: i32, success: &mut i32) -> i32 {
+    let key = crate::syzygy::tbchess::calc_key(board, false);
+
+    if key == 0 {
+        *success = 1;
+        return 0;
+    }
+
+    let be = match get_tb_entry(board, key) {
+        Some(be) => be,
+        None => {
+            *success = 0;
+            return 0;
+        }
+    };
+
+    if !be.ready || !be.has_dtz {
+        *success = -1;
+        return 0;
+    }
+
+    let (flip, bside) = if !be.symmetric {
+        let flip = key != be.key;
+        (flip, (board.side_to_move() == Color::White) == flip)
+    } else {
+        (board.side_to_move() != Color::White, false)
+    };
+
+    let mut p = [0u8; TB_PIECES];
+    let ei_idx;
+    let mut t = 0;
+
+    if !be.has_pawns {
+        let flags = be.piece_dtz_flags;
+        if (flags & 1) != (if bside { 1 } else { 0 }) && !be.symmetric {
+            *success = -1;
+            return 0;
+        }
+        ei_idx = 0;
+        let mut i = 0;
+        while i < be.num as usize {
+            i = fill_squares(board, &be.ei_dtz[ei_idx].pieces, flip, 0, &mut p, i);
+        }
+    } else {
+        let mut i = fill_squares(
+            board,
+            &be.ei_dtz[0].pieces,
+            flip,
+            flip_mask(flip),
+            &mut p,
+            0,
+        );
+        t = leading_pawn(&mut p, &be, FILE_ENC);
+        let flags = be.pawn_dtz_flags[t];
+        if (flags & 1) != (if bside { 1 } else { 0 }) && !be.symmetric {
+            *success = -1;
+            return 0;
+        }
+        ei_idx = t;
+        while i < be.num as usize {
+            i = fill_squares(
+                board,
+                &be.ei_dtz[ei_idx].pieces,
+                flip,
+                flip_mask(flip),
+                &mut p,
+                i,
+            );
+        }
+    }
+
+    let ei = &be.ei_dtz[ei_idx];
+    let enc_type = if !be.has_pawns { PIECE_ENC } else { FILE_ENC };
+    let idx = encode(&mut p, ei, &be, enc_type);
+
+    unsafe {
+        let precomp = ei.precomp.as_ref().unwrap();
+        let w = decompress_pairs(precomp, idx);
+
+        let mut v = w[0] as i32 + (((w[1] & 0x0f) as i32) << 8);
+        let flags = if !be.has_pawns {
+            be.piece_dtz_flags
+        } else {
+            be.pawn_dtz_flags[t]
+        };
+
+        if (flags & 2) != 0 {
+            let m = WDL_TO_MAP[(wdl + 2) as usize];
+            let map_idx = if !be.has_pawns {
+                be.piece_dtz_map_idx[m]
+            } else {
+                be.pawn_dtz_map_idx[t][m]
+            };
+
+            if (flags & 16) == 0 {
+                v = *((be.dtz_map as *const u8).add(map_idx as usize + v as usize)) as i32;
+            } else {
+                let ptr = (be.dtz_map as *const u8)
+                    .cast::<u16>()
+                    .add(map_idx as usize + v as usize);
+                let bytes = std::slice::from_raw_parts(ptr as *const u8, 2);
+                v = u16::from_le_bytes([bytes[0], bytes[1]]) as i32;
+            }
+        }
+
+        if (flags & PA_FLAGS[(wdl + 2) as usize]) == 0 || (wdl & 1) != 0 {
+            v *= 2;
+        }
+
+        *success = 1;
+        v
     }
 }
 
@@ -1505,14 +1702,9 @@ pub fn probe_wdl(board: &mut Board, success: &mut i32) -> i32 {
         return best_cap;
     }
 
-    // Stalemate handling: if the position without en passant rights is a
-    // stalemate but an ep capture exists, that capture is the only legal move
-    // and its value is the one of the position.
     if best_ep > -3 && v == 0 {
         let mut all_moves = board.gen_moves();
         board.filter_illegal(&mut all_moves);
-        // Only the first all_moves.len() entries are real moves; the rest of
-        // the array is Move::NULL padding.
         let has_other_move =
             (0..all_moves.len()).any(|i| all_moves.moves[i].flag() != MoveFlag::EN_PASSANT);
 
@@ -1523,6 +1715,107 @@ pub fn probe_wdl(board: &mut Board, success: &mut i32) -> i32 {
     }
 
     v
+}
+
+pub fn probe_dtz(board: &mut Board, success: &mut i32) -> i32 {
+    let wdl = probe_wdl(board, success);
+    if *success == 0 {
+        return 0;
+    }
+
+    if wdl == 0 {
+        return 0;
+    }
+
+    if *success == 2 {
+        return WDL_TO_DTZ[(wdl + 2) as usize];
+    }
+
+    if wdl > 0 {
+        let mut moves = board.gen_moves();
+        board.filter_illegal(&mut moves);
+
+        for i in 0..moves.len() {
+            let mv = moves.moves[i];
+            let piece = board.piece_on(mv.from());
+            let is_capture = mv.flag().is_capture() || mv.flag() == MoveFlag::EN_PASSANT;
+
+            if (piece & 7) != Piece::PAWN || is_capture {
+                continue;
+            }
+
+            let undo = board.make_move(&mv);
+            let mut p_success = 1;
+            let v = -probe_wdl(board, &mut p_success);
+            board.unmake_move(&mv, &undo);
+
+            if p_success == 0 {
+                *success = 0;
+                return 0;
+            }
+            if v == wdl {
+                return WDL_TO_DTZ[(wdl + 2) as usize];
+            }
+        }
+    }
+
+    let dtz = unsafe { probe_dtz_table(board, wdl, success) };
+    if *success > 0 {
+        return WDL_TO_DTZ[(wdl + 2) as usize] + if wdl > 0 { dtz } else { -dtz };
+    }
+
+    let mut best = if wdl > 0 {
+        i32::MAX
+    } else {
+        WDL_TO_DTZ[(wdl + 2) as usize]
+    };
+
+    let mut moves = board.gen_moves();
+    board.filter_illegal(&mut moves);
+
+    for i in 0..moves.len() {
+        let mv = moves.moves[i];
+        let piece = board.piece_on(mv.from());
+        let is_capture = mv.flag().is_capture() || mv.flag() == MoveFlag::EN_PASSANT;
+
+        if is_capture || (piece & 7) == Piece::PAWN {
+            continue;
+        }
+
+        let undo = board.make_move(&mv);
+        let mut p_success = 1;
+        let v = -probe_dtz(board, &mut p_success);
+
+        if v == 1 && is_mate(board) {
+            best = 1;
+        } else if wdl > 0 {
+            if v > 0 && v + 1 < best {
+                best = v + 1;
+            }
+        } else {
+            if v - 1 < best {
+                best = v - 1;
+            }
+        }
+
+        board.unmake_move(&mv, &undo);
+
+        if p_success == 0 {
+            *success = 0;
+            return 0;
+        }
+    }
+
+    best
+}
+
+fn is_mate(board: &mut Board) -> bool {
+    if !board.in_check() {
+        return false;
+    }
+    let mut moves = board.gen_moves();
+    board.filter_illegal(&mut moves);
+    moves.len() == 0
 }
 
 pub fn root_probe_wdl(board: &mut Board, use_rule50: bool, rm: &mut TbRootMoves) -> bool {
@@ -1538,6 +1831,10 @@ pub fn root_probe_wdl(board: &mut Board, use_rule50: bool, rm: &mut TbRootMoves)
     let mut moves = board.gen_moves();
     board.filter_illegal(&mut moves);
     rm.moves.clear();
+
+    if moves.len() == 0 {
+        return false;
+    }
 
     for i in 0..moves.len() {
         let mv = moves.moves[i];
@@ -1568,5 +1865,89 @@ pub fn root_probe_wdl(board: &mut Board, use_rule50: bool, rm: &mut TbRootMoves)
             tb_score: wdl_to_value[(v + 2) as usize],
         });
     }
+    true
+}
+
+pub fn root_probe_dtz(
+    board: &mut Board,
+    has_repeated: bool,
+    use_rule50: bool,
+    rm: &mut TbRootMoves,
+) -> bool {
+    let cnt50 = board.halfmove_clock() as i32;
+    let bound = if use_rule50 { 900 } else { 1 };
+
+    let mut moves = board.gen_moves();
+    board.filter_illegal(&mut moves);
+    rm.moves.clear();
+
+    if moves.len() == 0 {
+        return false;
+    }
+
+    for i in 0..moves.len() {
+        let mv = moves.moves[i];
+        let undo = board.make_move(&mv);
+        let mut success = 1;
+        let mut v;
+
+        if board.halfmove_clock() == 0 {
+            v = -probe_wdl(board, &mut success);
+            if success == 0 {
+                board.unmake_move(&mv, &undo);
+                return false;
+            }
+            v = WDL_TO_DTZ[(v + 2) as usize];
+        } else {
+            v = -probe_dtz(board, &mut success);
+            if success == 0 {
+                board.unmake_move(&mv, &undo);
+                return false;
+            }
+            if v > 0 {
+                v += 1;
+            } else if v < 0 {
+                v -= 1;
+            }
+        }
+
+        if v == 2 && is_mate(board) {
+            v = 1;
+        }
+
+        board.unmake_move(&mv, &undo);
+
+        let r = if v > 0 {
+            if v + cnt50 <= 99 && !has_repeated {
+                1000
+            } else {
+                1000 - (v + cnt50)
+            }
+        } else if v < 0 {
+            if -v * 2 + cnt50 < 100 {
+                -1000
+            } else {
+                -1000 + (-v + cnt50)
+            }
+        } else {
+            0
+        };
+
+        let score = if r >= bound {
+            MATE as i32 - MAX_PLY as i32 - 1
+        } else if r > -bound {
+            0
+        } else {
+            -MATE as i32 + MAX_PLY as i32 + 1
+        };
+
+        rm.moves.push(TbRootMove {
+            mv,
+            pv: vec![mv],
+            tb_rank: r,
+            tb_score: score,
+        });
+    }
+
     true
 }

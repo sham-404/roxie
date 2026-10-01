@@ -518,6 +518,11 @@ impl CastlingRights {
         self.0 & BQ != 0
     }
 
+    #[inline(always)]
+    pub fn has_rights(self) -> bool {
+        self.0 != 0
+    }
+
     // remove rights
     #[inline(always)]
     pub fn remove(&mut self, mask: u8) {

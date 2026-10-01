@@ -1027,6 +1027,11 @@ impl Board {
     }
 
     #[inline(always)]
+    pub fn get_castling_rights(&self) -> CastlingRights {
+        self.castling
+    }
+
+    #[inline(always)]
     pub fn occ(&self, color: &Color) -> u64 {
         match color {
             Color::White => self.occupancy[WHITE],
