@@ -6,6 +6,7 @@ pub mod items;
 pub mod magics;
 pub mod move_pick;
 pub mod network;
+pub mod params;
 pub mod perft;
 pub mod search;
 pub mod square;

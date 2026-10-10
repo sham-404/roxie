@@ -5,6 +5,7 @@ use crate::{
     items::{Color, Move, MoveFlag, MoveList, Piece, PieceInfo},
     magics::{get_bishop_move_bits, get_rook_move_bits},
     move_pick::MovePicker,
+    params::*,
     tt::{TTEntry, TTFlag},
     uci::{GoControl, MAX_DEPTH},
     uci_print,
@@ -20,7 +21,9 @@ use std::{
 
 use std::sync::LazyLock;
 
-const PIECE_VALS_FOR_SEE: [i32; 6] = [100, 320, 330, 500, 900, 10_000];
+const PIECE_VALS_FOR_SEE: [i32; 6] = [
+    SEE_PAWN, SEE_KNIGHT, SEE_BISHOP, SEE_ROOK, SEE_QUEEN, 10_000,
+];
 pub const MAX_MOVES: usize = 256;
 
 pub static LMR_TABLE: LazyLock<[[i32; MAX_MOVES]; MAX_PLY]> = LazyLock::new(|| {
@@ -28,7 +31,7 @@ pub static LMR_TABLE: LazyLock<[[i32; MAX_MOVES]; MAX_PLY]> = LazyLock::new(|| {
 
     for depth in 1..MAX_PLY {
         for mv_idx in 1..MAX_MOVES {
-            let reduction = 1.5 + (depth as f64).ln() * (mv_idx as f64).ln() / 1.5;
+            let reduction = LMR_BASE_PCT + (depth as f64).ln() * (mv_idx as f64).ln() / LMR_DIV_PCT;
             table[depth][mv_idx] = reduction as i32;
         }
     }
@@ -102,7 +105,7 @@ impl Engine {
             info.nodes += 1;
 
             // Aspiration window setup
-            const DELTAS: [i32; 4] = [20, 12, 30, 45]; // Use i32 for safe math
+            const DELTAS: [i32; 4] = [ASP_DELTA_0, ASP_DELTA_1, ASP_DELTA_2, ASP_DELTA_3];
 
             let mut delta = DELTAS[self.thread_id as usize % 4];
 
@@ -110,7 +113,7 @@ impl Engine {
             let mut beta = INF;
 
             // using aspiration window only on relatively higher depths
-            if d > 5 {
+            if d > ASP_MIN_DEPTH {
                 alpha = (last_complete_info.score as i32 - delta).max(-INF as i32) as i16;
                 beta = (last_complete_info.score as i32 + delta).min(INF as i32) as i16;
             }
@@ -252,7 +255,7 @@ impl Engine {
 
                     alpha = (orig_alpha as i32 - delta).max(-INF as i32) as i16;
                     beta = orig_beta;
-                    delta = ((delta as f32 * 1.5) as i32).min(INF as i32); // clamp delta
+                    delta = ((delta as f32 * ASP_FACTOR_PCT) as i32).min(INF as i32); // clamp delta
                     continue 'aspiration_loop;
                 }
 
@@ -260,7 +263,7 @@ impl Engine {
                 if best_score >= orig_beta {
                     alpha = orig_alpha;
                     beta = (orig_beta as i32 + delta).min(INF as i32) as i16;
-                    delta = ((delta as f32 * 1.5) as i32).min(INF as i32); // clamp delta
+                    delta = ((delta as f32 * ASP_FACTOR_PCT) as i32).min(INF as i32); // clamp delta
                     continue 'aspiration_loop;
                 }
 
@@ -466,10 +469,10 @@ impl Engine {
         //// Internal Iterative Deepening (IID)
         // If we don't have a tt move, try to search a lower depth search and hope it
         // probes a tt move
-        if depth >= 5 && tt_move == Move::NULL && excluded_move == Move::NULL {
+        if depth >= IID_MIN_DEPTH && tt_move == Move::NULL && excluded_move == Move::NULL {
             info.stats.iid_attempts += 1;
 
-            let iid_depth = depth - 2;
+            let iid_depth = depth - IID_REDUCTION;
 
             self.negamax(
                 SearchParams {
@@ -535,7 +538,11 @@ impl Engine {
             .is_improving(static_eval, in_check, ply as usize);
 
         //// Reverse Futility Pruning (Static Null Move Pruning) //
-        let rfp_depth_limit = if is_improving { 5 } else { 3 };
+        let rfp_depth_limit = if is_improving {
+            RFP_DEPTH_IMP
+        } else {
+            RFP_DEPTH_NON
+        };
         if is_non_pv
             && !in_check
             && depth <= rfp_depth_limit
@@ -544,7 +551,8 @@ impl Engine {
         {
             info.stats.rfp_attempts += 1;
 
-            let margin = depth as i16 * (75 - if is_improving { 25 } else { 0 });
+            let margin =
+                depth as i16 * (RFP_MARGIN_BASE - if is_improving { RFP_MARGIN_IMP } else { 0 });
 
             if static_eval - margin >= beta {
                 info.stats.rfp_cutoffs += 1;
@@ -555,8 +563,8 @@ impl Engine {
 
         //// Razoring
         // Trigger only at very low depths when not in check
-        if depth <= 2 && !in_check && excluded_move == Move::NULL {
-            let razor_margin = 150 + (depth as i16 * 50);
+        if depth <= RAZOR_MAX_DEPTH && !in_check && excluded_move == Move::NULL {
+            let razor_margin = RAZOR_MARGIN_BASE + (depth as i16 * RAZOR_MARGIN_PER_DEPTH);
 
             // If our static eval is so bad that even adding the margin doesn't hit alpha,
             // we assume no quiet move will save us.
@@ -610,14 +618,18 @@ impl Engine {
         let (checkers, pinned) = self.board.checkers_and_pinned();
 
         //// ProbCut (Probablistic Cut)
-        if depth >= 5
+        if depth >= PC_MIN_DEPTH
             && !in_check
             && excluded_move == Move::NULL
             && beta.abs() < MATE - MAX_PLY as i16
         {
-            let pc_margin = 200i32;
+            let pc_margin = PC_MARGIN;
             let pc_beta = ((beta as i32 + pc_margin).min((MATE - MAX_PLY as i16) as i32)) as i16;
-            let pc_depth = if depth >= 8 { depth - 4 } else { depth - 3 };
+            let pc_depth = if depth >= PC_SPLIT_DEPTH {
+                depth - PC_REDUCE_LARGE
+            } else {
+                depth - PC_REDUCE_SMALL
+            };
 
             let tt_move = if tt_move.flag().is_quiet() {
                 Move::NULL
@@ -687,21 +699,21 @@ impl Engine {
 
         // Only trigger on high depths, when we aren't already doing a singular search,
         // when we have a valid TT move, and when the TT depth is sufficient.
-        if depth >= 8
+        if depth >= SING_MIN_DEPTH
             && tt_move != Move::NULL
-            && params.excluded_move == Move::NULL
-            && tt_depth >= depth - 3
+            && excluded_move == Move::NULL
+            && tt_depth >= depth - SING_TT_MARGIN
             && tt_flag != TTFlag::UpperBound // We need a reliable lower bound for the TT move
             && tt_score.abs() < MATE - MAX_PLY as i16
         // Don't extend mates
         {
-            let singular_margin = depth as i16 * 2;
+            let singular_margin = depth as i16 * SING_MARGIN_PER_DEPTH;
             let singular_beta = (tt_score - singular_margin).max(-MATE);
 
             // Zero-window search at reduced depth, excluding the TT move
             let se_score = self.negamax(
                 SearchParams {
-                    depth: depth / 2, // Standard singular reduction
+                    depth: depth / SING_DEPTH_DIV,
                     alpha: singular_beta - 1,
                     beta: singular_beta,
                     ply,
@@ -716,10 +728,10 @@ impl Engine {
             // If the search failed low, it means no other move can even reach
             // the TT score minus the margin. Thus TT move is singular
             if se_score < singular_beta {
-                se_extension = 1;
+                se_extension = SING_EXT_1;
 
-                if se_score < singular_beta - 30 {
-                    se_extension = 2
+                if se_score < singular_beta - SING_DOUBLE_MARGIN {
+                    se_extension = SING_EXT_2;
                 }
             } else {
                 // beta cutoff
@@ -760,13 +772,14 @@ impl Engine {
 
             if is_quiet && mv_idx > 0 {
                 // late move pruning //
-                let mut lmp_threshold = 3 + (depth * depth) as usize;
+                let mut lmp_threshold =
+                    LMP_BASE + ((depth as usize) * (depth as usize) * LMP_QUAD_FACTOR);
 
                 if !is_improving {
-                    lmp_threshold /= 2;
+                    lmp_threshold /= LMP_NON_IMP_DIV;
                 }
 
-                if is_non_pv && depth <= 5 && !in_check {
+                if is_non_pv && depth <= LMP_MAX_DEPTH && !in_check {
                     info.stats.lmp_attempts += 1;
 
                     if quiet_searched >= lmp_threshold {
@@ -778,7 +791,11 @@ impl Engine {
                 // late move pruning //
             } else if mv_idx > 0 {
                 // SEE pruning //
-                let see_depth_limit = if is_improving { 4 } else { 2 };
+                let see_depth_limit = if is_improving {
+                    SEE_PRUNE_MAX_DEPTH_IMP
+                } else {
+                    SEE_PRUNE_MAX_DEPTH_NON
+                };
 
                 if depth <= see_depth_limit
                     && is_non_pv
@@ -789,7 +806,8 @@ impl Engine {
                     && !self.board.gives_check(mv)
                 {
                     info.stats.see_prune_attempts += 1;
-                    let margin = depth as i32 * (60 - if is_improving { 20 } else { 0 });
+                    let margin = depth as i32
+                        * (SEE_MARGIN_BASE - if is_improving { SEE_MARGIN_IMP } else { 0 });
 
                     if self.board.see(&mv) < -margin {
                         info.stats.see_prunes_happened += 1;
@@ -799,27 +817,18 @@ impl Engine {
                 // SEE pruning //
             }
 
-            // // History Pruning
-            // let history_pruning_depth = if is_improving { 3 } else { 2 };
-            // let total_hist = self.history.get(stm_val, mv.from(), mv.to());
-            //
-            // if depth <= history_pruning_depth && is_quiet && !in_check && alpha + 1 == beta {
-            //     info.stats.history_prune_attempts += 1;
-            //     let history_margin = -((MAX_HISTORY - 1500) / 8) * depth as i32;
-            //
-            //     if total_hist < history_margin {
-            //         info.stats.history_pruned += 1;
-            //         continue;
-            //     }
-            // }
-
             // Futility Pruning //
-            let fp_depth_limit = if is_improving { 4 } else { 2 };
+            let fp_depth_limit = if is_improving {
+                FUT_MAX_DEPTH_IMP
+            } else {
+                FUT_MAX_DEPTH_NON
+            };
             if is_non_pv && depth < fp_depth_limit && mv_idx > 0 && is_quiet && !in_check {
                 // If static eval + margin can't even beat alpha,
                 // this quiet move is highly unlikely to change the node status.
 
-                let futility_margin = depth as i16 * (120 - if is_improving { 30 } else { 0 });
+                let futility_margin = depth as i16
+                    * (FUT_MARGIN_BASE - if is_improving { FUT_MARGIN_IMP } else { 0 });
                 if static_eval + futility_margin <= alpha {
                     // We must verify the move doesn't give a check before skipping it
                     // for safeplay
@@ -911,7 +920,8 @@ impl Engine {
                     self.killers.update(mv, ply);
 
                     let stm = self.board.side_to_move().val();
-                    let bonus = (depth * depth).min(400) as i32;
+                    let bonus = ((depth as i32 * depth as i32) * HIST_BONUS_QUAD_FACTOR)
+                        .min(HIST_BONUS_MAX);
 
                     // history maluses
                     for q_mv in quiet_list.as_slice() {
@@ -937,7 +947,8 @@ impl Engine {
                     // counter moves storing
                     self.counter_moves.update(prev_move, mv);
                 } else if is_capture {
-                    let bonus = (depth * depth).min(400) as i32;
+                    let bonus = ((depth as i32 * depth as i32) * HIST_BONUS_QUAD_FACTOR)
+                        .min(HIST_BONUS_MAX);
 
                     // capture maluses
                     for &cap_mv in cap_list.as_slice() {
@@ -1057,20 +1068,26 @@ impl Engine {
         } = params;
 
         // Conditions for NMP
-        let nmp_depth_limit = if is_improving { 3 } else { 4 };
+        let nmp_depth_limit = if is_improving {
+            NMP_MIN_DEPTH_IMP
+        } else {
+            NMP_MIN_DEPTH_NON
+        };
+        let in_nmp_endgame = self.board.get_game_phase().min(24) < NMP_ENDGAME_LIMIT;
+
         if is_non_pv
             && depth > nmp_depth_limit
             && excluded_move == Move::NULL
             && beta.abs() < MATE - MAX_PLY as i16
             && static_eval >= beta
             && !self.board.in_check()
-            && !self.board.is_endgame()
+            && !in_nmp_endgame
         {
             info.stats.nmp_attemps += 1;
 
-            let mut r = 3 + depth / 6;
+            let mut r = NMP_REDUCE_BASE + depth / NMP_REDUCE_DIV;
             if !is_improving {
-                r = r.saturating_sub(1);
+                r = r.saturating_sub(NMP_NON_IMP_BONUS);
             }
 
             let nmp_depth = (depth - 1).saturating_sub(r);
@@ -1136,7 +1153,8 @@ impl Engine {
 
         let in_check = self.board.in_check();
 
-        let (extension, next_extensions) = if in_check && extension < 2 {
+        let max_check_ext = CHECK_EXT_MAX;
+        let (extension, next_extensions) = if in_check && extension < max_check_ext {
             (1, extension + 1)
         } else {
             (0, extension)
@@ -1160,9 +1178,15 @@ impl Engine {
         }
 
         // checking whether lmr is applicable
-        let lmr_depth_limit = if is_improving { 2 } else { 3 };
-        let can_reduce =
-            quiet_searched > 1 && depth > lmr_depth_limit && !in_check && mv.flag().is_quiet();
+        let lmr_depth_limit = if is_improving {
+            LMR_MIN_DEPTH_IMP
+        } else {
+            LMR_MIN_DEPTH_NON
+        };
+        let can_reduce = quiet_searched >= LMR_MIN_QUIET
+            && depth > lmr_depth_limit
+            && !in_check
+            && mv.flag().is_quiet();
 
         // Late move reduction //
         let reduction = if can_reduce {
@@ -1174,8 +1198,7 @@ impl Engine {
             let mut r = LMR_TABLE[table_depth][table_idx];
 
             // Continuous history adjustment
-            // max adjustment of +/- 4 plies
-            let adjustment_fac = MAX_HISTORY / 4;
+            let adjustment_fac = LMR_HIST_FACTOR;
             let stm = self.board.side_to_move().opponent().val();
             let cont_hist = self
                 .continuation_history
@@ -1184,15 +1207,15 @@ impl Engine {
 
             let hist_adjustment = hist_score / adjustment_fac;
 
-            r -= hist_adjustment.clamp(-4, 4);
+            r -= hist_adjustment.clamp(-LMR_HIST_CLAMP, LMR_HIST_CLAMP);
 
             if !is_improving {
-                r -= 1;
+                r -= LMR_NON_IMP_BONUS;
             }
 
             // Counter and killer move adjustment
             if mv == self.counter_moves.get(prev_move) || self.killers.get(ply).contains(&mv) {
-                r -= 1;
+                r -= LMR_COUNTER_KILLER_BONUS;
             }
 
             // Minimum reduction of 0 ply, maximum of depth - 1 to avoid negative depths
@@ -1411,14 +1434,13 @@ impl Engine {
 
                 // delta pruning //
                 let gain = if mv.flag() == MoveFlag::EN_PASSANT {
-                    100
+                    Q_EP_GAIN
                 } else {
                     let cap_piece = self.board.piece_on(mv.to());
-                    self.board.get_see_value(cap_piece)
+                    self.board.get_see_value(cap_piece) as i16
                 } as i16;
 
-                const DELTA: i16 = 200;
-                if !gives_check && stand_pat + gain + DELTA < alpha {
+                if !gives_check && stand_pat + gain + Q_DELTA_MARGIN < alpha {
                     continue;
                 }
                 // delta pruning //
