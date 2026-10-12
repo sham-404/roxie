@@ -87,7 +87,7 @@ impl TTPacked {
 
         TTPacked {
             key: entry.key,
-            info: info,
+            info,
         }
     }
 
@@ -146,7 +146,7 @@ impl AtomicTTEntry {
 
         TTPacked {
             key: info ^ key, // XORing key with info (to avoid retrieving fault data)
-            info: info,
+            info,
         }
     }
 

@@ -69,7 +69,7 @@ impl UCI {
 
         for line in stdin.lock().lines() {
             let line = line.unwrap();
-            let mut words = line.trim().split_whitespace();
+            let mut words = line.split_whitespace();
 
             if let Some(cmd) = words.next() {
                 match cmd {
@@ -233,7 +233,7 @@ impl UCI {
                     let mut has_moves = false;
 
                     // Collecting parts till it ends, or if we have "moves" command
-                    while let Some(part) = commands.next() {
+                    for part in commands.by_ref() {
                         if part == "moves" {
                             has_moves = true;
                             break;
@@ -299,7 +299,6 @@ impl UCI {
                 };
 
                 engine.shared.tt.info();
-                return;
             }
 
             //// Option: Threads
@@ -318,8 +317,6 @@ impl UCI {
                     }
                 }
                 .clamp(1, 1024);
-
-                return;
             }
 
             //// Option: Clear Hash
@@ -327,23 +324,19 @@ impl UCI {
                 Some(cmd) if cmd.eq_ignore_ascii_case("hash") => {
                     let engine = self.engine.lock().unwrap();
                     engine.shared.tt.clear();
-                    return;
                 }
 
                 Some(_) | None => {
                     uci_print!("Invalid option type");
-                    return;
                 }
             },
 
             Some(_) => {
                 uci_print!("Invalid option");
-                return;
             }
 
             None => {
                 uci_print!("No options specified");
-                return;
             }
         }
     }
@@ -353,6 +346,12 @@ impl UCI {
             self.stop_signal.store(true, Ordering::Relaxed);
             let _ = handle.join();
         }
+    }
+}
+
+impl Default for UCI {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

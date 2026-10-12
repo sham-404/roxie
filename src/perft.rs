@@ -44,7 +44,7 @@ pub fn perft_divide(board: &mut Board, depth: u32) -> u64 {
             continue;
         }
 
-        let undo = board.make_move(&mov);
+        let undo = board.make_move(mov);
 
         let nodes = if depth > 1 {
             perft(board, depth - 1)
@@ -52,7 +52,7 @@ pub fn perft_divide(board: &mut Board, depth: u32) -> u64 {
             1
         };
 
-        board.unmake_move(&mov, &undo);
+        board.unmake_move(mov, &undo);
 
         println!("{}: {}", mov.to_coord(), nodes);
         total_nodes += nodes;

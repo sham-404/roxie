@@ -452,7 +452,7 @@ fn king_safety_score(board: &Board) -> i32 {
     //////// DEFENSE: PAWN SHIELD EVALUATION
 
     // White Shield
-    if w_king_file < 3 || w_king_file > 4 {
+    if !(3..=4).contains(&w_king_file) {
         let start_file = w_king_file.saturating_sub(1);
         let end_file = (w_king_file + 1).min(7);
 
@@ -470,7 +470,7 @@ fn king_safety_score(board: &Board) -> i32 {
     }
 
     // Black Shield
-    if b_king_file < 3 || b_king_file > 4 {
+    if !(3..=4).contains(&b_king_file) {
         let start_file = b_king_file.saturating_sub(1);
         let end_file = (b_king_file + 1).min(7);
 
@@ -637,6 +637,6 @@ impl Engine {
         score += king_safety_score(&self.board);
         score = scaled_score_for_50_mv_rule(&self.board, score);
 
-        ((score + TEMPO_BONUS) * &self.board.side_to_move().fac()) as i16
+        ((score + TEMPO_BONUS) * self.board.side_to_move().fac()) as i16
     }
 }

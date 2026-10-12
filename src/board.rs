@@ -57,7 +57,7 @@ pub fn init_ray_tables() {
                 let mut f = (i % 8) as i32;
 
                 // Trace forward to the board edge
-                while r >= 0 && r < 8 && f >= 0 && f < 8 {
+                while (0..8).contains(&r) && (0..8).contains(&f) {
                     line |= mask((r * 8 + f) as usize);
                     r += r_step;
                     f += f_step;
@@ -66,7 +66,7 @@ pub fn init_ray_tables() {
                 // Trace backward to the board edge
                 r = (i / 8) as i32;
                 f = (i % 8) as i32;
-                while r >= 0 && r < 8 && f >= 0 && f < 8 {
+                while (0..8).contains(&r) && (0..8).contains(&f) {
                     line |= mask((r * 8 + f) as usize);
                     r -= r_step;
                     f -= f_step;
@@ -174,7 +174,9 @@ impl Board {
         let occupancy: [u64; 3] = [0; 3];
         let mailbox: [PieceInfo; 64] = [0u8; 64];
 
-        let board = Self {
+        
+
+        Self {
             bitboards,
             occupancy,
             mailbox,
@@ -189,9 +191,7 @@ impl Board {
             mg_score: 0,
             eg_score: 0,
             game_phase: 0,
-        };
-
-        board
+        }
     }
 
     pub fn start_pos() -> Self {
@@ -299,7 +299,7 @@ impl Board {
                 (Piece::WHITE | Piece::PAWN, BLACK_PAWN_ATTACKS)
             };
 
-            let mut attackers_bb = attacks[ep_sq as usize];
+            let mut attackers_bb = attacks[ep_sq];
             let mut is_capturable = false;
 
             while let Some(atk_sq) = pop_lsb(&mut attackers_bb) {
@@ -452,7 +452,7 @@ impl Board {
                 (Piece::WHITE | Piece::PAWN, BLACK_PAWN_ATTACKS)
             };
 
-            let mut attackers_bb = attacks[ep_sq as usize];
+            let mut attackers_bb = attacks[ep_sq];
             let mut is_capturable = false;
 
             while let Some(atk_sq) = pop_lsb(&mut attackers_bb) {
@@ -464,7 +464,7 @@ impl Board {
 
             // Update zobrist only if en_passant is capturable
             if is_capturable {
-                self.hash ^= ep_keys[ep_sq as usize % 8];
+                self.hash ^= ep_keys[ep_sq % 8];
                 Some(ep_sq as u8)
             } else {
                 None
@@ -619,11 +619,7 @@ impl Board {
             Color::Black => BLACK_PAWN_ATTACKS[pos],
         };
 
-        if en_pawn & possible_pawn_atk_sq != 0 {
-            return true;
-        }
-
-        false
+        en_pawn & possible_pawn_atk_sq != 0
     }
 
     #[inline(always)]
@@ -840,11 +836,7 @@ impl Board {
 
     #[inline(always)]
     pub fn is_draw(&self) -> bool {
-        if self.is_50_rule() || self.is_repetition() || self.is_insufficient_material() {
-            return true;
-        }
-
-        false
+        self.is_50_rule() || self.is_repetition() || self.is_insufficient_material()
     }
 
     #[inline(always)]
@@ -854,7 +846,7 @@ impl Board {
 
     #[inline(always)]
     pub fn piece_on(&self, sq: usize) -> PieceInfo {
-        return self.mailbox[sq];
+        self.mailbox[sq]
     }
 
     pub fn make_null_move(&mut self) -> Option<u8> {
@@ -1305,13 +1297,12 @@ impl Board {
 
             while let Some(to) = pop_lsb(&mut atk) {
                 // Handling en_passant
-                if let Some(sq) = self.en_passant {
-                    if sq as usize == to {
+                if let Some(sq) = self.en_passant
+                    && sq as usize == to {
                         let mv = Move::new(from, to, MoveFlag::EN_PASSANT);
                         moves.push(mv);
                         continue;
                     }
-                }
 
                 if mask(to) & end_pos != 0 {
                     // Handling Capture Promotions
@@ -1428,12 +1419,12 @@ impl Board {
         // forward pawn moves
         let mut single = match Piece::get_color(pawn) {
             Piece::WHITE => {
-                let single = (pawn_bb << 8) & empty;
-                single
+                
+                (pawn_bb << 8) & empty
             }
             Piece::BLACK => {
-                let single = (pawn_bb >> 8) & empty;
-                single
+                
+                (pawn_bb >> 8) & empty
             }
             _ => unreachable!(),
         };
@@ -1470,13 +1461,12 @@ impl Board {
 
             while let Some(to) = pop_lsb(&mut atk) {
                 // Handling en_passant
-                if let Some(sq) = self.en_passant {
-                    if sq as usize == to {
+                if let Some(sq) = self.en_passant
+                    && sq as usize == to {
                         let mv = Move::new(from, to, MoveFlag::EN_PASSANT);
                         moves.push(mv);
                         continue;
                     }
-                }
 
                 if mask(to) & end_pos != 0 {
                     // Handling Capture Promotions
@@ -1683,13 +1673,12 @@ impl Board {
 
             while let Some(to) = pop_lsb(&mut atk) {
                 // Handling en_passant
-                if let Some(sq) = self.en_passant {
-                    if sq as usize == to {
+                if let Some(sq) = self.en_passant
+                    && sq as usize == to {
                         let mv = Move::new(from, to, MoveFlag::EN_PASSANT);
                         moves.push(mv);
                         continue;
                     }
-                }
 
                 if mask(to) & end_pos != 0 {
                     // Handling Capture Promotions
@@ -2010,13 +1999,12 @@ impl Board {
 
             while let Some(to) = pop_lsb(&mut atk) {
                 // Handling en_passant
-                if let Some(sq) = self.en_passant {
-                    if sq as usize == to {
+                if let Some(sq) = self.en_passant
+                    && sq as usize == to {
                         let mv = Move::new(from, to, MoveFlag::EN_PASSANT);
                         moves.push(mv);
                         continue;
                     }
-                }
 
                 if mask(to) & end_pos != 0 {
                     // Handling Capture Promotions
@@ -2312,12 +2300,11 @@ impl Board {
             if between == 0 {
                 // no piece is between the king and possible pinner, so direct check is delivered
                 checkers |= mask(pinner_sq);
-            } else if between.count_ones() == 1 {
-                if (between & own_occ) != 0 {
+            } else if between.count_ones() == 1
+                && (between & own_occ) != 0 {
                     // if the blocked piece is ours, then we are pinned
                     pinned |= between;
                 }
-            }
         }
 
         // check bishop and queen diag rays
@@ -2328,12 +2315,11 @@ impl Board {
             if between == 0 {
                 // no piece is between the king and possible pinner, so direct check is delivered
                 checkers |= mask(pinner_sq);
-            } else if between.count_ones() == 1 {
-                if (between & own_occ) != 0 {
+            } else if between.count_ones() == 1
+                && (between & own_occ) != 0 {
                     // if the blocked piece is ours, then we are pinned
                     pinned |= between;
                 }
-            }
         }
 
         (checkers, pinned)
@@ -2369,11 +2355,11 @@ impl Board {
         // adjacent Empty squares are not in attack
 
         start_pos == king_pos
-            && !self.is_square_atacked(king_pos, &color)
+            && !self.is_square_atacked(king_pos, color)
             && occ & (mask(king_pos + 1) | mask(king_pos + 2)) == 0
             && self.piece_on(king_pos + 3) == rook
-            && !self.is_square_atacked(king_pos + 1, &color)
-            && !self.is_square_atacked(king_pos + 2, &color)
+            && !self.is_square_atacked(king_pos + 1, color)
+            && !self.is_square_atacked(king_pos + 2, color)
     }
 
     fn can_castle_queenside(&self, king_pos: usize, color: &Color) -> bool {
@@ -2391,11 +2377,11 @@ impl Board {
         // adjacent Empty squares are not in attack
 
         start_pos == king_pos
-            && !self.is_square_atacked(king_pos, &color)
+            && !self.is_square_atacked(king_pos, color)
             && occ & (mask(king_pos - 1) | mask(king_pos - 2) | mask(king_pos - 3)) == 0
             && self.piece_on(king_pos - 4) == rook
-            && !self.is_square_atacked(king_pos - 1, &color)
-            && !self.is_square_atacked(king_pos - 2, &color)
+            && !self.is_square_atacked(king_pos - 1, color)
+            && !self.is_square_atacked(king_pos - 2, color)
     }
 
     pub fn score_move(&self, mv: Move) -> i32 {

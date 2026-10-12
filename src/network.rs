@@ -98,7 +98,7 @@ impl Network {
             reader.read_exact(&mut byte_buffer).unwrap();
 
             let mut i16_data = Vec::with_capacity(size);
-            for chunk in byte_buffer.chunks_exact(2) {
+            for chunk in byte_buffer.as_chunks::<2>().0 {
                 i16_data.push(i16::from_le_bytes([chunk[0], chunk[1]]));
             }
             i16_data
@@ -120,7 +120,7 @@ impl Network {
         let mut bytes = vec![0u8; size * 4];
         reader.read_exact(&mut bytes).unwrap();
         let mut out = Vec::with_capacity(size);
-        for chunk in bytes.chunks_exact(4) {
+        for chunk in bytes.as_chunks::<4>().0 {
             out.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
         }
         out
@@ -867,5 +867,11 @@ impl EvalBuf {
             fc3: [0; HL3],
             fc4: [0; OUTPUT],
         }
+    }
+}
+
+impl Default for EvalBuf {
+    fn default() -> Self {
+        Self::new()
     }
 }

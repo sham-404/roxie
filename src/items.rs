@@ -287,13 +287,7 @@ impl Move {
     pub fn from_uci(mv_str: &str, board: &mut Board) -> Option<Move> {
         let move_list = board.gen_moves();
 
-        for mv in move_list.moves {
-            if mv.to_coord() == mv_str {
-                return Some(mv);
-            }
-        }
-
-        None
+        move_list.moves.into_iter().find(|&mv| mv.to_coord() == mv_str)
     }
 }
 
@@ -436,6 +430,12 @@ impl History {
     }
 }
 
+impl Default for History {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Color {
@@ -473,12 +473,12 @@ pub const CASTLING_MASKS: [u8; 64] = {
     let all_rights = WK | WQ | BK | BQ;
     let mut masks = [all_rights; 64];
 
-    masks[(WK_START_POS - 4) as usize] = !WQ;
-    masks[WK_START_POS as usize] = !(WK | WQ);
-    masks[(WK_START_POS + 3) as usize] = !WK;
-    masks[(BK_START_POS - 4) as usize] = !BQ;
-    masks[BK_START_POS as usize] = !(BK | BQ);
-    masks[(BK_START_POS + 3) as usize] = !BK;
+    masks[WK_START_POS - 4] = !WQ;
+    masks[WK_START_POS] = !(WK | WQ);
+    masks[WK_START_POS + 3] = !WK;
+    masks[BK_START_POS - 4] = !BQ;
+    masks[BK_START_POS] = !(BK | BQ);
+    masks[BK_START_POS + 3] = !BK;
 
     masks
 };
@@ -530,6 +530,12 @@ impl CastlingRights {
     // update castling rights based on from and to
     #[inline(always)]
     pub fn update(&mut self, from: usize, to: usize) {
-        self.0 &= CASTLING_MASKS[from as usize] & CASTLING_MASKS[to as usize];
+        self.0 &= CASTLING_MASKS[from] & CASTLING_MASKS[to];
+    }
+}
+
+impl Default for CastlingRights {
+    fn default() -> Self {
+        Self::new()
     }
 }

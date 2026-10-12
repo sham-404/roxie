@@ -84,9 +84,9 @@ impl Board {
         // into consideration for assigning a move as good capture, even see is negative
         if see_score >= 0 || adjusted_see >= 0 {
             // it is a good capture
-            return final_score;
+            final_score
         } else {
-            return final_score - 49_000_000;
+            final_score - 49_000_000
         }
     }
 
@@ -124,11 +124,7 @@ impl Board {
             _ => unreachable!("how did you reach here brotha?"),
         }
 
-        if !moves.as_slice().contains(&mv) {
-            return false;
-        }
-
-        true
+        moves.as_slice().contains(&mv)
     }
 }
 
@@ -303,7 +299,7 @@ impl Engine {
 
                 Phase::BadCaptures => {
                     // scoring is already done so scoring is not needed
-                    while picker.mv_idx < picker.bad_captures.len() {
+                    if picker.mv_idx < picker.bad_captures.len() {
                         let mv = picker.bad_captures.pick_move(picker.mv_idx);
                         picker.mv_idx += 1;
 

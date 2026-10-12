@@ -90,7 +90,7 @@ impl Engine {
         }
 
         // initialisations for dynamic time management
-        let mut local_limits = limits.clone();
+        let mut local_limits = *limits;
         let mut cur_soft_time = limits.soft_time;
         let mut best_score_prev_depth = 0;
         let mut best_mv_prev_depth = Move::NULL;
@@ -145,7 +145,7 @@ impl Engine {
                         continue;
                     }
 
-                    let nodes_before_mv_search = info.nodes as u64;
+                    let nodes_before_mv_search = info.nodes;
 
                     let undo = self.board.make_move(&mv);
 
@@ -209,7 +209,7 @@ impl Engine {
 
                     self.board.unmake_move(&mv, &undo);
 
-                    let nodes_after_mv_search = info.nodes as u64;
+                    let nodes_after_mv_search = info.nodes;
 
                     let nodes_searched = nodes_after_mv_search - nodes_before_mv_search;
                     total_nodes_this_depth += nodes_searched;
@@ -218,7 +218,7 @@ impl Engine {
                     if info.get_abort() {
                         last_complete_info.nodes = self.shared.nodes.load(Ordering::Relaxed);
                         last_complete_info.seldepth = info.seldepth;
-                        last_complete_info.stats = info.stats.clone();
+                        last_complete_info.stats = info.stats;
                         last_complete_info.depth = d;
                         last_complete_info.pv = self.gen_pv();
 
@@ -360,11 +360,9 @@ impl Engine {
             // time is checked only by thread 0 (main search)
             if self.thread_id == 0
                 && let Some(time) = cur_soft_time
-            {
-                if time <= info.start_time.elapsed() {
+                && time <= info.start_time.elapsed() {
                     break;
                 }
-            }
         }
 
         last_complete_info
@@ -1038,7 +1036,7 @@ impl Engine {
         if !info.get_abort() && excluded_move == Move::NULL {
             self.shared.tt.store(TTEntry {
                 key,
-                depth: depth,
+                depth,
                 score: score_to_store as i32,
                 flag,
                 best_move: best_move_this_node,
@@ -1102,7 +1100,7 @@ impl Engine {
                     alpha: -beta,
                     beta: -beta + 1,
                     ply: ply + 1,
-                    extension: extension,
+                    extension,
                     prev_move: Move::NULL,
                     excluded_move: Move::NULL,
                 },
@@ -1438,7 +1436,7 @@ impl Engine {
                 } else {
                     let cap_piece = self.board.piece_on(mv.to());
                     self.board.get_see_value(cap_piece) as i16
-                } as i16;
+                };
 
                 if !gives_check && stand_pat + gain + Q_DELTA_MARGIN < alpha {
                     continue;
@@ -2210,6 +2208,12 @@ impl SearchStats {
     }
 }
 
+impl Default for SearchStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Clone)]
 pub struct SearchInfo {
     pub start_time: Instant,
@@ -2246,12 +2250,12 @@ impl SearchInfo {
 
     pub fn get_mate_depth(&self) -> Option<i16> {
         if self.score > MATE - MAX_PLY as i16 {
-            return Some((MATE - self.score + 1) / 2);
+            Some((MATE - self.score + 1) / 2)
         } else if self.score < -MATE + MAX_PLY as i16 {
-            return Some(-((MATE + self.score + 1) / 2));
+            Some(-((MATE + self.score + 1) / 2))
         } else {
-            return None;
-        };
+            None
+        }
     }
 
     pub fn print(&self) {
@@ -2301,17 +2305,15 @@ impl SearchInfo {
 
         // checking once in a while if the time limit is reached
         if self.nodes & 2047 == 0 {
-            if let Some(nodes) = limits.nodes {
-                if self.nodes >= nodes {
+            if let Some(nodes) = limits.nodes
+                && self.nodes >= nodes {
                     self.abort.store(true, Ordering::Relaxed);
                 }
-            }
 
-            if let Some(limit) = limits.hard_time {
-                if self.start_time.elapsed() >= limit {
+            if let Some(limit) = limits.hard_time
+                && self.start_time.elapsed() >= limit {
                     self.abort.store(true, Ordering::Relaxed);
                 }
-            }
         }
     }
 }
@@ -2573,7 +2575,7 @@ impl Board {
             let subset = my_attackers & self.bb(p_type | color_mask);
 
             if subset != 0 {
-                let lsb = subset & subset.wrapping_neg();
+                let lsb = subset.isolate_lowest_one();
 
                 return (lsb, p_type | color_mask);
             }

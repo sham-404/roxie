@@ -159,7 +159,7 @@ pub fn get_bishop_move_bits(sq: usize, occ: u64) -> u64 {
     let magic = &BISHOP_MAGIC_STORE[sq];
     let idx = magic.index(occ);
 
-    BISHOP_ATTACKS[sq][idx as usize]
+    BISHOP_ATTACKS[sq][idx]
 }
 
 #[inline(always)]
@@ -167,7 +167,7 @@ pub fn get_rook_move_bits(sq: usize, occ: u64) -> u64 {
     let magic = &ROOK_MAGIC_STORE[sq];
     let idx = magic.index(occ);
 
-    ROOK_ATTACKS[sq][idx as usize]
+    ROOK_ATTACKS[sq][idx]
 }
 
 fn get_blocker_occ(index: usize, bits: u32, mut mask: u64) -> u64 {

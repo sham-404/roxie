@@ -75,7 +75,7 @@ impl Engine {
 
     pub fn child(&self, thread_id: u16) -> Self {
         Self {
-            board: self.board.clone(),
+            board: self.board,
 
             history: HistoryTable::new(),
             continuation_history: ContinuationHistory::new(),
@@ -88,7 +88,7 @@ impl Engine {
             eval_buf: EvalBuf::new(),
             accumulators: Accumulators::new(),
 
-            thread_id: thread_id,
+            thread_id,
             shared: self.shared.clone(),
         }
     }
@@ -114,6 +114,12 @@ impl Engine {
     }
 }
 
+impl Default for Engine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct HistoryTable {
     table: [[[i32; 64]; 64]; 2],
 }
@@ -135,6 +141,12 @@ impl HistoryTable {
     #[inline(always)]
     pub fn get(&self, stm: usize, from: usize, to: usize) -> i32 {
         self.table[stm][from][to]
+    }
+}
+
+impl Default for HistoryTable {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -188,6 +200,12 @@ impl CountermoveTable {
     #[inline(always)]
     pub fn get(&self, prev_mv: Move) -> Move {
         self.table[prev_mv.from()][prev_mv.to()]
+    }
+}
+
+impl Default for CountermoveTable {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -247,6 +265,12 @@ impl ContinuationHistory {
     }
 }
 
+impl Default for ContinuationHistory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct EvalHistory {
     evals: [i16; MAX_PLY],
     checks: [bool; MAX_PLY],
@@ -293,6 +317,12 @@ impl EvalHistory {
     }
 }
 
+impl Default for EvalHistory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 const MAX_CAP_HISTORY: i32 = 8192;
 pub struct CaptureHistory {
     // [atk_piece_idx (0 - 11)][victim_type_idx (0 - 5)][to_sq (0 - 64)]
@@ -309,17 +339,23 @@ impl CaptureHistory {
     #[inline(always)]
     pub fn get(&self, attacker: PieceInfo, victim: PieceInfo, to: usize) -> i32 {
         let att_idx = Piece::to_idx(attacker);
-        let vic_type_idx = (Piece::to_idx(victim) % 6) as usize;
+        let vic_type_idx = Piece::to_idx(victim) % 6;
         self.table[att_idx][vic_type_idx][to]
     }
 
     #[inline(always)]
     pub fn update(&mut self, attacker: PieceInfo, victim: PieceInfo, to: usize, bonus: i32) {
         let att_idx = Piece::to_idx(attacker);
-        let vic_type_idx = (Piece::to_idx(victim) % 6) as usize;
+        let vic_type_idx = Piece::to_idx(victim) % 6;
 
         let h = &mut self.table[att_idx][vic_type_idx][to];
         *h += bonus - (*h * bonus.abs()) / MAX_CAP_HISTORY;
+    }
+}
+
+impl Default for CaptureHistory {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -368,6 +404,12 @@ impl CorrectionHistory {
             .into_boxed_slice()
             .try_into()
             .unwrap();
+    }
+}
+
+impl Default for CorrectionHistory {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
