@@ -1626,7 +1626,7 @@ impl Engine {
         let flag = if best_score <= orig_alpha {
             TTFlag::UpperBound
         } else {
-            TTFlag::LowerBound
+            TTFlag::Exact
         };
 
         if !info.get_abort() {

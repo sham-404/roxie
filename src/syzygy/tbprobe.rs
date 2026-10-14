@@ -258,8 +258,8 @@ pub static INDICES: LazyLock<TbIndices> = LazyLock::new(|| {
                     f = 0;
                     break;
                 }
-                f *= j - k;
-                l *= k + 1;
+                f = f.wrapping_mul(j - k);
+                l = l.wrapping_mul(k + 1);
             }
             binomial[i][j] = if l > 0 { f / l } else { 0 };
         }
@@ -1806,6 +1806,7 @@ pub fn probe_dtz(board: &mut Board, success: &mut i32) -> i32 {
         }
     }
 
+    *success = 1;
     best
 }
 
@@ -1950,4 +1951,193 @@ pub fn root_probe_dtz(
     }
 
     true
+}
+
+#[cfg(test)]
+mod syzygy_tests {
+    use super::*;
+    use crate::{
+        board::{Board, init_ray_tables},
+        evaluation::init_pesto_table,
+        magics::init_magics,
+        network::init_nn,
+        search::init_lmr_table,
+        zobrist::init_zobrist,
+    };
+
+    #[test]
+    fn verify_syzygy_wdl_dtz() {
+        fn init_all() {
+            init_zobrist();
+            init_pesto_table();
+            init_magics();
+            init_lmr_table();
+            init_nn(true);
+            init_ray_tables();
+        }
+
+        init_all();
+        init_tb("tests/syzygy");
+
+        let csv_data = "\
+5k2/8/8/8/8/3Q2K1/8/8 b - - 0 1,-2,-12
+8/8/Q4K2/8/8/3k4/8/8 b - - 0 1,-2,-14
+R7/7k/8/7K/8/8/8/8 b - - 0 1,-2,-20
+1k6/8/8/8/6K1/8/8/7R b - - 0 1,-2,-22
+8/3K4/B7/1k6/8/8/8/8 b - - 0 1,0,0
+8/8/2k5/8/1K6/8/1N6/8 w - - 0 1,0,0
+8/P7/8/8/8/8/4k1K1/8 w - - 0 1,2,1
+8/8/7P/3k4/8/8/8/6K1 b - - 0 1,-2,-2
+8/k6P/8/8/8/8/7K/8 w - - 0 1,2,1
+8/8/8/2k5/8/K1P5/8/8 b - - 0 1,0,0
+8/8/7P/8/8/1k6/8/7K w - - 0 1,2,1
+8/8/8/5p2/2K5/8/8/1k6 w - - 0 1,0,0
+8/8/7r/2Q5/8/8/3k4/K7 b - - 0 1,-2,-44
+5Q2/8/8/8/3r4/8/6K1/2k5 w - - 0 1,2,3
+8/8/6r1/8/3Q2k1/8/4K3/8 b - - 0 1,-2,-40
+2Qbk3/8/8/8/8/8/8/2K5 w - - 0 1,2,11
+2Q1K3/8/8/1n4k1/8/8/8/8 w - - 0 1,2,3
+8/Q6k/8/7p/5K2/8/8/8 b - - 0 1,-2,-4
+8/8/1k3Q2/3p4/8/3K4/8/8 b - - 0 1,-2,-4
+8/k6Q/8/8/6K1/8/1p6/8 b - - 0 1,-2,-4
+8/5k2/8/7q/8/2K2Q2/8/8 b - - 0 1,2,1
+3Q4/8/7k/8/7K/7q/8/8 w - - 0 1,2,1
+8/8/7R/8/1K6/8/6k1/3r4 w - - 0 1,0,0
+3K4/8/4r3/8/6R1/8/4k3/8 b - - 0 1,0,0
+8/4b3/1R6/8/8/4k1K1/8/8 w - - 0 1,2,2
+8/8/8/K7/8/4b3/6R1/5k2 b - - 0 1,0,0
+8/6k1/K7/6n1/8/8/4R3/8 w - - 0 1,0,0
+R7/4k3/6p1/8/8/8/7K/8 w - - 0 1,2,9
+8/3R4/8/p7/8/8/2K1k3/8 b - - 0 1,-2,-4
+8/8/8/2k4B/5K2/6b1/8/8 w - - 0 1,0,0
+3b3K/8/8/8/8/8/8/6kB w - - 0 1,0,0
+8/5K2/8/8/7n/5k2/2B5/8 w - - 0 1,0,0
+1nk5/N7/8/8/8/8/8/3K4 b - - 0 1,0,0
+8/8/7k/8/7B/2K2p2/8/8 w - - 0 1,0,0
+8/B7/8/8/8/K6p/7k/8 w - - 0 1,0,0
+2K5/p7/8/8/8/8/N7/7k w - - 0 1,0,0
+7k/1K6/8/8/8/4N3/3p4/8 w - - 0 1,0,0
+7K/8/k7/3p4/8/P7/8/8 w - - 0 1,-2,-1
+8/2P1k3/8/8/8/p7/8/2K5 b - - 0 1,0,0
+8/7k/1P6/5p2/8/8/8/2K5 b - - 0 1,-2,-1
+1k6/8/1p5K/8/8/8/3P4/8 w - - 0 1,0,0
+8/8/3B4/8/1k6/B7/6K1/8 b - - 0 1,0,0
+8/8/5K2/8/4B3/8/1k6/7N w - - 0 1,2,50
+B7/2K5/N7/8/8/8/3k4/8 b - - 0 1,-2,-53
+8/8/K7/7k/8/8/8/N5N1 w - - 0 1,0,0
+R7/8/8/8/K1R5/8/6k1/8 b - - 0 1,-2,-6
+8/8/6K1/8/2Pk4/6Q1/8/8 w - - 0 1,2,1
+5R2/8/8/1k6/8/P4K2/8/8 w - - 0 1,2,1
+3k4/8/8/8/1P6/8/8/3KR3 w - - 0 1,2,1
+8/8/8/2K4B/8/8/6P1/k7 w - - 0 1,2,1
+2K5/4N3/8/8/5k2/8/4P3/8 b - - 0 1,0,0
+8/5k2/8/8/5P1P/8/8/2K5 b - - 0 1,-2,-6
+8/P7/2PK4/1k6/8/8/8/8 w - - 0 1,2,1
+n7/8/4B3/5K2/8/k7/5B2/8 b - - 0 1,-2,-48
+8/1B4B1/8/8/n2K4/6k1/8/8 b - - 0 1,-2,-20
+8/8/4K3/1N6/8/8/N5kp/8 w - - 0 1,0,0
+1K4k1/8/8/8/8/8/N5pN/8 b - - 0 1,2,1
+K6k/8/8/7p/2N2N2/8/8/8 b - - 0 1,-1,-109
+8/5Q2/8/1b6/3r1k2/8/8/1K6 b - - 0 1,0,0
+1Q6/8/7K/8/3r4/8/1n6/1k6 b - - 0 1,0,0
+K3Q3/8/8/k7/n7/8/4n3/8 b - - 0 1,-2,-76
+7b/8/8/8/2b5/2k5/8/5Q1K w - - 0 1,2,3
+6K1/8/1Q6/8/1p1r4/8/8/k7 b - - 0 1,-2,-14
+5K2/b7/5R2/5p2/8/8/4k3/8 b - - 0 1,0,0
+K1r5/8/8/3k4/1P6/8/8/R7 w - - 0 1,2,3
+8/2k4P/8/2rR4/8/8/8/5K2 b - - 0 1,-2,-10
+8/7R/8/4k3/1r2P3/8/8/K7 b - - 0 1,0,0
+8/8/3P4/4k3/8/3p1K2/3R4/8 w - - 0 1,2,1
+2K5/8/7P/2R5/8/8/6p1/5k2 w - - 0 1,2,1
+8/8/8/2k5/1p6/3P3P/8/2K5 w - - 0 1,2,1
+8/8/4P2p/P7/8/8/8/2K2k2 b - - 0 1,-2,-2
+8/1P6/5P2/2k5/8/1p6/5K2/8 b - - 0 1,-2,-2
+8/8/k7/6P1/7K/2Q5/4q3/8 b - - 0 1,0,0
+4K3/8/1Q6/3k4/8/2q3P1/8/8 w - - 0 1,2,9
+8/5r2/8/1K6/8/7k/3P4/Q7 w - - 0 1,2,1
+8/3Q4/6q1/8/k7/7K/6Q1/8 b - - 0 1,-2,-2
+8/7k/R7/6K1/8/1R6/8/3r4 w - - 0 1,2,5
+5B2/3k4/8/K7/4R3/4r3/8/8 b - - 0 1,0,0
+4K3/7r/B7/2k3R1/8/8/8/8 b - - 0 1,0,0
+8/2K5/8/1r4k1/5N2/5R2/8/8 w - - 0 1,0,0
+8/1b6/8/8/4k3/8/1N1B4/4K3 b - - 0 1,0,0
+8/8/5K2/2k1nB2/1N6/8/8/8 w - - 0 1,0,0
+8/2b5/4BK2/8/7P/8/3k4/8 b - - 0 1,0,0
+2b5/8/1K2P3/8/8/5k2/8/1B6 b - - 0 1,0,0
+8/5k2/8/8/8/2N5/3P3K/n7 b - - 0 1,0,0
+3B4/8/5k2/b7/8/3K4/1B6/8 b - - 0 1,0,0
+6k1/8/8/1B4NB/8/8/8/1K6 b - - 0 1,-2,-18
+4K3/8/8/8/8/7B/3B1N2/4k3 b - - 0 1,-2,-2
+6K1/8/8/8/8/5k2/2Bp3P/8 w - - 0 1,2,3
+8/3P4/8/8/5k1P/8/4b3/1K6 w - - 0 1,2,1
+8/2p2p2/8/8/7K/k1Q5/8/8 b - - 0 1,-2,-2
+8/6kp/8/8/8/3Q4/p2K4/8 w - - 0 1,2,3
+8/p2R4/8/8/5k2/1p6/7K/8 w - - 0 1,2,1
+8/2p5/K7/5k2/6p1/5N2/8/8 b - - 0 1,2,1
+8/Q7/8/5r2/8/5k2/1R5K/8 b - - 0 1,-2,-10
+3q4/8/Q7/8/8/7k/1K5R/8 b - - 0 1,0,0
+8/8/2n5/8/2k1B3/8/B7/6K1 b - - 0 1,0,0
+4k3/8/8/4rK2/8/2B5/8/3R4 w - - 0 1,2,1
+8/3N4/2N5/K7/p6k/8/8/8 b - - 0 1,0,0
+4K3/4P3/8/8/8/4r3/8/2R3k1 b - - 0 1,-2,-8";
+
+        let mut passed = 0;
+        let mut failed = 0;
+
+        for (line_number, line) in csv_data.lines().enumerate() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with("fen") {
+                continue;
+            }
+
+            let parts: Vec<&str> = line.split(',').collect();
+            assert!(
+                parts.len() == 3,
+                "Malformed line {}: {}",
+                line_number + 1,
+                line
+            );
+
+            let fen = parts[0];
+            // println!("Processing fen {}", fen);
+            let expected_wdl: i32 = parts[1].parse().expect("Failed to parse WDL");
+            let expected_dtz: i32 = parts[2].parse().expect("Failed to parse DTZ");
+
+            let mut board = Board::load_fen(fen);
+
+            let mut wdl_success = 0;
+            let wdl = probe_wdl(&mut board, &mut wdl_success);
+
+            let mut dtz_success = 0;
+            let dtz = probe_dtz(&mut board, &mut dtz_success);
+
+            let wdl_pass = wdl_success > 0 && wdl == expected_wdl;
+            let dtz_pass = dtz_success > 0 && dtz == expected_dtz;
+
+            if wdl_pass && dtz_pass {
+                passed += 1;
+            } else {
+                failed += 1;
+                println!("FAILED: {}", fen);
+                if !wdl_pass {
+                    println!(
+                        "  WDL -> Expected: {:2}, Got: {:2} (Success Flag: {})",
+                        expected_wdl, wdl, wdl_success
+                    );
+                }
+                if !dtz_pass {
+                    println!(
+                        "  DTZ -> Expected: {:3}, Got: {:3} (Success Flag: {})",
+                        expected_dtz, dtz, dtz_success
+                    );
+                }
+            }
+        }
+
+        println!("\nSyzygy Verification Results");
+        println!("Passed: {}", passed);
+        println!("Failed: {}", failed);
+
+        assert_eq!(failed, 0, "One or more Syzygy tablebase checks failed.");
+    }
 }
