@@ -443,24 +443,17 @@ impl Board {
         self.en_passant = if flag == MoveFlag::DOUBLE_PUSH {
             let ep_sq = (from + to) / 2;
 
-            // if we are white, we must check if the ep square is being attacked
-            // by black, so we check where there is any black pawn in the square
-            // in which white pawn can attack if it is in the ep square
-            let (enemy_pawn, attacks) = if self.side_to_move == Color::White {
-                (Piece::BLACK | Piece::PAWN, WHITE_PAWN_ATTACKS)
-            } else {
+            // Keep the ep square only if the side to move can actually capture
+            // on it. The capturing pawn is the one of the side to move, and it
+            // has to stand on a square from which it attacks the ep square,
+            // which is the reverse of the mover's own attack table.
+            let (capturer_pawn, reverse_attacks) = if self.side_to_move == Color::White {
                 (Piece::WHITE | Piece::PAWN, BLACK_PAWN_ATTACKS)
+            } else {
+                (Piece::BLACK | Piece::PAWN, WHITE_PAWN_ATTACKS)
             };
 
-            let mut attackers_bb = attacks[ep_sq];
-            let mut is_capturable = false;
-
-            while let Some(atk_sq) = pop_lsb(&mut attackers_bb) {
-                if self.piece_on(atk_sq) == enemy_pawn {
-                    is_capturable = true;
-                    break; // found one attacker, no need to check the other
-                }
-            }
+            let is_capturable = self.bb(capturer_pawn) & reverse_attacks[ep_sq] != 0;
 
             // Update zobrist only if en_passant is capturable
             if is_capturable {
