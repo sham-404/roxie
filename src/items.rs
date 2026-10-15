@@ -287,7 +287,10 @@ impl Move {
     pub fn from_uci(mv_str: &str, board: &mut Board) -> Option<Move> {
         let move_list = board.gen_moves();
 
-        move_list.moves.into_iter().find(|&mv| mv.to_coord() == mv_str)
+        move_list
+            .moves
+            .into_iter()
+            .find(|&mv| mv.to_coord() == mv_str)
     }
 }
 

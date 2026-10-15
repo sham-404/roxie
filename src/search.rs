@@ -360,9 +360,10 @@ impl Engine {
             // time is checked only by thread 0 (main search)
             if self.thread_id == 0
                 && let Some(time) = cur_soft_time
-                && time <= info.start_time.elapsed() {
-                    break;
-                }
+                && time <= info.start_time.elapsed()
+            {
+                break;
+            }
         }
 
         last_complete_info
@@ -2306,14 +2307,16 @@ impl SearchInfo {
         // checking once in a while if the time limit is reached
         if self.nodes & 2047 == 0 {
             if let Some(nodes) = limits.nodes
-                && self.nodes >= nodes {
-                    self.abort.store(true, Ordering::Relaxed);
-                }
+                && self.nodes >= nodes
+            {
+                self.abort.store(true, Ordering::Relaxed);
+            }
 
             if let Some(limit) = limits.hard_time
-                && self.start_time.elapsed() >= limit {
-                    self.abort.store(true, Ordering::Relaxed);
-                }
+                && self.start_time.elapsed() >= limit
+            {
+                self.abort.store(true, Ordering::Relaxed);
+            }
         }
     }
 }

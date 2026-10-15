@@ -140,10 +140,8 @@ fn compute_hash(board: &Board) -> u64 {
     // castling
     hash ^= castling[board.castling.0 as usize];
 
-    // en passant
-    if let Some(sq) = board.en_passant {
-        let file = sq % 8;
-        hash ^= ep[file as usize];
+    if let Some(ep_sq) = board.en_passant {
+        hash ^= ep[(ep_sq as usize) % 8];
     }
 
     hash
@@ -173,8 +171,6 @@ impl Board {
         let bitboards = [0u64; 12];
         let occupancy: [u64; 3] = [0; 3];
         let mailbox: [PieceInfo; 64] = [0u8; 64];
-
-        
 
         Self {
             bitboards,
@@ -290,27 +286,7 @@ impl Board {
             let rank = (bytes[1] - b'1') as usize;
             let ep_sq = rank * 8 + file;
 
-            // if we are white, we must check if the ep square is being attacked
-            // by black, so we check where there is any black pawn in the square
-            // in which white pawn can attack if it is in the ep square
-            let (enemy_pawn, attacks) = if board.side_to_move == Color::White {
-                (Piece::BLACK | Piece::PAWN, WHITE_PAWN_ATTACKS)
-            } else {
-                (Piece::WHITE | Piece::PAWN, BLACK_PAWN_ATTACKS)
-            };
-
-            let mut attackers_bb = attacks[ep_sq];
-            let mut is_capturable = false;
-
-            while let Some(atk_sq) = pop_lsb(&mut attackers_bb) {
-                if board.piece_on(atk_sq) == enemy_pawn {
-                    is_capturable = true;
-                    break; // found one attacker, no need to check the other
-                }
-            }
-
-            // Update zobrist only if en_passant is capturable
-            if is_capturable {
+            if board.is_ep_capturable(ep_sq as u8, board.side_to_move) {
                 board.en_passant = Some(ep_sq as u8);
             }
         };
@@ -371,8 +347,8 @@ impl Board {
             self.pawn_hash ^= zob[piece_idx][from];
         }
 
-        if let Some(sq) = self.en_passant {
-            self.hash ^= ep_keys[sq as usize % 8];
+        if let Some(ep_sq) = self.en_passant {
+            self.hash ^= ep_keys[ep_sq as usize % 8];
         }
 
         // update last_irreversible and halfmove_clock
@@ -441,23 +417,11 @@ impl Board {
 
         // updating en_passant square
         self.en_passant = if flag == MoveFlag::DOUBLE_PUSH {
-            let ep_sq = (from + to) / 2;
+            let ep_sq = (from + to) as u8 / 2;
 
-            // Keep the ep square only if the side to move can actually capture
-            // on it. The capturing pawn is the one of the side to move, and it
-            // has to stand on a square from which it attacks the ep square,
-            // which is the reverse of the mover's own attack table.
-            let (capturer_pawn, reverse_attacks) = if self.side_to_move == Color::White {
-                (Piece::WHITE | Piece::PAWN, BLACK_PAWN_ATTACKS)
-            } else {
-                (Piece::BLACK | Piece::PAWN, WHITE_PAWN_ATTACKS)
-            };
-
-            let is_capturable = self.bb(capturer_pawn) & reverse_attacks[ep_sq] != 0;
-
-            // Update zobrist only if en_passant is capturable
-            if is_capturable {
-                self.hash ^= ep_keys[ep_sq % 8];
+            // update hash only if opponent has en_passant possibilities
+            if self.is_ep_capturable(ep_sq, self.side_to_move.opponent()) {
+                self.hash ^= ep_keys[(ep_sq as usize) % 8];
                 Some(ep_sq as u8)
             } else {
                 None
@@ -833,6 +797,21 @@ impl Board {
     }
 
     #[inline(always)]
+    pub fn is_ep_capturable(&self, ep_sq: u8, side: Color) -> bool {
+        // Keep the ep square only if the side to move can actually capture
+        // on it. The capturing pawn is the one of the side to move, and it
+        // has to stand on a square from which it attacks the ep square,
+        // which is the reverse of the mover's own attack table.
+        let (capturer_pawn, reverse_attacks) = if side == Color::White {
+            (Piece::WHITE | Piece::PAWN, BLACK_PAWN_ATTACKS)
+        } else {
+            (Piece::BLACK | Piece::PAWN, WHITE_PAWN_ATTACKS)
+        };
+
+        self.bb(capturer_pawn) & reverse_attacks[ep_sq as usize] != 0
+    }
+
+    #[inline(always)]
     pub fn halfmove_clock(&self) -> usize {
         self.halfmove_clock
     }
@@ -846,18 +825,12 @@ impl Board {
         let side_key = *SIDE_KEY.get().unwrap();
         let ep_keys = ENPASSANT_KEYS.get().unwrap();
 
-        // 1. Flip the side (This matches your if board.side_to_move == Color::Black check)
-        // We XOR the key regardless of current color to "toggle" it
-        self.hash ^= side_key;
-
-        // 2. Clear En Passant from the hash
-        if let Some(sq) = self.en_passant {
-            let file = sq % 8;
-            self.hash ^= ep_keys[file as usize];
+        if let Some(ep_sq) = self.en_passant {
+            self.hash ^= ep_keys[(ep_sq as usize) % 8];
         }
 
-        // 3. Update the board state
-        // Store the old EP square so you can restore it in unmake!
+        self.hash ^= side_key;
+
         let old_epsq = self.en_passant;
         self.en_passant = None;
         self.side_to_move = self.side_to_move.opponent();
@@ -867,6 +840,7 @@ impl Board {
             compute_hash(self),
             "make_null_move: Zobrist mismatch"
         );
+
         old_epsq
     }
 
@@ -874,15 +848,12 @@ impl Board {
         let side_key = *SIDE_KEY.get().unwrap();
         let ep_keys = ENPASSANT_KEYS.get().unwrap();
 
-        // 1. Flip side back
         self.side_to_move = self.side_to_move.opponent();
         self.hash ^= side_key;
 
-        // 2. Restore En Passant
         self.en_passant = old_epsq;
-        if let Some(sq) = self.en_passant {
-            let file = sq % 8;
-            self.hash ^= ep_keys[file as usize];
+        if let Some(ep_sq) = self.en_passant {
+            self.hash ^= ep_keys[(ep_sq as usize) % 8];
         }
 
         debug_assert_eq!(
@@ -1291,11 +1262,12 @@ impl Board {
             while let Some(to) = pop_lsb(&mut atk) {
                 // Handling en_passant
                 if let Some(sq) = self.en_passant
-                    && sq as usize == to {
-                        let mv = Move::new(from, to, MoveFlag::EN_PASSANT);
-                        moves.push(mv);
-                        continue;
-                    }
+                    && sq as usize == to
+                {
+                    let mv = Move::new(from, to, MoveFlag::EN_PASSANT);
+                    moves.push(mv);
+                    continue;
+                }
 
                 if mask(to) & end_pos != 0 {
                     // Handling Capture Promotions
@@ -1411,14 +1383,8 @@ impl Board {
 
         // forward pawn moves
         let mut single = match Piece::get_color(pawn) {
-            Piece::WHITE => {
-                
-                (pawn_bb << 8) & empty
-            }
-            Piece::BLACK => {
-                
-                (pawn_bb >> 8) & empty
-            }
+            Piece::WHITE => (pawn_bb << 8) & empty,
+            Piece::BLACK => (pawn_bb >> 8) & empty,
             _ => unreachable!(),
         };
 
@@ -1455,11 +1421,12 @@ impl Board {
             while let Some(to) = pop_lsb(&mut atk) {
                 // Handling en_passant
                 if let Some(sq) = self.en_passant
-                    && sq as usize == to {
-                        let mv = Move::new(from, to, MoveFlag::EN_PASSANT);
-                        moves.push(mv);
-                        continue;
-                    }
+                    && sq as usize == to
+                {
+                    let mv = Move::new(from, to, MoveFlag::EN_PASSANT);
+                    moves.push(mv);
+                    continue;
+                }
 
                 if mask(to) & end_pos != 0 {
                     // Handling Capture Promotions
@@ -1667,11 +1634,12 @@ impl Board {
             while let Some(to) = pop_lsb(&mut atk) {
                 // Handling en_passant
                 if let Some(sq) = self.en_passant
-                    && sq as usize == to {
-                        let mv = Move::new(from, to, MoveFlag::EN_PASSANT);
-                        moves.push(mv);
-                        continue;
-                    }
+                    && sq as usize == to
+                {
+                    let mv = Move::new(from, to, MoveFlag::EN_PASSANT);
+                    moves.push(mv);
+                    continue;
+                }
 
                 if mask(to) & end_pos != 0 {
                     // Handling Capture Promotions
@@ -1993,11 +1961,12 @@ impl Board {
             while let Some(to) = pop_lsb(&mut atk) {
                 // Handling en_passant
                 if let Some(sq) = self.en_passant
-                    && sq as usize == to {
-                        let mv = Move::new(from, to, MoveFlag::EN_PASSANT);
-                        moves.push(mv);
-                        continue;
-                    }
+                    && sq as usize == to
+                {
+                    let mv = Move::new(from, to, MoveFlag::EN_PASSANT);
+                    moves.push(mv);
+                    continue;
+                }
 
                 if mask(to) & end_pos != 0 {
                     // Handling Capture Promotions
@@ -2293,11 +2262,10 @@ impl Board {
             if between == 0 {
                 // no piece is between the king and possible pinner, so direct check is delivered
                 checkers |= mask(pinner_sq);
-            } else if between.count_ones() == 1
-                && (between & own_occ) != 0 {
-                    // if the blocked piece is ours, then we are pinned
-                    pinned |= between;
-                }
+            } else if between.count_ones() == 1 && (between & own_occ) != 0 {
+                // if the blocked piece is ours, then we are pinned
+                pinned |= between;
+            }
         }
 
         // check bishop and queen diag rays
@@ -2308,11 +2276,10 @@ impl Board {
             if between == 0 {
                 // no piece is between the king and possible pinner, so direct check is delivered
                 checkers |= mask(pinner_sq);
-            } else if between.count_ones() == 1
-                && (between & own_occ) != 0 {
-                    // if the blocked piece is ours, then we are pinned
-                    pinned |= between;
-                }
+            } else if between.count_ones() == 1 && (between & own_occ) != 0 {
+                // if the blocked piece is ours, then we are pinned
+                pinned |= between;
+            }
         }
 
         (checkers, pinned)
