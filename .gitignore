@@ -1,19 +1,13 @@
 /target
 
-/tests/*
-
 releases/
 venv/
 
-*.nn
-*.nnue
-*.csv
+tests/syzygy
 
 # Ignoring the binary produced by makefile
 roxie*
 
-!tests/README.md
-!tests/chess_moves.pgn
-!tests/match.py
-!tests/sample_positions.csv
 !src/*.nnue
+
+local_tests/
