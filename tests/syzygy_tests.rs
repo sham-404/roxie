@@ -4,7 +4,7 @@ use roxie::{
     magics::init_magics,
     network::init_nn,
     search::init_lmr_table,
-    syzygy::tbprobe::{init_tb, probe_dtz, probe_wdl},
+    syzygy::tbprobe::{TbRootMoves, init_tb, probe_dtz, probe_wdl, root_probe_dtz},
     zobrist::init_zobrist,
 };
 use std::fs;
@@ -44,7 +44,7 @@ fn verify_syzygy_wdl_dtz_from_csv() {
         let parts: Vec<&str> = line.split(',').collect();
         assert_eq!(
             parts.len(),
-            3,
+            4,
             "Malformed line {}: {}",
             line_number + 1,
             line
@@ -90,4 +90,76 @@ fn verify_syzygy_wdl_dtz_from_csv() {
     println!("Failed: {}", failed);
 
     assert_eq!(failed, 0, "One or more Syzygy tablebase checks failed.");
+}
+
+#[test]
+fn verify_syzygy_root_dtz_best_move() {
+    init_engine_tables();
+
+    let csv_path = "tests/3-4-5_tb_positions.csv";
+    let csv_data = fs::read_to_string(csv_path)
+        .unwrap_or_else(|_| panic!("Failed to read benchmark CSV at {}", csv_path));
+
+    let mut passed = 0;
+    let mut failed = 0;
+
+    for (line_number, line) in csv_data.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with("fen") || line.starts_with('#') {
+            continue;
+        }
+
+        let parts: Vec<&str> = line.split(',').collect();
+        // Skip malformed lines (e.g. trailing empty lines)
+        if parts.len() < 4 {
+            continue;
+        }
+
+        let fen = parts[0];
+        let expected_moves_str = parts[3];
+
+        let valid_moves: Vec<&str> = expected_moves_str.split('|').collect();
+
+        let mut board = Board::load_fen(fen);
+        let mut rm = TbRootMoves {
+            moves: Vec::with_capacity(256),
+        };
+
+        let success = root_probe_dtz(&mut board, false, true, &mut rm);
+        if !success || rm.moves.is_empty() {
+            if valid_moves.contains(&"None") {
+                passed += 1;
+            } else {
+                failed += 1;
+                println!(
+                    "FAILED [Line {}]: {} -> DTZ Root probe failed (success = false or empty moves).",
+                    line_number + 1,
+                    fen
+                );
+            }
+            continue;
+        }
+        // Sort to get the highest tb_rank move first
+        rm.moves.sort_by(|a, b| b.tb_rank.cmp(&a.tb_rank));
+        let best_move = rm.moves[0].mv;
+
+        let move_str = best_move.to_coord();
+
+        if valid_moves.contains(&move_str.as_str()) {
+            passed += 1;
+        } else {
+            failed += 1;
+            println!("FAILED [Line {}]: {}", line_number + 1, fen);
+            println!(
+                "   MOVE -> Expected one of: {:?}, Got: {}",
+                valid_moves, move_str
+            );
+        }
+    }
+
+    println!("\nSyzygy Root Probing Summary");
+    println!("Passed: {}", passed);
+    println!("Failed: {}", failed);
+
+    assert_eq!(failed, 0, "One or more Syzygy root move checks failed.");
 }
