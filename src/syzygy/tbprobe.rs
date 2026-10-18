@@ -1090,7 +1090,7 @@ pub unsafe fn load_tb_tables(file_name: &str) -> Option<BaseEntry> {
                                     } else {
                                         &mut be.pawn_dtz_map_idx[t][i]
                                     };
-                                    *map_idx = (data as usize + 2 - be.dtz_map) as u16;
+                                    *map_idx = ((data as usize + 2 - be.dtz_map) / 2) as u16;
                                     let len = u16::from_le_bytes([*data, *data.add(1)]) as usize;
                                     data = data.add(2 + 2 * len);
                                 }
@@ -1390,15 +1390,7 @@ fn fill_squares(
         color
     };
 
-    let piece_type = match pc & 7 {
-        1 => Piece::PAWN,
-        2 => Piece::KNIGHT,
-        3 => Piece::BISHOP,
-        4 => Piece::ROOK,
-        5 => Piece::QUEEN,
-        6 => Piece::KING,
-        _ => return i + 1,
-    };
+    let piece_type = Piece::get_type(pc);
 
     let mut bb = board.bb(color | piece_type);
     let start = i;
@@ -1740,7 +1732,7 @@ pub fn probe_dtz(board: &mut Board, success: &mut i32) -> i32 {
             let piece = board.piece_on(mv.from());
             let is_capture = mv.flag().is_capture() || mv.flag() == MoveFlag::EN_PASSANT;
 
-            if (piece & 7) != Piece::PAWN || is_capture {
+            if Piece::get_type(piece) != Piece::PAWN || is_capture {
                 continue;
             }
 
@@ -1778,7 +1770,7 @@ pub fn probe_dtz(board: &mut Board, success: &mut i32) -> i32 {
         let piece = board.piece_on(mv.from());
         let is_capture = mv.flag().is_capture() || mv.flag() == MoveFlag::EN_PASSANT;
 
-        if is_capture || (piece & 7) == Piece::PAWN {
+        if is_capture || Piece::get_type(piece) == Piece::PAWN {
             continue;
         }
 
@@ -1888,23 +1880,38 @@ pub fn root_probe_dtz(
 
     for i in 0..moves.len() {
         let mv = moves.moves[i];
+
+        // Determine whether this move resets the fifty-move counter
+        // BEFORE making the move.
+        let piece = board.piece_on(mv.from());
+        let is_zeroing = Piece::get_type(piece) == Piece::PAWN
+            || mv.flag().is_capture()
+            || mv.flag() == MoveFlag::EN_PASSANT;
+
         let undo = board.make_move(&mv);
         let mut success = 1;
         let mut v;
 
-        if board.halfmove_clock() == 0 {
+        if is_zeroing {
+            // Zeroing moves are evaluated using WDL.
             v = -probe_wdl(board, &mut success);
+
             if success == 0 {
                 board.unmake_move(&mv, &undo);
                 return false;
             }
+
             v = WDL_TO_DTZ[(v + 2) as usize];
         } else {
+            // Non-zeroing moves are evaluated using DTZ.
             v = -probe_dtz(board, &mut success);
+
             if success == 0 {
                 board.unmake_move(&mv, &undo);
                 return false;
             }
+
+            // Account for the root move itself.
             if v > 0 {
                 v += 1;
             } else if v < 0 {
@@ -1912,21 +1919,32 @@ pub fn root_probe_dtz(
             }
         }
 
-        if v == 2 && is_mate(board) {
-            v = 1;
+        // Handle direct checkmates.
+        if is_mate(board) {
+            if v > 0 {
+                v = 1;
+            } else if v < 0 {
+                v = -1;
+            }
         }
 
         board.unmake_move(&mv, &undo);
 
+        // Calculate the rank, accounting for the fifty-move rule
+        // and possible repetition.
         let r = if v > 0 {
-            if v + cnt50 <= 99 && !has_repeated {
-                1000
+            if v == 1 {
+                2000
+            } else if v + cnt50 <= 99 && !has_repeated {
+                1000 - v
             } else {
                 1000 - (v + cnt50)
             }
         } else if v < 0 {
-            if -v * 2 + cnt50 < 100 {
-                -1000
+            if v == -1 {
+                -2000
+            } else if -v * 2 + cnt50 < 100 {
+                -1000 - v
             } else {
                 -1000 + (-v + cnt50)
             }
@@ -1935,11 +1953,11 @@ pub fn root_probe_dtz(
         };
 
         let score = if r >= bound {
-            MATE as i32 - MAX_PLY as i32 - 1
+            MATE as i32 - MAX_PLY as i32 + 1
         } else if r > -bound {
             0
         } else {
-            -MATE as i32 + MAX_PLY as i32 + 1
+            -MATE as i32 + MAX_PLY as i32 - 1
         };
 
         rm.moves.push(TbRootMove {

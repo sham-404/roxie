@@ -512,6 +512,7 @@ impl Engine {
             && piece_count <= info.tb_pieces_limit as u32
             && depth >= 4
             && excluded_move == Move::NULL
+            && self.board.halfmove_clock() == 0
             && !self.board.get_castling_rights().has_rights()
         {
             let mut wdl = 0i8;
@@ -567,10 +568,19 @@ impl Engine {
                     0 // Exact
                 };
 
-                let is_exact = bound == 0 || self.board.halfmove_clock() == 0;
+                let is_exact = bound == 0;
 
                 if is_exact || (bound == 1 && tb_score >= beta) || (bound == 2 && tb_score <= alpha)
                 {
+                    let existing_entry = self.shared.tt.probe(key);
+                    let existing_tt_mv = existing_entry.map_or(Move::NULL, |e| e.best_move());
+                    let existing_score = existing_entry.map_or(0, |e| e.score() as i16);
+
+                    // if it is a mate score, don't overwrite it
+                    if existing_score.abs() > MATE - MAX_PLY as i16 {
+                        return tb_score;
+                    }
+
                     self.shared.tt.store(TTEntry {
                         key,
                         depth,
@@ -582,7 +592,7 @@ impl Engine {
                         } else {
                             TTFlag::UpperBound
                         },
-                        best_move: Move::NULL,
+                        best_move: existing_tt_mv,
                         age: self.shared.tt.get_generation(),
                     });
                     return tb_score;
