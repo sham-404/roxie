@@ -352,7 +352,7 @@ impl Board {
         }
 
         // update last_irreversible and halfmove_clock
-        if captured != Piece::NONE || cur_piece == Piece::PAWN {
+        if captured != Piece::NONE || Piece::get_type(cur_piece) == Piece::PAWN {
             self.last_irreversible = self.history.len();
             self.halfmove_clock = 0;
         } else {
