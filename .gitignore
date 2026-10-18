@@ -4,6 +4,8 @@ releases/
 venv/
 
 tests/syzygy
+tests/pgns
+tests/results
 
 # Ignoring the binary produced by makefile
 roxie*
