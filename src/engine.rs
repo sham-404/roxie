@@ -401,39 +401,82 @@ const CORR_SCALE: i32 = CORR_GRAIN as i32 * 2;
 
 pub struct CorrectionHistory {
     // [stm color][pawn_key % size]
-    table: Box<[[i32; CORR_HIST_SIZE]; 2]>,
+    pawn_table: Box<[[i32; CORR_HIST_SIZE]; 2]>,
+    // [stm color][minor_key % size]
+    minor_table: Box<[[i32; CORR_HIST_SIZE]; 2]>,
+    // [stm color][major_key % size]
+    major_table: Box<[[i32; CORR_HIST_SIZE]; 2]>,
 }
 
 impl CorrectionHistory {
     pub fn new() -> Self {
         Self {
-            table: vec![[0; CORR_HIST_SIZE]; 2]
+            pawn_table: vec![[0; CORR_HIST_SIZE]; 2]
+                .into_boxed_slice()
+                .try_into()
+                .unwrap(),
+            minor_table: vec![[0; CORR_HIST_SIZE]; 2]
+                .into_boxed_slice()
+                .try_into()
+                .unwrap(),
+            major_table: vec![[0; CORR_HIST_SIZE]; 2]
                 .into_boxed_slice()
                 .try_into()
                 .unwrap(),
         }
     }
 
-    pub fn get(&self, stm: usize, pawn_key: u64) -> i32 {
-        let idx = (pawn_key as usize) & (CORR_HIST_SIZE - 1);
-        self.table[stm][idx] / CORR_SCALE
-    }
-
-    pub fn update(&mut self, stm: usize, pawn_key: u64, err: i32, depth: i32) {
-        let idx = (pawn_key as usize) & (CORR_HIST_SIZE - 1);
-        let entry = &mut self.table[stm][idx];
-
-        // using quadratic formula for weight calculation
-        let weight = (depth * depth + 2 * depth + 1).min(128);
-
+    #[inline(always)]
+    fn blend(entry: &mut i32, err: i32, weight: i32) {
         // fixed point EMA interpolation blending old value with new error
         let interp = (*entry * (1024 - weight) + err * weight) / 1024;
 
         *entry = interp.clamp(-(MAX_CORR_HISTORY as i32), MAX_CORR_HISTORY as i32);
     }
 
+    pub fn get(&self, stm: usize, pawn_key: u64, minor_key: u64, major_key: u64) -> i32 {
+        let pawn_idx = (pawn_key as usize) & (CORR_HIST_SIZE - 1);
+        let minor_idx = (minor_key as usize) & (CORR_HIST_SIZE - 1);
+        let major_idx = (major_key as usize) & (CORR_HIST_SIZE - 1);
+
+        let sum = self.pawn_table[stm][pawn_idx]
+            + self.minor_table[stm][minor_idx]
+            + self.major_table[stm][major_idx];
+
+        (sum / 3) / CORR_SCALE
+    }
+
+    pub fn update(
+        &mut self,
+        stm: usize,
+        pawn_key: u64,
+        minor_key: u64,
+        major_key: u64,
+        err: i32,
+        depth: i32,
+    ) {
+        let pawn_idx = (pawn_key as usize) & (CORR_HIST_SIZE - 1);
+        let minor_idx = (minor_key as usize) & (CORR_HIST_SIZE - 1);
+        let major_idx = (major_key as usize) & (CORR_HIST_SIZE - 1);
+
+        // using quadratic formula for weight calculation
+        let weight = (depth * depth + 2 * depth + 1).min(128);
+
+        Self::blend(&mut self.pawn_table[stm][pawn_idx], err, weight);
+        Self::blend(&mut self.minor_table[stm][minor_idx], err, weight);
+        Self::blend(&mut self.major_table[stm][major_idx], err, weight);
+    }
+
     pub fn clear(&mut self) {
-        self.table = vec![[0; CORR_HIST_SIZE]; 2]
+        self.pawn_table = vec![[0; CORR_HIST_SIZE]; 2]
+            .into_boxed_slice()
+            .try_into()
+            .unwrap();
+        self.minor_table = vec![[0; CORR_HIST_SIZE]; 2]
+            .into_boxed_slice()
+            .try_into()
+            .unwrap();
+        self.major_table = vec![[0; CORR_HIST_SIZE]; 2]
             .into_boxed_slice()
             .try_into()
             .unwrap();
