@@ -52,32 +52,32 @@ impl Piece {
         }
     }
 
+    /// idx 0-5 -> White Pawn to King
+    /// idx 6-11 -> Black Pawn to King
     #[inline(always)]
-    pub fn from_idx(idx: usize) -> PieceInfo {
-        // idx 0-5 -> White Pawn to King
-        // idx 6-11 -> Black Pawn to King
+    pub const fn from_idx(idx: usize) -> PieceInfo {
         let color = if idx < 6 { Self::WHITE } else { Self::BLACK };
         let piece_type = (idx % 6) as u8 + 1;
         color | piece_type
     }
 
-    // Indexes the pieces from 1 t0 11 for bitboards
+    /// Indexes the pieces from 1 t0 11 for bitboards
+    /// This maps:
+    /// White (P, N, B, R, Q, K) -> 0, 1, 2, 3, 4, 5
+    /// Black (P, N, B, R, Q, K) -> 6, 7, 8, 9, 10, 11
     #[inline(always)]
     pub const fn to_idx(p: PieceInfo) -> usize {
-        // This maps:
-        // White (P, N, B, R, Q, K) -> 0, 1, 2, 3, 4, 5
-        // Black (P, N, B, R, Q, K) -> 6, 7, 8, 9, 10, 11
         debug_assert!((p & 0b111) != 0);
         let type_idx = (p & 0b111) as usize - 1;
         let color_idx = if (p & 16) != 0 { 6 } else { 0 };
         type_idx + color_idx
     }
 
+    /// This maps:
+    /// White (P, N, B, R, Q, K) -> 0, 1, 2, 3, 4, _
+    /// Black (P, N, B, R, Q, K) -> 5, 6, 7, 8, 9, _
     #[inline(always)]
     pub const fn to_hkp_idx(p: PieceInfo) -> usize {
-        // This maps:
-        // White (P, N, B, R, Q, K) -> 0, 1, 2, 3, 4, _
-        // Black (P, N, B, R, Q, K) -> 5, 6, 7, 8, 9, _
         debug_assert!((p & 0b111) != 0);
         let type_idx = (p & 0b111) as usize - 1;
         let color_idx = if (p & 16) != 0 { 5 } else { 0 };
@@ -299,9 +299,9 @@ pub struct Undo {
     pub captured: PieceInfo,
     pub prev_en_passant_sq: Option<u8>,
     pub prev_castling_rights: CastlingRights,
-    pub prev_last_irreversible: usize,
     pub prev_halfmove_clock: usize,
     pub prev_pawn_hash: u64,
+    pub prev_hash: u64,
 }
 
 impl Undo {
@@ -309,17 +309,17 @@ impl Undo {
         captured: PieceInfo,
         castling: CastlingRights,
         ensq: Option<u8>,
-        last_irreversible: usize,
         halfmove_clock: usize,
         pawn_hash: u64,
+        prev_hash: u64,
     ) -> Self {
         Self {
             captured,
             prev_en_passant_sq: ensq,
             prev_castling_rights: castling,
-            prev_last_irreversible: last_irreversible,
             prev_halfmove_clock: halfmove_clock,
             prev_pawn_hash: pawn_hash,
+            prev_hash,
         }
     }
 }
@@ -394,13 +394,15 @@ impl MoveList {
     }
 }
 
+/// Stores the hash of the board, which is used for
+/// history and in repetition check
 #[derive(Clone, Copy)]
-pub struct History {
+pub struct GameHistory {
     stack: [u64; 1024],
     len: usize,
 }
 
-impl History {
+impl GameHistory {
     pub fn new() -> Self {
         Self {
             stack: [0; 1024],
@@ -409,31 +411,41 @@ impl History {
     }
 
     #[inline(always)]
+    pub fn push(&mut self, key: u64) {
+        debug_assert!(self.len < 1024);
+        unsafe {
+            *self.stack.get_unchecked_mut(self.len) = key;
+        }
+        self.len += 1;
+    }
+
+    #[inline(always)]
+    pub fn pop(&mut self) {
+        debug_assert!(self.len > 0);
+        self.len -= 1;
+    }
+
+    #[inline(always)]
+    pub fn as_slice(&self) -> &[u64] {
+        &self.stack[..self.len]
+    }
+
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.len
     }
 
     #[inline(always)]
-    pub fn get(&self, idx: usize) -> u64 {
-        self.stack[idx]
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
     }
 
-    #[inline(always)]
-    pub fn push(&mut self, key: u64) {
-        debug_assert!(self.len < 1024);
-        self.stack[self.len] = key;
-        self.len += 1;
-    }
-
-    #[inline(always)]
-    pub fn pop(&mut self) -> u64 {
-        debug_assert!(self.len > 0);
-        self.len -= 1;
-        self.stack[self.len]
+    pub fn clear(&mut self) {
+        self.len = 0;
     }
 }
 
-impl Default for History {
+impl Default for GameHistory {
     fn default() -> Self {
         Self::new()
     }

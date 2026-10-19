@@ -6,7 +6,7 @@ use std::sync::{
 use crate::{
     board::Board,
     r#const::{BLACK, MAX_PLY, WHITE},
-    items::{Move, Piece, PieceInfo},
+    items::{GameHistory, Move, Piece, PieceInfo},
     network::{EvalBuf, HL1, NETWORK},
     search::MAX_HISTORY,
     tt::TranspositionTable,
@@ -30,6 +30,7 @@ impl SharedState {
 
 pub struct Engine {
     pub board: Board,
+    pub game_history: GameHistory,
 
     pub history: HistoryTable,
     pub continuation_history: ContinuationHistory,
@@ -50,8 +51,13 @@ pub struct Engine {
 
 impl Engine {
     pub fn new() -> Self {
+        let board = Board::start_pos();
+        let mut game_history = GameHistory::new();
+        game_history.push(board.get_hash());
+
         Self {
-            board: Board::start_pos(),
+            board,
+            game_history,
 
             history: HistoryTable::new(),
             continuation_history: ContinuationHistory::new(),
@@ -76,6 +82,7 @@ impl Engine {
     pub fn child(&self, thread_id: u16) -> Self {
         Self {
             board: self.board,
+            game_history: self.game_history.clone(),
 
             history: HistoryTable::new(),
             continuation_history: ContinuationHistory::new(),
@@ -95,6 +102,8 @@ impl Engine {
 
     pub fn reset(&mut self) {
         self.board = Board::start_pos();
+        self.game_history.clear();
+        self.game_history.push(self.board.get_hash());
         self.history = HistoryTable::new();
         self.continuation_history = ContinuationHistory::new();
         self.counter_moves = CountermoveTable::new();

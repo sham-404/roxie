@@ -157,8 +157,6 @@ pub struct Board {
     en_passant: Option<u8>,
     hash: u64,
     pawn_hash: u64,
-    history: History,
-    last_irreversible: usize,
     halfmove_clock: usize,
 
     mg_score: i32,
@@ -181,8 +179,6 @@ impl Board {
             en_passant: None,
             hash: 0,
             pawn_hash: 0,
-            history: History::new(),
-            last_irreversible: 0,
             halfmove_clock: 0,
             mg_score: 0,
             eg_score: 0,
@@ -331,14 +327,13 @@ impl Board {
         let captured = self.piece_on(captured_sq);
 
         // Constructing undo
-        self.history.push(self.hash);
         let undo = Undo::new(
             captured,
             self.castling,
             self.en_passant,
-            self.last_irreversible,
             self.halfmove_clock,
             self.pawn_hash,
+            self.hash,
         );
 
         // Update zobrist: remove piece from 'from' and remove old EP
@@ -351,9 +346,8 @@ impl Board {
             self.hash ^= ep_keys[ep_sq as usize % 8];
         }
 
-        // update last_irreversible and halfmove_clock
+        // update halfmove_clock
         if captured != Piece::NONE || Piece::get_type(cur_piece) == Piece::PAWN {
-            self.last_irreversible = self.history.len();
             self.halfmove_clock = 0;
         } else {
             self.halfmove_clock += 1;
@@ -513,12 +507,9 @@ impl Board {
         // restore state
         self.en_passant = undo.prev_en_passant_sq;
         self.castling = undo.prev_castling_rights;
-        self.last_irreversible = undo.prev_last_irreversible;
         self.halfmove_clock = undo.prev_halfmove_clock;
-        self.hash = self.history.pop();
+        self.hash = undo.prev_hash;
         self.pawn_hash = undo.prev_pawn_hash;
-
-        // self.update_zobrist_key(mov, undo);
 
         self.side_to_move = self.side_to_move.opponent();
     }
@@ -707,12 +698,23 @@ impl Board {
     }
 
     #[inline(always)]
-    pub fn is_repetition(&self) -> bool {
-        let cur = self.hash;
-        let mut count = 1;
+    pub fn is_repetition(&self, game_history: &[u64]) -> bool {
+        let len = game_history.len();
 
-        for i in (self.last_irreversible..self.history.len()).rev() {
-            if self.history.get(i) == cur {
+        // Need at least the current position on the stack
+        if len == 0 {
+            return false;
+        }
+
+        let cur = self.hash;
+
+        // game_history[len - 1] is the current position itself, so we scan
+        // the ancestors: [len - 1 - halfmove_clock, len - 2].
+        let start = (len - 1).saturating_sub(self.halfmove_clock);
+        let mut count = 1; // current position itself
+
+        for i in (start..len - 1).rev() {
+            if game_history[i] == cur {
                 count += 1;
                 if count >= 2 {
                     return true;
@@ -792,8 +794,8 @@ impl Board {
     }
 
     #[inline(always)]
-    pub fn is_draw(&self) -> bool {
-        self.is_50_rule() || self.is_repetition() || self.is_insufficient_material()
+    pub fn is_draw(&self, game_history: &[u64]) -> bool {
+        self.is_50_rule() || self.is_repetition(game_history) || self.is_insufficient_material()
     }
 
     #[inline(always)]

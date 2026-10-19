@@ -217,11 +217,16 @@ impl UCI {
             match cmd {
                 "startpos" => {
                     engine.board = Board::start_pos();
+                    let start_hash = engine.board.get_hash();
+                    engine.game_history.clear();
+                    engine.game_history.push(start_hash);
 
                     if let Some("moves") = commands.next() {
                         for mv_str in commands {
                             if let Some(mv) = Move::from_uci(mv_str, &mut engine.board) {
                                 engine.board.make_move(&mv);
+                                let hash = engine.board.get_hash();
+                                engine.game_history.push(hash);
                             } else {
                                 uci_print!("info string ignoring illegal move: {}", mv_str);
                                 return;
@@ -245,6 +250,9 @@ impl UCI {
 
                     let fen = fen_parts.join(" ");
                     engine.board = Board::load_fen(&fen);
+                    let fen_hash = engine.board.get_hash();
+                    engine.game_history.clear();
+                    engine.game_history.push(fen_hash);
 
                     // if we broke out of the loop because we hit "moves",
                     // the remaining items in `commands` are the actual moves.
@@ -252,6 +260,8 @@ impl UCI {
                         for mv_str in commands {
                             if let Some(mv) = Move::from_uci(mv_str, &mut engine.board) {
                                 engine.board.make_move(&mv);
+                                let hash = engine.board.get_hash();
+                                engine.game_history.push(hash);
                             } else {
                                 uci_print!("info string ignoring illegal move: {}", mv_str);
                                 return;

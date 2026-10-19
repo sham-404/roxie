@@ -21,7 +21,12 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use roxie::{
-        board::Board, engine::Engine, network::NETWORK, perft::perft, search::SearchLimits,
+        board::Board,
+        engine::Engine,
+        items::Move,
+        network::NETWORK,
+        perft::perft,
+        search::SearchLimits,
     };
     use std::time::Instant;
 
@@ -134,5 +139,90 @@ mod tests {
         }
 
         println!("Time taken: {}ns", time);
+    }
+
+    #[test]
+    fn repetition_draw() {
+        init_all();
+        let mut engine = Engine::new();
+
+        // 1.Nf3 Nf6 2.Ng1 Ng8 -> back to the start position (2-fold)
+        for mv_str in ["g1f3", "g8f6", "f3g1", "f6g8"] {
+            let mv = Move::from_uci(mv_str, &mut engine.board).unwrap();
+            engine.board.make_move(&mv);
+            engine.game_history.push(engine.board.get_hash());
+        }
+
+        assert!(engine.board.is_repetition(engine.game_history.as_slice()));
+        assert!(engine.board.is_draw(engine.game_history.as_slice()));
+    }
+
+    #[test]
+    fn no_repetition_without_history() {
+        init_all();
+
+        // A board with no recorded history can never be a repetition,
+        // even if it is the start position.
+        let empty: &[u64] = &[];
+        let board = Board::start_pos();
+        assert!(!board.is_repetition(empty));
+        assert!(!board.is_draw(empty));
+    }
+
+    #[test]
+    fn pawn_move_resets_halfmove_clock() {
+        init_all();
+        let mut engine = Engine::new();
+
+        // 4 quiet moves -> halfmove_clock = 4
+        for mv_str in ["g1f3", "g8f6", "f3g1", "f6g8"] {
+            let mv = Move::from_uci(mv_str, &mut engine.board).unwrap();
+            engine.board.make_move(&mv);
+            engine.game_history.push(engine.board.get_hash());
+        }
+        assert_eq!(engine.board.halfmove_clock(), 4);
+
+        // captures must reset repetition count
+        let mv = Move::from_uci("e2e4", &mut engine.board).unwrap();
+        engine.board.make_move(&mv);
+        assert_eq!(engine.board.halfmove_clock(), 0);
+
+        // so must a capture too
+        let mv = Move::from_uci("e7e5", &mut engine.board).unwrap();
+        engine.board.make_move(&mv);
+        assert_eq!(engine.board.halfmove_clock(), 0);
+
+        let mv = Move::from_uci("d2d4", &mut engine.board).unwrap();
+        engine.board.make_move(&mv);
+        assert_eq!(engine.board.halfmove_clock(), 0);
+
+        let mv = Move::from_uci("e5d4", &mut engine.board).unwrap();
+        engine.board.make_move(&mv);
+        assert_eq!(engine.board.halfmove_clock(), 0);
+    }
+
+    #[test]
+    fn make_unmake_restores_state_and_stack() {
+        init_all();
+        let mut engine = Engine::new();
+        let start_hash = engine.board.get_hash();
+        let start_len = engine.game_history.len();
+
+        let mut undos = Vec::new();
+        for mv_str in ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"] {
+            let mv = Move::from_uci(mv_str, &mut engine.board).unwrap();
+            let undo = engine.board.make_move(&mv);
+            engine.game_history.push(engine.board.get_hash());
+            undos.push((mv, undo));
+        }
+        assert_eq!(engine.game_history.len(), start_len + 5);
+
+        while let Some((mv, undo)) = undos.pop() {
+            engine.board.unmake_move(&mv, &undo);
+            engine.game_history.pop();
+        }
+
+        assert_eq!(engine.board.get_hash(), start_hash);
+        assert_eq!(engine.game_history.len(), start_len);
     }
 }

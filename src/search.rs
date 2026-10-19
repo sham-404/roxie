@@ -2,7 +2,7 @@ use crate::{
     board::{Board, mask},
     r#const::{BLACK_PAWN_ATTACKS, KING_ATTACKS, KNIGHT_ATTACKS, MAX_PLY, WHITE_PAWN_ATTACKS},
     engine::{CORR_GRAIN, Engine, Killers},
-    items::{Color, Move, MoveFlag, MoveList, Piece, PieceInfo},
+    items::{Color, Move, MoveFlag, MoveList, Piece, PieceInfo, Undo},
     magics::{get_bishop_move_bits, get_rook_move_bits},
     move_pick::MovePicker,
     params::*,
@@ -186,7 +186,7 @@ impl Engine {
 
                     let nodes_before_mv_search = info.nodes;
 
-                    let undo = self.board.make_move(&mv);
+                    let undo = self.make_mv(&mv);
 
                     self.update_nnue(&mv, &undo, 0);
 
@@ -246,7 +246,7 @@ impl Engine {
                     };
                     // PV search //
 
-                    self.board.unmake_move(&mv, &undo);
+                    self.unmake_mv(&mv, &undo);
 
                     let nodes_after_mv_search = info.nodes;
 
@@ -457,7 +457,7 @@ impl Engine {
         }
 
         // Checking draws
-        if self.board.is_draw() {
+        if self.board.is_draw(self.game_history.as_slice()) {
             return 0;
         }
 
@@ -782,7 +782,7 @@ impl Engine {
                     continue;
                 }
 
-                let undo = self.board.make_move(&mv);
+                let undo = self.make_mv(&mv);
 
                 info.stats.probcut_attempts += 1;
                 self.update_nnue(&mv, &undo, ply as usize);
@@ -801,7 +801,7 @@ impl Engine {
                     info,
                 );
 
-                self.board.unmake_move(&mv, &undo);
+                self.unmake_mv(&mv, &undo);
 
                 if pc_score >= pc_beta {
                     info.stats.probcut_cutoffs += 1;
@@ -981,7 +981,7 @@ impl Engine {
                 continue;
             }
 
-            let undo = self.board.make_move(&mv);
+            let undo = self.make_mv(&mv);
 
             if is_quiet {
                 quiet_list.push(mv);
@@ -1032,7 +1032,7 @@ impl Engine {
                 info,
             );
 
-            self.board.unmake_move(&mv, &undo);
+            self.unmake_mv(&mv, &undo);
 
             if eval > max_eval {
                 max_eval = eval;
@@ -1461,7 +1461,7 @@ impl Engine {
         }
 
         // Checking draws
-        if self.board.is_draw() {
+        if self.board.is_draw(self.game_history.as_slice()) {
             return 0;
         }
 
@@ -1584,7 +1584,7 @@ impl Engine {
                 continue;
             }
 
-            let undo = self.board.make_move(&mv);
+            let undo = self.make_mv(&mv);
             let mv_idx = mv_searched;
             mv_searched += 1;
 
@@ -1602,7 +1602,7 @@ impl Engine {
                 limits,
             );
 
-            self.board.unmake_move(&mv, &undo);
+            self.unmake_mv(&mv, &undo);
 
             if info.get_abort() {
                 return best_score;
@@ -1648,6 +1648,22 @@ impl Engine {
 }
 
 impl Engine {
+    /// Makes a move on the board and records the resulting position hash
+    /// in the game history stack (used for repetition detection).
+    #[inline(always)]
+    fn make_mv(&mut self, mv: &Move) -> Undo {
+        let undo = self.board.make_move(mv);
+        self.game_history.push(self.board.get_hash());
+        undo
+    }
+
+    /// Pops the game history stack and unmakes the move.
+    #[inline(always)]
+    fn unmake_mv(&mut self, mv: &Move, undo: &Undo) {
+        self.game_history.pop();
+        self.board.unmake_move(mv, undo);
+    }
+
     #[inline(always)]
     pub fn with_ordering(
         &mut self,
