@@ -21,11 +21,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use roxie::{
-        board::Board,
-        engine::Engine,
-        items::Move,
-        network::NETWORK,
-        perft::perft,
+        board::Board, engine::Engine, items::Move, network::NETWORK, perft::perft,
         search::SearchLimits,
     };
     use std::time::Instant;

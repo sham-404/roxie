@@ -301,6 +301,8 @@ pub struct Undo {
     pub prev_castling_rights: CastlingRights,
     pub prev_halfmove_clock: usize,
     pub prev_pawn_hash: u64,
+    pub prev_minor_hash: u64,
+    pub prev_major_hash: u64,
     pub prev_hash: u64,
 }
 
@@ -311,6 +313,8 @@ impl Undo {
         ensq: Option<u8>,
         halfmove_clock: usize,
         pawn_hash: u64,
+        minor_hash: u64,
+        major_hash: u64,
         prev_hash: u64,
     ) -> Self {
         Self {
@@ -319,6 +323,8 @@ impl Undo {
             prev_castling_rights: castling,
             prev_halfmove_clock: halfmove_clock,
             prev_pawn_hash: pawn_hash,
+            prev_minor_hash: minor_hash,
+            prev_major_hash: major_hash,
             prev_hash,
         }
     }
