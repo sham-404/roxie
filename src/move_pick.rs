@@ -2,7 +2,7 @@ use crate::{
     board::Board,
     engine::{CaptureHistory, Engine},
     evaluation::MG_TABLE,
-    items::{Move, MoveFlag, MoveList, Piece},
+    items::{Move, MoveFlag, MoveList, Piece, PieceInfo},
 };
 
 pub const QUIET_MV_MARGIN: i32 = 10_000_000;
@@ -133,6 +133,9 @@ pub struct MovePicker {
     tt_move: Move,
     killers: [Move; 2],
     prev_mv: Move,
+    prev_piece: PieceInfo,
+    prev2_mv: Move,
+    prev2_piece: PieceInfo,
     qsearch_picker: bool,
 
     moves: MoveList,
@@ -142,12 +145,23 @@ pub struct MovePicker {
 }
 
 impl MovePicker {
-    pub fn new(tt_move: Move, killers: [Move; 2], prev_mv: Move, qsearch_picker: bool) -> Self {
+    pub fn new(
+        tt_move: Move,
+        killers: [Move; 2],
+        prev_mv: Move,
+        prev_piece: PieceInfo,
+        prev2_mv: Move,
+        prev2_piece: PieceInfo,
+        qsearch_picker: bool,
+    ) -> Self {
         Self {
             phase: Phase::TTMove,
             tt_move,
             killers,
             prev_mv,
+            prev_piece,
+            prev2_mv,
+            prev2_piece,
             qsearch_picker,
             moves: MoveList::new(),
             mv_idx: 0,
@@ -257,6 +271,7 @@ impl Engine {
                     for i in 0..picker.moves.len() {
                         let mv = picker.moves.get(i);
                         let mut score = self.board.score_quiet_move(mv);
+                        let cur_piece = self.board.piece_on(mv.from());
 
                         score +=
                             self.history
@@ -264,7 +279,11 @@ impl Engine {
                                 << 2;
                         score += (self
                             .continuation_history
-                            .get(&self.board, picker.prev_mv, mv)
+                            .get(picker.prev_mv, picker.prev_piece, mv, cur_piece)
+                            << 4) as i32;
+                        score += (self
+                            .continuation_history_2
+                            .get(picker.prev2_mv, picker.prev2_piece, mv, cur_piece)
                             << 4) as i32;
                         picker.moves.score[i] = score;
                     }

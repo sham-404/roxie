@@ -118,7 +118,15 @@ impl Engine {
                 .probe(self.board.get_hash())
                 .map_or(Move::NULL, |info| info.best_move())
         };
-        let mut picker = MovePicker::new(tt_move, self.killers.get(0), Move::NULL, false);
+        let mut picker = MovePicker::new(
+            tt_move,
+            self.killers.get(0),
+            Move::NULL,
+            Piece::NONE,
+            Move::NULL,
+            Piece::NONE,
+            false,
+        );
 
         while let Some(mv) = self.pick_next_mv(&mut picker) {
             if !self.board.is_legal_fast(mv, checkers, pinned) {
@@ -172,8 +180,15 @@ impl Engine {
                     tt_move = entry.best_move();
                 }
 
-                let mut picker =
-                    MovePicker::new(tt_move, [Move::NULL, Move::NULL], Move::NULL, false);
+                let mut picker = MovePicker::new(
+                    tt_move,
+                    [Move::NULL, Move::NULL],
+                    Move::NULL,
+                    Piece::NONE,
+                    Move::NULL,
+                    Piece::NONE,
+                    false,
+                );
                 let mut mv_searched = 0;
 
                 total_nodes_this_depth = 0;
@@ -186,6 +201,7 @@ impl Engine {
 
                     let nodes_before_mv_search = info.nodes;
 
+                    let moved_piece = self.board.piece_on(mv.from());
                     let undo = self.make_mv(&mv);
 
                     self.update_nnue(&mv, &undo, 0);
@@ -204,6 +220,9 @@ impl Engine {
                                 ply: 1,
                                 extension: 0,
                                 prev_move: mv,
+                                prev_piece: moved_piece,
+                                prev2_move: Move::NULL,
+                                prev2_piece: Piece::NONE,
                                 excluded_move: Move::NULL,
                             },
                             &local_limits,
@@ -219,6 +238,9 @@ impl Engine {
                                 ply: 1,
                                 extension: 0,
                                 prev_move: mv,
+                                prev_piece: moved_piece,
+                                prev2_move: Move::NULL,
+                                prev2_piece: Piece::NONE,
                                 excluded_move: Move::NULL,
                             },
                             &local_limits,
@@ -235,6 +257,9 @@ impl Engine {
                                     ply: 1,
                                     extension: 0,
                                     prev_move: mv,
+                                    prev_piece: moved_piece,
+                                    prev2_move: Move::NULL,
+                                    prev2_piece: Piece::NONE,
                                     excluded_move: Move::NULL,
                                 },
                                 &local_limits,
@@ -431,6 +456,9 @@ impl Engine {
             ply,
             extension,
             prev_move,
+            prev_piece,
+            prev2_move,
+            prev2_piece,
             excluded_move,
         } = params;
 
@@ -616,6 +644,9 @@ impl Engine {
                     ply,
                     extension: 0,
                     prev_move,
+                    prev_piece,
+                    prev2_move,
+                    prev2_piece,
                     excluded_move: Move::NULL,
                 },
                 limits,
@@ -640,6 +671,9 @@ impl Engine {
                     ply,
                     extension,
                     prev_move,
+                    prev_piece,
+                    prev2_move,
+                    prev2_piece,
                     excluded_move,
                 },
                 info,
@@ -713,6 +747,9 @@ impl Engine {
                         ply,
                         extension: 0,
                         prev_move,
+                        prev_piece,
+                        prev2_move,
+                        prev2_piece,
                         excluded_move: Move::NULL,
                     },
                     info,
@@ -737,6 +774,9 @@ impl Engine {
                 ply,
                 extension,
                 prev_move,
+                prev_piece,
+                prev2_move,
+                prev2_piece,
                 excluded_move,
             },
             limits,
@@ -771,7 +811,15 @@ impl Engine {
                 tt_move
             };
 
-            let mut pc_picker = MovePicker::new(tt_move, [Move::NULL; 2], prev_move, true);
+            let mut pc_picker = MovePicker::new(
+                tt_move,
+                [Move::NULL; 2],
+                prev_move,
+                prev_piece,
+                prev2_move,
+                prev2_piece,
+                true,
+            );
 
             while let Some(mv) = self.pick_next_mv(&mut pc_picker) {
                 if !mv.flag().is_promo() && self.board.see(&mv) <= 0 {
@@ -782,6 +830,7 @@ impl Engine {
                     continue;
                 }
 
+                let moved_piece = self.board.piece_on(mv.from());
                 let undo = self.make_mv(&mv);
 
                 info.stats.probcut_attempts += 1;
@@ -795,6 +844,9 @@ impl Engine {
                         ply: ply + 1,
                         extension: 0,
                         prev_move: mv,
+                        prev_piece: moved_piece,
+                        prev2_move: prev_move,
+                        prev2_piece: prev_piece,
                         excluded_move: Move::NULL,
                     },
                     limits,
@@ -853,6 +905,9 @@ impl Engine {
                     ply,
                     extension: 0,
                     prev_move,
+                    prev_piece,
+                    prev2_move,
+                    prev2_piece,
                     excluded_move: tt_move, // exclude the TT move
                 },
                 limits,
@@ -890,7 +945,15 @@ impl Engine {
         let mut quiet_searched = 0;
 
         //// Actual searching loop
-        let mut picker = MovePicker::new(tt_move, self.killers.get(ply), prev_move, false);
+        let mut picker = MovePicker::new(
+            tt_move,
+            self.killers.get(ply),
+            prev_move,
+            prev_piece,
+            prev2_move,
+            prev2_piece,
+            false,
+        );
         let mut mv_searched = 0;
 
         while let Some(mv) = self.pick_next_mv(&mut picker) {
@@ -1026,6 +1089,9 @@ impl Engine {
                     ply,
                     extension,
                     prev_move,
+                    prev_piece,
+                    prev2_move,
+                    prev2_piece,
                     excluded_move: Move::NULL,
                 },
                 limits,
@@ -1067,16 +1133,40 @@ impl Engine {
                         self.history.update(stm, q_mv.from(), q_mv.to(), -bonus);
 
                         // for continuation history
-                        self.continuation_history
-                            .update(&self.board, prev_move, *q_mv, -bonus);
+                        self.continuation_history.update(
+                            prev_move,
+                            prev_piece,
+                            *q_mv,
+                            self.board.piece_on(q_mv.from()),
+                            -bonus,
+                        );
+                        self.continuation_history_2.update(
+                            prev2_move,
+                            prev2_piece,
+                            *q_mv,
+                            self.board.piece_on(q_mv.from()),
+                            -bonus,
+                        );
                     }
 
                     // history bonus scoring
                     self.history.update(stm, mv.from(), mv.to(), bonus);
 
                     // continuation history scoring
-                    self.continuation_history
-                        .update(&self.board, prev_move, mv, bonus);
+                    self.continuation_history.update(
+                        prev_move,
+                        prev_piece,
+                        mv,
+                        self.board.piece_on(mv.from()),
+                        bonus,
+                    );
+                    self.continuation_history_2.update(
+                        prev2_move,
+                        prev2_piece,
+                        mv,
+                        self.board.piece_on(mv.from()),
+                        bonus,
+                    );
 
                     // counter moves storing
                     self.counter_moves.update(prev_move, mv);
@@ -1197,6 +1287,8 @@ impl Engine {
             beta,
             ply,
             extension,
+            prev_move,
+            prev_piece,
             excluded_move,
             ..
         } = params;
@@ -1238,6 +1330,9 @@ impl Engine {
                     ply: ply + 1,
                     extension,
                     prev_move: Move::NULL,
+                    prev_piece: Piece::NONE,
+                    prev2_move: prev_move,
+                    prev2_piece: prev_piece,
                     excluded_move: Move::NULL,
                 },
                 limits,
@@ -1282,8 +1377,13 @@ impl Engine {
             ply,
             extension,
             prev_move,
+            prev_piece,
+            prev2_move,
+            prev2_piece,
             ..
         } = params;
+
+        let moved_piece = self.board.piece_on(mv.from());
 
         let in_check = self.board.in_check();
 
@@ -1304,6 +1404,9 @@ impl Engine {
                     ply: ply + 1,
                     extension: next_extensions,
                     prev_move: mv,
+                    prev_piece: moved_piece,
+                    prev2_move: prev_move,
+                    prev2_piece: prev_piece,
                     excluded_move: Move::NULL,
                 },
                 limits,
@@ -1336,8 +1439,11 @@ impl Engine {
             let stm = self.board.side_to_move().opponent().val();
             let cont_hist = self
                 .continuation_history
-                .get_after_mv(&self.board, prev_move, mv) as i32;
-            let hist_score = self.history.get(stm, mv.from(), mv.to()) + cont_hist;
+                .get_after_mv(prev_move, prev_piece, mv, moved_piece) as i32;
+            let cont_hist_2 = self
+                .continuation_history_2
+                .get_after_mv(prev2_move, prev2_piece, mv, moved_piece) as i32;
+            let hist_score = self.history.get(stm, mv.from(), mv.to()) + cont_hist + cont_hist_2;
 
             let hist_adjustment = hist_score / adjustment_fac;
 
@@ -1368,6 +1474,9 @@ impl Engine {
                 ply: ply + 1,
                 extension: next_extensions,
                 prev_move: mv,
+                prev_piece: moved_piece,
+                prev2_move: prev_move,
+                prev2_piece: prev_piece,
                 excluded_move: Move::NULL,
             },
             limits,
@@ -1386,6 +1495,9 @@ impl Engine {
                     ply: ply + 1,
                     extension: next_extensions,
                     prev_move: mv,
+                    prev_piece: moved_piece,
+                    prev2_move: prev_move,
+                    prev2_piece: prev_piece,
                     excluded_move: Move::NULL,
                 },
                 limits,
@@ -1403,6 +1515,9 @@ impl Engine {
                     ply: ply + 1,
                     extension: next_extensions,
                     prev_move: mv,
+                    prev_piece: moved_piece,
+                    prev2_move: prev_move,
+                    prev2_piece: prev_piece,
                     excluded_move: Move::NULL,
                 },
                 limits,
@@ -1434,6 +1549,9 @@ impl Engine {
             mut beta,
             ply,
             prev_move,
+            prev_piece,
+            prev2_move,
+            prev2_piece,
             ..
         } = params;
 
@@ -1554,7 +1672,15 @@ impl Engine {
         let orig_alpha = alpha;
         let mut best_move_this_node = Move::NULL;
 
-        let mut picker = MovePicker::new(tt_move, self.killers.get(ply), prev_move, qsearch_picker);
+        let mut picker = MovePicker::new(
+            tt_move,
+            self.killers.get(ply),
+            prev_move,
+            prev_piece,
+            prev2_move,
+            prev2_piece,
+            qsearch_picker,
+        );
         let mut mv_searched = 0;
 
         while let Some(mv) = self.pick_next_mv(&mut picker) {
@@ -1584,6 +1710,7 @@ impl Engine {
                 continue;
             }
 
+            let moved_piece = self.board.piece_on(mv.from());
             let undo = self.make_mv(&mv);
             let mv_idx = mv_searched;
             mv_searched += 1;
@@ -1596,6 +1723,9 @@ impl Engine {
                     beta: -alpha,
                     ply: ply + 1,
                     prev_move: mv,
+                    prev_piece: moved_piece,
+                    prev2_move: prev_move,
+                    prev2_piece: prev_piece,
                     ..params
                 },
                 info,
@@ -1669,6 +1799,9 @@ impl Engine {
         &mut self,
         tt_move: Move,
         prev_move: Move,
+        prev_piece: PieceInfo,
+        prev2_move: Move,
+        prev2_piece: PieceInfo,
         ply: usize,
         movelist: &mut MoveList,
     ) {
@@ -1700,7 +1833,17 @@ impl Engine {
                     .history
                     .get(self.board.side_to_move().val(), mv.from(), mv.to())
                     << 2;
-                score += (self.continuation_history.get(&self.board, prev_move, mv) << 4) as i32;
+                let cur_piece = self.board.piece_on(mv.from());
+                score +=
+                    (self
+                        .continuation_history
+                        .get(prev_move, prev_piece, mv, cur_piece)
+                        << 4) as i32;
+                score +=
+                    (self
+                        .continuation_history_2
+                        .get(prev2_move, prev2_piece, mv, cur_piece)
+                        << 4) as i32;
 
                 movelist.score[i] = score;
             } else {
@@ -1780,6 +1923,9 @@ struct SearchParams {
     ply: i32,
     extension: u8,
     prev_move: Move,
+    prev_piece: PieceInfo,
+    prev2_move: Move,
+    prev2_piece: PieceInfo,
     excluded_move: Move,
 }
 

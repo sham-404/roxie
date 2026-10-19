@@ -34,6 +34,7 @@ pub struct Engine {
 
     pub history: HistoryTable,
     pub continuation_history: ContinuationHistory,
+    pub continuation_history_2: ContinuationHistory,
     pub counter_moves: CountermoveTable,
     pub eval_history: EvalHistory,
     pub capture_history: CaptureHistory,
@@ -61,6 +62,7 @@ impl Engine {
 
             history: HistoryTable::new(),
             continuation_history: ContinuationHistory::new(),
+            continuation_history_2: ContinuationHistory::new(),
             counter_moves: CountermoveTable::new(),
             eval_history: EvalHistory::new(),
             capture_history: CaptureHistory::new(),
@@ -86,6 +88,7 @@ impl Engine {
 
             history: HistoryTable::new(),
             continuation_history: ContinuationHistory::new(),
+            continuation_history_2: ContinuationHistory::new(),
             counter_moves: CountermoveTable::new(),
             eval_history: EvalHistory::new(),
             capture_history: CaptureHistory::new(),
@@ -106,6 +109,7 @@ impl Engine {
         self.game_history.push(self.board.get_hash());
         self.history = HistoryTable::new();
         self.continuation_history = ContinuationHistory::new();
+        self.continuation_history_2 = ContinuationHistory::new();
         self.counter_moves = CountermoveTable::new();
         self.eval_history = EvalHistory::new();
         self.capture_history = CaptureHistory::new();
@@ -232,43 +236,53 @@ impl ContinuationHistory {
     }
 
     #[inline(always)]
-    pub fn get_after_mv(&self, board: &Board, prev_mv: Move, cur_mv: Move) -> i16 {
-        if prev_mv == Move::NULL || cur_mv == Move::NULL {
+    pub fn get_after_mv(
+        &self,
+        prev_mv: Move,
+        prev_piece: PieceInfo,
+        cur_mv: Move,
+        cur_piece: PieceInfo,
+    ) -> i16 {
+        if prev_mv == Move::NULL || prev_piece == Piece::NONE || cur_piece == Piece::NONE {
             return 0;
         }
 
-        let prev_idx = Piece::to_idx(board.piece_on(prev_mv.to())) * 64 + prev_mv.to();
-        let cur_idx = Piece::to_idx(board.piece_on(cur_mv.to())) * 64 + cur_mv.to();
+        let prev_idx = Piece::to_idx(prev_piece) * 64 + prev_mv.to();
+        let cur_idx = Piece::to_idx(cur_piece) * 64 + cur_mv.to();
 
         self.table[prev_idx][cur_idx]
     }
 
     #[inline(always)]
-    pub fn get(&self, board: &Board, prev_mv: Move, cur_mv: Move) -> i16 {
-        debug_assert_ne!(cur_mv, Move::NULL); // cur_mv is expected to be a valid move
-        if prev_mv == Move::NULL {
+    pub fn get(&self, prev_mv: Move, prev_piece: PieceInfo, cur_mv: Move, cur_piece: PieceInfo) -> i16 {
+        if prev_mv == Move::NULL || prev_piece == Piece::NONE || cur_piece == Piece::NONE {
             return 0;
         }
 
-        let prev_idx = Piece::to_idx(board.piece_on(prev_mv.to())) * 64 + prev_mv.to();
-        let cur_idx = Piece::to_idx(board.piece_on(cur_mv.from())) * 64 + cur_mv.to();
+        let prev_idx = Piece::to_idx(prev_piece) * 64 + prev_mv.to();
+        let cur_idx = Piece::to_idx(cur_piece) * 64 + cur_mv.to();
 
         self.table[prev_idx][cur_idx]
     }
 
     #[inline(always)]
-    pub fn update(&mut self, board: &Board, prev_mv: Move, cur_mv: Move, bonus: i32) {
-        debug_assert_ne!(cur_mv, Move::NULL); // cur_mv is expected to be a valid move
-        if prev_mv == Move::NULL {
+    pub fn update(
+        &mut self,
+        prev_mv: Move,
+        prev_piece: PieceInfo,
+        cur_mv: Move,
+        cur_piece: PieceInfo,
+        bonus: i32,
+    ) {
+        if prev_mv == Move::NULL || prev_piece == Piece::NONE || cur_piece == Piece::NONE {
             return;
         }
 
-        // index = piece_idx * 64 + mv.to
-        let prev_idx = Piece::to_idx(board.piece_on(prev_mv.to())) * 64 + prev_mv.to();
-        let cur_idx = Piece::to_idx(board.piece_on(cur_mv.from())) * 64 + cur_mv.to();
+        let prev_idx = Piece::to_idx(prev_piece) * 64 + prev_mv.to();
+        let cur_idx = Piece::to_idx(cur_piece) * 64 + cur_mv.to();
 
         let cur_val = self.table[prev_idx][cur_idx];
-        let new_val = (cur_val as i32) + bonus - (cur_val as i32 * bonus.abs() / MAX_HISTORY);
+        let new_val = cur_val as i32 + bonus - (cur_val as i32 * bonus.abs() / MAX_HISTORY);
 
         self.table[prev_idx][cur_idx] = new_val.clamp(-MAX_HISTORY, MAX_HISTORY) as i16;
     }
