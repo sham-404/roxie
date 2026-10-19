@@ -89,3 +89,10 @@ pub const SEE_KNIGHT: i32 = 311;
 pub const SEE_BISHOP: i32 = 323;
 pub const SEE_ROOK: i32 = 463;
 pub const SEE_QUEEN: i32 = 929;
+
+// History tables
+pub const HIST_SHIFT: i32 = 2;
+pub const CONT_HIST_SHIFT_1: i32 = 4;
+pub const CONT_HIST_SHIFT_2: i32 = 3;
+pub const CONT_HIST_SHIFT_4: i32 = 2;
+

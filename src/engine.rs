@@ -35,6 +35,7 @@ pub struct Engine {
     pub history: HistoryTable,
     pub continuation_history: ContinuationHistory,
     pub continuation_history_2: ContinuationHistory,
+    pub continuation_history_4: ContinuationHistory,
     pub counter_moves: CountermoveTable,
     pub eval_history: EvalHistory,
     pub capture_history: CaptureHistory,
@@ -63,6 +64,7 @@ impl Engine {
             history: HistoryTable::new(),
             continuation_history: ContinuationHistory::new(),
             continuation_history_2: ContinuationHistory::new(),
+            continuation_history_4: ContinuationHistory::new(),
             counter_moves: CountermoveTable::new(),
             eval_history: EvalHistory::new(),
             capture_history: CaptureHistory::new(),
@@ -89,6 +91,7 @@ impl Engine {
             history: HistoryTable::new(),
             continuation_history: ContinuationHistory::new(),
             continuation_history_2: ContinuationHistory::new(),
+            continuation_history_4: ContinuationHistory::new(),
             counter_moves: CountermoveTable::new(),
             eval_history: EvalHistory::new(),
             capture_history: CaptureHistory::new(),
@@ -110,6 +113,7 @@ impl Engine {
         self.history = HistoryTable::new();
         self.continuation_history = ContinuationHistory::new();
         self.continuation_history_2 = ContinuationHistory::new();
+        self.continuation_history_4 = ContinuationHistory::new();
         self.counter_moves = CountermoveTable::new();
         self.eval_history = EvalHistory::new();
         self.capture_history = CaptureHistory::new();
@@ -254,7 +258,13 @@ impl ContinuationHistory {
     }
 
     #[inline(always)]
-    pub fn get(&self, prev_mv: Move, prev_piece: PieceInfo, cur_mv: Move, cur_piece: PieceInfo) -> i16 {
+    pub fn get(
+        &self,
+        prev_mv: Move,
+        prev_piece: PieceInfo,
+        cur_mv: Move,
+        cur_piece: PieceInfo,
+    ) -> i16 {
         if prev_mv == Move::NULL || prev_piece == Piece::NONE || cur_piece == Piece::NONE {
             return 0;
         }

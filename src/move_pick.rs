@@ -1,8 +1,5 @@
 use crate::{
-    board::Board,
-    engine::{CaptureHistory, Engine},
-    evaluation::MG_TABLE,
-    items::{Move, MoveFlag, MoveList, Piece, PieceInfo},
+    board::Board, engine::{CaptureHistory, Engine}, evaluation::MG_TABLE, items::{Move, MoveFlag, MoveList, Piece, PieceInfo}, params::*,
 };
 
 pub const QUIET_MV_MARGIN: i32 = 10_000_000;
@@ -136,6 +133,8 @@ pub struct MovePicker {
     prev_piece: PieceInfo,
     prev2_mv: Move,
     prev2_piece: PieceInfo,
+    prev4_mv: Move,
+    prev4_piece: PieceInfo,
     qsearch_picker: bool,
 
     moves: MoveList,
@@ -152,6 +151,8 @@ impl MovePicker {
         prev_piece: PieceInfo,
         prev2_mv: Move,
         prev2_piece: PieceInfo,
+        prev4_mv: Move,
+        prev4_piece: PieceInfo,
         qsearch_picker: bool,
     ) -> Self {
         Self {
@@ -162,6 +163,8 @@ impl MovePicker {
             prev_piece,
             prev2_mv,
             prev2_piece,
+            prev4_mv,
+            prev4_piece,
             qsearch_picker,
             moves: MoveList::new(),
             mv_idx: 0,
@@ -276,15 +279,25 @@ impl Engine {
                         score +=
                             self.history
                                 .get(self.board.side_to_move().val(), mv.from(), mv.to())
-                                << 2;
-                        score += (self
-                            .continuation_history
-                            .get(picker.prev_mv, picker.prev_piece, mv, cur_piece)
-                            << 4) as i32;
-                        score += (self
-                            .continuation_history_2
-                            .get(picker.prev2_mv, picker.prev2_piece, mv, cur_piece)
-                            << 4) as i32;
+                                << HIST_SHIFT;
+                        score += (self.continuation_history.get(
+                            picker.prev_mv,
+                            picker.prev_piece,
+                            mv,
+                            cur_piece,
+                        ) << CONT_HIST_SHIFT_1) as i32;
+                        score += (self.continuation_history_2.get(
+                            picker.prev2_mv,
+                            picker.prev2_piece,
+                            mv,
+                            cur_piece,
+                        ) << CONT_HIST_SHIFT_2) as i32;
+                        score += (self.continuation_history_4.get(
+                            picker.prev4_mv,
+                            picker.prev4_piece,
+                            mv,
+                            cur_piece,
+                        ) << CONT_HIST_SHIFT_4) as i32;
                         picker.moves.score[i] = score;
                     }
 

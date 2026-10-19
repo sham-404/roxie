@@ -125,6 +125,8 @@ impl Engine {
             Piece::NONE,
             Move::NULL,
             Piece::NONE,
+            Move::NULL,
+            Piece::NONE,
             false,
         );
 
@@ -187,6 +189,8 @@ impl Engine {
                     Piece::NONE,
                     Move::NULL,
                     Piece::NONE,
+                    Move::NULL,
+                    Piece::NONE,
                     false,
                 );
                 let mut mv_searched = 0;
@@ -223,6 +227,10 @@ impl Engine {
                                 prev_piece: moved_piece,
                                 prev2_move: Move::NULL,
                                 prev2_piece: Piece::NONE,
+                                prev3_move: Move::NULL,
+                                prev3_piece: Piece::NONE,
+                                prev4_move: Move::NULL,
+                                prev4_piece: Piece::NONE,
                                 excluded_move: Move::NULL,
                             },
                             &local_limits,
@@ -241,6 +249,10 @@ impl Engine {
                                 prev_piece: moved_piece,
                                 prev2_move: Move::NULL,
                                 prev2_piece: Piece::NONE,
+                                prev3_move: Move::NULL,
+                                prev3_piece: Piece::NONE,
+                                prev4_move: Move::NULL,
+                                prev4_piece: Piece::NONE,
                                 excluded_move: Move::NULL,
                             },
                             &local_limits,
@@ -260,6 +272,10 @@ impl Engine {
                                     prev_piece: moved_piece,
                                     prev2_move: Move::NULL,
                                     prev2_piece: Piece::NONE,
+                                    prev3_move: Move::NULL,
+                                    prev3_piece: Piece::NONE,
+                                    prev4_move: Move::NULL,
+                                    prev4_piece: Piece::NONE,
                                     excluded_move: Move::NULL,
                                 },
                                 &local_limits,
@@ -459,6 +475,10 @@ impl Engine {
             prev_piece,
             prev2_move,
             prev2_piece,
+            prev3_move,
+            prev3_piece,
+            prev4_move,
+            prev4_piece,
             excluded_move,
         } = params;
 
@@ -647,6 +667,10 @@ impl Engine {
                     prev_piece,
                     prev2_move,
                     prev2_piece,
+                    prev3_move,
+                    prev3_piece,
+                    prev4_move,
+                    prev4_piece,
                     excluded_move: Move::NULL,
                 },
                 limits,
@@ -674,6 +698,10 @@ impl Engine {
                     prev_piece,
                     prev2_move,
                     prev2_piece,
+                    prev3_move,
+                    prev3_piece,
+                    prev4_move,
+                    prev4_piece,
                     excluded_move,
                 },
                 info,
@@ -750,6 +778,10 @@ impl Engine {
                         prev_piece,
                         prev2_move,
                         prev2_piece,
+                        prev3_move,
+                        prev3_piece,
+                        prev4_move,
+                        prev4_piece,
                         excluded_move: Move::NULL,
                     },
                     info,
@@ -777,6 +809,10 @@ impl Engine {
                 prev_piece,
                 prev2_move,
                 prev2_piece,
+                prev3_move,
+                prev3_piece,
+                prev4_move,
+                prev4_piece,
                 excluded_move,
             },
             limits,
@@ -818,6 +854,8 @@ impl Engine {
                 prev_piece,
                 prev2_move,
                 prev2_piece,
+                prev4_move,
+                prev4_piece,
                 true,
             );
 
@@ -847,6 +885,10 @@ impl Engine {
                         prev_piece: moved_piece,
                         prev2_move: prev_move,
                         prev2_piece: prev_piece,
+                        prev3_move: prev2_move,
+                        prev3_piece: prev2_piece,
+                        prev4_move: prev3_move,
+                        prev4_piece: prev3_piece,
                         excluded_move: Move::NULL,
                     },
                     limits,
@@ -908,6 +950,10 @@ impl Engine {
                     prev_piece,
                     prev2_move,
                     prev2_piece,
+                    prev3_move,
+                    prev3_piece,
+                    prev4_move,
+                    prev4_piece,
                     excluded_move: tt_move, // exclude the TT move
                 },
                 limits,
@@ -952,6 +998,8 @@ impl Engine {
             prev_piece,
             prev2_move,
             prev2_piece,
+            prev4_move,
+            prev4_piece,
             false,
         );
         let mut mv_searched = 0;
@@ -1092,6 +1140,10 @@ impl Engine {
                     prev_piece,
                     prev2_move,
                     prev2_piece,
+                    prev3_move,
+                    prev3_piece,
+                    prev4_move,
+                    prev4_piece,
                     excluded_move: Move::NULL,
                 },
                 limits,
@@ -1147,6 +1199,13 @@ impl Engine {
                             self.board.piece_on(q_mv.from()),
                             -bonus,
                         );
+                        self.continuation_history_4.update(
+                            prev4_move,
+                            prev4_piece,
+                            *q_mv,
+                            self.board.piece_on(q_mv.from()),
+                            -bonus,
+                        );
                     }
 
                     // history bonus scoring
@@ -1163,6 +1222,13 @@ impl Engine {
                     self.continuation_history_2.update(
                         prev2_move,
                         prev2_piece,
+                        mv,
+                        self.board.piece_on(mv.from()),
+                        bonus,
+                    );
+                    self.continuation_history_4.update(
+                        prev4_move,
+                        prev4_piece,
                         mv,
                         self.board.piece_on(mv.from()),
                         bonus,
@@ -1289,6 +1355,10 @@ impl Engine {
             extension,
             prev_move,
             prev_piece,
+            prev2_move,
+            prev2_piece,
+            prev3_move,
+            prev3_piece,
             excluded_move,
             ..
         } = params;
@@ -1333,6 +1403,10 @@ impl Engine {
                     prev_piece: Piece::NONE,
                     prev2_move: prev_move,
                     prev2_piece: prev_piece,
+                    prev3_move: prev2_move,
+                    prev3_piece: prev2_piece,
+                    prev4_move: prev3_move,
+                    prev4_piece: prev3_piece,
                     excluded_move: Move::NULL,
                 },
                 limits,
@@ -1380,6 +1454,10 @@ impl Engine {
             prev_piece,
             prev2_move,
             prev2_piece,
+            prev3_move,
+            prev3_piece,
+            prev4_move,
+            prev4_piece,
             ..
         } = params;
 
@@ -1407,6 +1485,10 @@ impl Engine {
                     prev_piece: moved_piece,
                     prev2_move: prev_move,
                     prev2_piece: prev_piece,
+                    prev3_move: prev2_move,
+                    prev3_piece: prev2_piece,
+                    prev4_move: prev3_move,
+                    prev4_piece: prev3_piece,
                     excluded_move: Move::NULL,
                 },
                 limits,
@@ -1437,13 +1519,17 @@ impl Engine {
             // Continuous history adjustment
             let adjustment_fac = LMR_HIST_FACTOR;
             let stm = self.board.side_to_move().opponent().val();
-            let cont_hist = self
-                .continuation_history
-                .get_after_mv(prev_move, prev_piece, mv, moved_piece) as i32;
-            let cont_hist_2 = self
-                .continuation_history_2
-                .get_after_mv(prev2_move, prev2_piece, mv, moved_piece) as i32;
-            let hist_score = self.history.get(stm, mv.from(), mv.to()) + cont_hist + cont_hist_2;
+            let cont_hist =
+                self.continuation_history
+                    .get_after_mv(prev_move, prev_piece, mv, moved_piece) as i32;
+            let cont_hist_2 =
+                self.continuation_history_2
+                    .get_after_mv(prev2_move, prev2_piece, mv, moved_piece) as i32;
+            let cont_hist_4 =
+                self.continuation_history_4
+                    .get_after_mv(prev4_move, prev4_piece, mv, moved_piece) as i32;
+            let hist_score =
+                self.history.get(stm, mv.from(), mv.to()) + cont_hist + cont_hist_2 + cont_hist_4;
 
             let hist_adjustment = hist_score / adjustment_fac;
 
@@ -1477,6 +1563,10 @@ impl Engine {
                 prev_piece: moved_piece,
                 prev2_move: prev_move,
                 prev2_piece: prev_piece,
+                prev3_move: prev2_move,
+                prev3_piece: prev2_piece,
+                prev4_move: prev3_move,
+                prev4_piece: prev3_piece,
                 excluded_move: Move::NULL,
             },
             limits,
@@ -1498,6 +1588,10 @@ impl Engine {
                     prev_piece: moved_piece,
                     prev2_move: prev_move,
                     prev2_piece: prev_piece,
+                    prev3_move: prev2_move,
+                    prev3_piece: prev2_piece,
+                    prev4_move: prev3_move,
+                    prev4_piece: prev3_piece,
                     excluded_move: Move::NULL,
                 },
                 limits,
@@ -1518,6 +1612,10 @@ impl Engine {
                     prev_piece: moved_piece,
                     prev2_move: prev_move,
                     prev2_piece: prev_piece,
+                    prev3_move: prev2_move,
+                    prev3_piece: prev2_piece,
+                    prev4_move: prev3_move,
+                    prev4_piece: prev3_piece,
                     excluded_move: Move::NULL,
                 },
                 limits,
@@ -1552,6 +1650,10 @@ impl Engine {
             prev_piece,
             prev2_move,
             prev2_piece,
+            prev3_move,
+            prev3_piece,
+            prev4_move,
+            prev4_piece,
             ..
         } = params;
 
@@ -1679,6 +1781,8 @@ impl Engine {
             prev_piece,
             prev2_move,
             prev2_piece,
+            prev4_move,
+            prev4_piece,
             qsearch_picker,
         );
         let mut mv_searched = 0;
@@ -1726,6 +1830,10 @@ impl Engine {
                     prev_piece: moved_piece,
                     prev2_move: prev_move,
                     prev2_piece: prev_piece,
+                    prev3_move: prev2_move,
+                    prev3_piece: prev2_piece,
+                    prev4_move: prev3_move,
+                    prev4_piece: prev3_piece,
                     ..params
                 },
                 info,
@@ -1802,6 +1910,8 @@ impl Engine {
         prev_piece: PieceInfo,
         prev2_move: Move,
         prev2_piece: PieceInfo,
+        prev4_move: Move,
+        prev4_piece: PieceInfo,
         ply: usize,
         movelist: &mut MoveList,
     ) {
@@ -1832,18 +1942,20 @@ impl Engine {
                 score += self
                     .history
                     .get(self.board.side_to_move().val(), mv.from(), mv.to())
-                    << 2;
+                    << HIST_SHIFT;
                 let cur_piece = self.board.piece_on(mv.from());
-                score +=
-                    (self
-                        .continuation_history
-                        .get(prev_move, prev_piece, mv, cur_piece)
-                        << 4) as i32;
-                score +=
-                    (self
-                        .continuation_history_2
-                        .get(prev2_move, prev2_piece, mv, cur_piece)
-                        << 4) as i32;
+                score += (self
+                    .continuation_history
+                    .get(prev_move, prev_piece, mv, cur_piece)
+                    << CONT_HIST_SHIFT_1) as i32;
+                score += (self
+                    .continuation_history_2
+                    .get(prev2_move, prev2_piece, mv, cur_piece)
+                    << CONT_HIST_SHIFT_2) as i32;
+                score += (self
+                    .continuation_history_4
+                    .get(prev4_move, prev4_piece, mv, cur_piece)
+                    << CONT_HIST_SHIFT_4) as i32;
 
                 movelist.score[i] = score;
             } else {
@@ -1926,6 +2038,10 @@ struct SearchParams {
     prev_piece: PieceInfo,
     prev2_move: Move,
     prev2_piece: PieceInfo,
+    prev3_move: Move,
+    prev3_piece: PieceInfo,
+    prev4_move: Move,
+    prev4_piece: PieceInfo,
     excluded_move: Move,
 }
 
