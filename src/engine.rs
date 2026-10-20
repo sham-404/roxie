@@ -396,8 +396,8 @@ const CORR_HIST_SIZE: usize = 16384; // must be a power of 2
 const MAX_CORR_HISTORY: usize = 16384;
 pub const CORR_GRAIN: usize = 256; // multiplier for higher precision score while avoiding floats
 
-// Using CORR_GRAIN * 2 halves the table's output, naturally dampening the correction.
-const CORR_SCALE: i32 = CORR_GRAIN as i32 * 2;
+// get() converts the grain-scaled stored error back into centipawns.
+const CORR_SCALE: i32 = CORR_GRAIN as i32;
 
 pub struct CorrectionHistory {
     // [stm color][pawn_key % size]

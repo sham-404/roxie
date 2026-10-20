@@ -69,8 +69,10 @@ pub const LMR_DIV_PCT: f64 = 2.47;
 pub const LMR_MIN_DEPTH_IMP: u16 = 2;
 pub const LMR_MIN_DEPTH_NON: u16 = 2;
 pub const LMR_MIN_QUIET: usize = 1;
-pub const LMR_HIST_FACTOR: i32 = 5085;
+pub const LMR_HIST_FACTOR: i32 = 8192;
 pub const LMR_HIST_CLAMP: i32 = 5;
+
+pub const LMR_CONT_HIST_SHIFT: i32 = 2;
 pub const LMR_NON_IMP_BONUS: i32 = 0;
 pub const LMR_COUNTER_KILLER_BONUS: i32 = 4;
 
@@ -92,7 +94,7 @@ pub const SEE_QUEEN: i32 = 929;
 
 // History tables
 pub const HIST_SHIFT: i32 = 2;
-pub const CONT_HIST_SHIFT_1: i32 = 4;
-pub const CONT_HIST_SHIFT_2: i32 = 3;
-pub const CONT_HIST_SHIFT_4: i32 = 2;
+pub const CONT_HIST_SHIFT_1: i32 = 3;
+pub const CONT_HIST_SHIFT_2: i32 = 2;
+pub const CONT_HIST_SHIFT_4: i32 = 1;
 
