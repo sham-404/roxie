@@ -1,5 +1,9 @@
 use crate::{
-    board::Board, engine::{CaptureHistory, Engine}, evaluation::MG_TABLE, items::{Move, MoveFlag, MoveList, Piece, PieceInfo}, params::*,
+    board::Board,
+    engine::{CaptureHistory, Engine},
+    evaluation::MG_TABLE,
+    items::{Move, MoveFlag, MoveList, Piece, PieceInfo},
+    params::*,
 };
 
 pub const QUIET_MV_MARGIN: i32 = 10_000_000;
@@ -285,19 +289,22 @@ impl Engine {
                             picker.prev_piece,
                             mv,
                             cur_piece,
-                        ) << CONT_HIST_SHIFT_1) as i32;
+                        ) as i32)
+                            << CONT_HIST_SHIFT_1;
                         score += (self.continuation_history_2.get(
                             picker.prev2_mv,
                             picker.prev2_piece,
                             mv,
                             cur_piece,
-                        ) << CONT_HIST_SHIFT_2) as i32;
+                        ) as i32)
+                            << CONT_HIST_SHIFT_2;
                         score += (self.continuation_history_4.get(
                             picker.prev4_mv,
                             picker.prev4_piece,
                             mv,
                             cur_piece,
-                        ) << CONT_HIST_SHIFT_4) as i32;
+                        ) as i32)
+                            << CONT_HIST_SHIFT_4;
                         picker.moves.score[i] = score;
                     }
 

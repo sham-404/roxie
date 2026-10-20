@@ -1096,6 +1096,7 @@ impl Engine {
                 continue;
             }
 
+            let moved_piece = self.board.piece_on(mv.from());
             let undo = self.make_mv(&mv);
 
             if is_quiet {
@@ -1132,6 +1133,7 @@ impl Engine {
             let eval = self.pv_search(
                 mv,
                 mv_idx,
+                moved_piece,
                 quiet_searched,
                 is_improving,
                 SearchParams {
@@ -1439,6 +1441,7 @@ impl Engine {
         &mut self,
         mv: Move,
         mv_idx: usize,
+        moved_piece: PieceInfo,
         quiet_searched: usize,
         is_improving: bool,
         params: SearchParams,
@@ -1466,8 +1469,6 @@ impl Engine {
             prev4_piece,
             ..
         } = params;
-
-        let moved_piece = self.board.piece_on(mv.from());
 
         let in_check = self.board.in_check();
 
@@ -1956,16 +1957,16 @@ impl Engine {
                 let cur_piece = self.board.piece_on(mv.from());
                 score += (self
                     .continuation_history
-                    .get(prev_move, prev_piece, mv, cur_piece)
-                    << CONT_HIST_SHIFT_1) as i32;
+                    .get(prev_move, prev_piece, mv, cur_piece) as i32)
+                    << CONT_HIST_SHIFT_1;
                 score += (self
                     .continuation_history_2
-                    .get(prev2_move, prev2_piece, mv, cur_piece)
-                    << CONT_HIST_SHIFT_2) as i32;
+                    .get(prev2_move, prev2_piece, mv, cur_piece) as i32)
+                    << CONT_HIST_SHIFT_2;
                 score += (self
                     .continuation_history_4
-                    .get(prev4_move, prev4_piece, mv, cur_piece)
-                    << CONT_HIST_SHIFT_4) as i32;
+                    .get(prev4_move, prev4_piece, mv, cur_piece) as i32)
+                    << CONT_HIST_SHIFT_4;
 
                 movelist.score[i] = score;
             } else {
