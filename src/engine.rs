@@ -4,13 +4,7 @@ use std::sync::{
 };
 
 use crate::{
-    board::Board,
-    r#const::{BLACK, MAX_PLY, WHITE},
-    items::{GameHistory, Move, Piece, PieceInfo},
-    network::{EvalBuf, HL1, NETWORK},
-    search::MAX_HISTORY,
-    tt::TranspositionTable,
-    uci_print,
+    board::Board, r#const::{BLACK, MAX_PLY, WHITE}, items::{GameHistory, Move, Piece, PieceInfo}, network::{EvalBuf, HL1, NETWORK}, params::{CORR_WEIGHT_MAJOR, CORR_WEIGHT_MINOR, CORR_WEIGHT_PAWN, CORR_WEIGHT_TOTAL}, search::MAX_HISTORY, tt::TranspositionTable, uci_print,
 };
 
 #[derive(Clone)]
@@ -440,11 +434,11 @@ impl CorrectionHistory {
         let minor_idx = (minor_key as usize) & (CORR_HIST_SIZE - 1);
         let major_idx = (major_key as usize) & (CORR_HIST_SIZE - 1);
 
-        let sum = self.pawn_table[stm][pawn_idx]
-            + self.minor_table[stm][minor_idx]
-            + self.major_table[stm][major_idx];
+        let sum = CORR_WEIGHT_PAWN * self.pawn_table[stm][pawn_idx]
+            + CORR_WEIGHT_MINOR * self.minor_table[stm][minor_idx]
+            + CORR_WEIGHT_MAJOR * self.major_table[stm][major_idx];
 
-        (sum / 3) / CORR_SCALE
+        (sum / CORR_WEIGHT_TOTAL) / CORR_SCALE
     }
 
     pub fn update(

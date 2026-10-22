@@ -98,3 +98,8 @@ pub const CONT_HIST_SHIFT_1: i32 = 3;
 pub const CONT_HIST_SHIFT_2: i32 = 2;
 pub const CONT_HIST_SHIFT_4: i32 = 1;
 
+// Correction history table
+pub const CORR_WEIGHT_PAWN: i32 = 1;
+pub const CORR_WEIGHT_MINOR: i32 = 1;
+pub const CORR_WEIGHT_MAJOR: i32 = 1;
+pub const CORR_WEIGHT_TOTAL: i32 = CORR_WEIGHT_PAWN + CORR_WEIGHT_MINOR + CORR_WEIGHT_MAJOR;
