@@ -383,6 +383,7 @@ impl CaptureHistory {
 
         let h = &mut self.table[att_idx][vic_type_idx][to];
         *h += bonus - (*h * bonus.abs()) / MAX_CAP_HISTORY;
+        *h = (*h).clamp(-MAX_CAP_HISTORY, MAX_CAP_HISTORY);
     }
 }
 

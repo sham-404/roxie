@@ -1271,7 +1271,7 @@ impl Engine {
                     };
 
                     self.capture_history
-                        .update(attacker, victim, mv.to(), -bonus);
+                        .update(attacker, victim, mv.to(), bonus);
                 }
 
                 break;
@@ -1365,6 +1365,8 @@ impl Engine {
             prev_piece,
             prev2_move,
             prev2_piece,
+            prev3_move,
+            prev3_piece,
             excluded_move,
             ..
         } = params;
@@ -1407,14 +1409,12 @@ impl Engine {
                     extension,
                     prev_move: Move::NULL,
                     prev_piece: Piece::NONE,
-                    // The null move occupies the current ply, so the real move chain
-                    // must be shifted by two (the opponent moves twice around a null).
-                    prev2_move: Move::NULL,
-                    prev2_piece: Piece::NONE,
-                    prev3_move: prev_move,
-                    prev3_piece: prev_piece,
-                    prev4_move: prev2_move,
-                    prev4_piece: prev2_piece,
+                    prev2_move: prev_move,
+                    prev2_piece: prev_piece,
+                    prev3_move: prev2_move,
+                    prev3_piece: prev2_piece,
+                    prev4_move: prev3_move,
+                    prev4_piece: prev3_piece,
                     excluded_move: Move::NULL,
                 },
                 limits,
