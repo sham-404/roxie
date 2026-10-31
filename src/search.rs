@@ -296,9 +296,9 @@ impl Engine {
 
                     // if aborted, use the partial resutls and skip the whole loop
                     if info.get_abort() {
-                        last_complete_info.nodes = self.shared.nodes.load(Ordering::Relaxed);
-                        last_complete_info.seldepth = info.seldepth;
+                        info.stats.nodes = self.shared.nodes.load(Ordering::Relaxed) as usize;
                         last_complete_info.stats = info.stats;
+                        last_complete_info.seldepth = info.seldepth;
                         last_complete_info.depth = d;
                         last_complete_info.pv = self.gen_pv();
 
@@ -1526,15 +1526,15 @@ impl Engine {
             // Continuous history adjustment
             let adjustment_fac = LMR_HIST_FACTOR;
             let stm = self.board.side_to_move().opponent().val();
-            let cont_hist = self
-                .continuation_history
-                .get_after_mv(prev_move, prev_piece, mv, moved_piece) as i32;
-            let cont_hist_2 = self
-                .continuation_history_2
-                .get_after_mv(prev2_move, prev2_piece, mv, moved_piece) as i32;
-            let cont_hist_4 = self
-                .continuation_history_4
-                .get_after_mv(prev4_move, prev4_piece, mv, moved_piece) as i32;
+            let cont_hist =
+                self.continuation_history
+                    .get_after_mv(prev_move, prev_piece, mv, moved_piece) as i32;
+            let cont_hist_2 =
+                self.continuation_history_2
+                    .get_after_mv(prev2_move, prev2_piece, mv, moved_piece) as i32;
+            let cont_hist_4 =
+                self.continuation_history_4
+                    .get_after_mv(prev4_move, prev4_piece, mv, moved_piece) as i32;
             let hist_score = self.history.get(stm, mv.from(), mv.to())
                 + ((cont_hist + cont_hist_2 + cont_hist_4) >> LMR_CONT_HIST_SHIFT);
 

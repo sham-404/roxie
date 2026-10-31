@@ -4,7 +4,14 @@ use std::sync::{
 };
 
 use crate::{
-    board::Board, r#const::{BLACK, MAX_PLY, WHITE}, items::{GameHistory, Move, Piece, PieceInfo}, network::{EvalBuf, HL1, NETWORK}, params::{CORR_WEIGHT_MAJOR, CORR_WEIGHT_MINOR, CORR_WEIGHT_PAWN, CORR_WEIGHT_TOTAL}, search::MAX_HISTORY, tt::TranspositionTable, uci_print,
+    board::Board,
+    r#const::{BLACK, MAX_PLY, WHITE},
+    items::{GameHistory, Move, Piece, PieceInfo},
+    network::{EvalBuf, HL1, NETWORK},
+    params::{CORR_WEIGHT_MAJOR, CORR_WEIGHT_MINOR, CORR_WEIGHT_PAWN, CORR_WEIGHT_TOTAL},
+    search::MAX_HISTORY,
+    tt::TranspositionTable,
+    uci_print,
 };
 
 #[derive(Clone)]
