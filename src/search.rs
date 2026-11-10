@@ -714,14 +714,21 @@ impl Engine {
         let pawn_hash = self.board.get_pawn_hash();
         let minor_hash = self.board.get_minor_hash();
         let major_hash = self.board.get_major_hash();
+        let non_pawn_hash = self.board.get_non_pawn_hash();
+        let material_hash = self.board.get_material_hash();
         let is_non_pv = alpha + 1 == beta;
         let base_eval = self.evaluate(ply as usize);
 
         // Static evaluation
         let static_eval = if !in_check {
-            let correction = self
-                .correction_history
-                .get(stm_val, pawn_hash, minor_hash, major_hash);
+            let correction = self.correction_history.get(
+                stm_val,
+                pawn_hash,
+                minor_hash,
+                major_hash,
+                non_pawn_hash,
+                material_hash,
+            );
 
             // Prevent correction from accidentally creating a fake mate score
             (base_eval as i32 + correction)
@@ -1316,6 +1323,8 @@ impl Engine {
                     pawn_hash,
                     minor_hash,
                     major_hash,
+                    non_pawn_hash,
+                    material_hash,
                     err,
                     depth as i32,
                 );
@@ -1735,6 +1744,8 @@ impl Engine {
         let pawn_hash = self.board.get_pawn_hash();
         let minor_hash = self.board.get_minor_hash();
         let major_hash = self.board.get_major_hash();
+        let non_pawn_hash = self.board.get_non_pawn_hash();
+        let material_hash = self.board.get_material_hash();
 
         let base_eval = self.evaluate(ply as usize);
 
@@ -1742,9 +1753,14 @@ impl Engine {
 
         let mut stand_pat = if !in_check {
             // clamping the data to be between 32 centipawns
-            let correction = self
-                .correction_history
-                .get(stm_val, pawn_hash, minor_hash, major_hash);
+            let correction = self.correction_history.get(
+                stm_val,
+                pawn_hash,
+                minor_hash,
+                major_hash,
+                non_pawn_hash,
+                material_hash,
+            );
 
             // Prevent correction from accidentally creating a fake mate score
             (base_eval as i32 + correction)

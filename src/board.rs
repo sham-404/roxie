@@ -5,7 +5,7 @@ use crate::evaluation::{EG_TABLE, GAME_PHASE_VAL, MG_TABLE};
 use crate::items::*;
 use crate::magics::{get_bishop_move_bits, get_rook_move_bits};
 use crate::move_pick::QUIET_MV_MARGIN;
-use crate::zobrist::{CASTLING_KEYS, ENPASSANT_KEYS, SIDE_KEY, ZOBRIST_TABLE};
+use crate::zobrist::{CASTLING_KEYS, ENPASSANT_KEYS, MATERIAL_KEYS, SIDE_KEY, ZOBRIST_TABLE};
 
 const PIECE_VALS: [i32; 6] = [100, 320, 330, 500, 900, 0];
 
@@ -165,6 +165,51 @@ pub fn compute_major_hash(board: &Board) -> u64 {
     hash
 }
 
+pub fn compute_non_pawn_hash(board: &Board) -> u64 {
+    let mut hash = 0;
+    let zob = ZOBRIST_TABLE.get().unwrap();
+
+    // pieces
+    let white_knight_idx = Piece::to_idx(Piece::WHITE | Piece::KNIGHT);
+    let black_knight_idx = Piece::to_idx(Piece::BLACK | Piece::KNIGHT);
+    let white_bishop_idx = Piece::to_idx(Piece::WHITE | Piece::BISHOP);
+    let black_bishop_idx = Piece::to_idx(Piece::BLACK | Piece::BISHOP);
+    let white_rook_idx = Piece::to_idx(Piece::WHITE | Piece::ROOK);
+    let black_rook_idx = Piece::to_idx(Piece::BLACK | Piece::ROOK);
+    let white_queen_idx = Piece::to_idx(Piece::WHITE | Piece::QUEEN);
+    let black_queen_idx = Piece::to_idx(Piece::BLACK | Piece::QUEEN);
+    for piece in [
+        white_knight_idx,
+        black_knight_idx,
+        white_bishop_idx,
+        black_bishop_idx,
+        white_rook_idx,
+        black_rook_idx,
+        white_queen_idx,
+        black_queen_idx,
+    ] {
+        let mut bb = board.bitboards[piece];
+
+        while let Some(sq) = pop_lsb(&mut bb) {
+            hash ^= zob[piece][sq];
+        }
+    }
+
+    hash
+}
+
+pub fn compute_material_hash(board: &Board) -> u64 {
+    let mut hash = 0;
+    let mat_keys = MATERIAL_KEYS.get().unwrap();
+
+    for piece in 0..12 {
+        let count = board.bitboards[piece].count_ones() as usize;
+        hash ^= mat_keys[piece][count];
+    }
+
+    hash
+}
+
 fn compute_hash(board: &Board) -> u64 {
     let mut hash = 0;
 
@@ -209,6 +254,8 @@ pub struct Board {
     pawn_hash: u64,
     minor_hash: u64,
     major_hash: u64,
+    non_pawn_hash: u64,
+    material_hash: u64,
     halfmove_clock: usize,
 
     mg_score: i32,
@@ -233,6 +280,8 @@ impl Board {
             pawn_hash: 0,
             minor_hash: 0,
             major_hash: 0,
+            non_pawn_hash: 0,
+            material_hash: 0,
             halfmove_clock: 0,
             mg_score: 0,
             eg_score: 0,
@@ -267,6 +316,8 @@ impl Board {
         board.pawn_hash = compute_pawn_hash(&board);
         board.minor_hash = compute_minor_hash(&board);
         board.major_hash = compute_major_hash(&board);
+        board.non_pawn_hash = compute_non_pawn_hash(&board);
+        board.material_hash = compute_material_hash(&board);
         board.build_mailbox();
         board.build_occupancy();
         board.init_pesto_score();
@@ -354,6 +405,8 @@ impl Board {
         board.pawn_hash = compute_pawn_hash(&board);
         board.minor_hash = compute_minor_hash(&board);
         board.major_hash = compute_major_hash(&board);
+        board.non_pawn_hash = compute_non_pawn_hash(&board);
+        board.material_hash = compute_material_hash(&board);
         board.init_pesto_score();
 
         board
@@ -366,6 +419,7 @@ impl Board {
         let ep_keys = ENPASSANT_KEYS.get().unwrap();
         let castling_keys = CASTLING_KEYS.get().unwrap();
         let side_key = SIDE_KEY.get().unwrap();
+        let material_keys = MATERIAL_KEYS.get().unwrap();
 
         let from = mov.from();
         let to = mov.to();
@@ -393,6 +447,8 @@ impl Board {
             self.pawn_hash,
             self.minor_hash,
             self.major_hash,
+            self.non_pawn_hash,
+            self.material_hash,
             self.hash,
         );
 
@@ -404,10 +460,12 @@ impl Board {
             || Piece::get_type(cur_piece) == Piece::BISHOP
         {
             self.minor_hash ^= zob[piece_idx][from];
+            self.non_pawn_hash ^= zob[piece_idx][from];
         } else if Piece::get_type(cur_piece) == Piece::ROOK
             || Piece::get_type(cur_piece) == Piece::QUEEN
         {
             self.major_hash ^= zob[piece_idx][from];
+            self.non_pawn_hash ^= zob[piece_idx][from];
         }
 
         if let Some(ep_sq) = self.en_passant {
@@ -431,11 +489,17 @@ impl Board {
                 || Piece::get_type(captured) == Piece::BISHOP
             {
                 self.minor_hash ^= zob[cap_idx][captured_sq];
+                self.non_pawn_hash ^= zob[cap_idx][captured_sq];
             } else if Piece::get_type(captured) == Piece::ROOK
                 || Piece::get_type(captured) == Piece::QUEEN
             {
                 self.major_hash ^= zob[cap_idx][captured_sq];
+                self.non_pawn_hash ^= zob[cap_idx][captured_sq];
             }
+
+            // Update material hash: captured piece count goes from cnt to cnt - 1
+            let cap_cnt = self.bitboards[cap_idx].count_ones() as usize;
+            self.material_hash ^= material_keys[cap_idx][cap_cnt] ^ material_keys[cap_idx][cap_cnt - 1];
 
             self.remove_piece(captured, captured_sq);
         }
@@ -445,6 +509,10 @@ impl Board {
 
         // Handling Special Moves
         if flag.is_promo() {
+            // Update material hash: pawn count goes from cnt to cnt - 1
+            let pawn_cnt = self.bitboards[piece_idx].count_ones() as usize;
+            self.material_hash ^= material_keys[piece_idx][pawn_cnt] ^ material_keys[piece_idx][pawn_cnt - 1];
+
             self.remove_piece(cur_piece, to);
             // Note: piece is already XORed out of 'from', so we just XOR the promo piece into 'to'
             let promo_type = flag.0 & MoveFlag::PIECE_BIT;
@@ -462,6 +530,14 @@ impl Board {
             } else {
                 self.major_hash ^= zob[Piece::to_idx(promo_piece)][to];
             }
+            self.non_pawn_hash ^= zob[Piece::to_idx(promo_piece)][to];
+
+            // Update material hash: promo piece count goes from cnt to cnt + 1
+            let promo_idx = Piece::to_idx(promo_piece);
+            let promo_cnt = self.bitboards[promo_idx].count_ones() as usize;
+            self.material_hash ^=
+                material_keys[promo_idx][promo_cnt] ^ material_keys[promo_idx][promo_cnt + 1];
+
             self.add_piece(promo_piece, to);
         } else {
             self.hash ^= zob[piece_idx][to]; // Update zobrist for normal move
@@ -471,10 +547,12 @@ impl Board {
                 || Piece::get_type(cur_piece) == Piece::BISHOP
             {
                 self.minor_hash ^= zob[piece_idx][to];
+                self.non_pawn_hash ^= zob[piece_idx][to];
             } else if Piece::get_type(cur_piece) == Piece::ROOK
                 || Piece::get_type(cur_piece) == Piece::QUEEN
             {
                 self.major_hash ^= zob[piece_idx][to];
+                self.non_pawn_hash ^= zob[piece_idx][to];
             }
         }
 
@@ -492,10 +570,12 @@ impl Board {
             if flag == MoveFlag::KING_CASTLE {
                 self.hash ^= zob[r_idx][king_pos + 3] ^ zob[r_idx][king_pos + 1];
                 self.major_hash ^= zob[r_idx][king_pos + 3] ^ zob[r_idx][king_pos + 1];
+                self.non_pawn_hash ^= zob[r_idx][king_pos + 3] ^ zob[r_idx][king_pos + 1];
                 self.move_piece_quiet(king_pos + 3, king_pos + 1);
             } else {
                 self.hash ^= zob[r_idx][king_pos - 4] ^ zob[r_idx][king_pos - 1];
                 self.major_hash ^= zob[r_idx][king_pos - 4] ^ zob[r_idx][king_pos - 1];
+                self.non_pawn_hash ^= zob[r_idx][king_pos - 4] ^ zob[r_idx][king_pos - 1];
                 self.move_piece_quiet(king_pos - 4, king_pos - 1);
             }
         }
@@ -541,6 +621,16 @@ impl Board {
             self.major_hash,
             compute_major_hash(self),
             "Major hash mismatch"
+        );
+        debug_assert_eq!(
+            self.non_pawn_hash,
+            compute_non_pawn_hash(self),
+            "Non-pawn hash mismatch"
+        );
+        debug_assert_eq!(
+            self.material_hash,
+            compute_material_hash(self),
+            "Material hash mismatch"
         );
 
         undo
@@ -613,6 +703,8 @@ impl Board {
         self.pawn_hash = undo.prev_pawn_hash;
         self.minor_hash = undo.prev_minor_hash;
         self.major_hash = undo.prev_major_hash;
+        self.non_pawn_hash = undo.prev_non_pawn_hash;
+        self.material_hash = undo.prev_material_hash;
 
         self.side_to_move = self.side_to_move.opponent();
     }
@@ -1124,6 +1216,16 @@ impl Board {
     #[inline(always)]
     pub fn get_major_hash(&self) -> u64 {
         self.major_hash
+    }
+
+    #[inline(always)]
+    pub fn get_non_pawn_hash(&self) -> u64 {
+        self.non_pawn_hash
+    }
+
+    #[inline(always)]
+    pub fn get_material_hash(&self) -> u64 {
+        self.material_hash
     }
 
     #[inline(always)]
