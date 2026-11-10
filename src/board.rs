@@ -210,6 +210,24 @@ pub fn compute_material_hash(board: &Board) -> u64 {
     hash
 }
 
+pub fn compute_king_hash(board: &Board) -> u64 {
+    let mut hash = 0;
+    let zob = ZOBRIST_TABLE.get().unwrap();
+
+    // pieces
+    let white_king_idx = Piece::to_idx(Piece::WHITE | Piece::KING);
+    let black_king_idx = Piece::to_idx(Piece::BLACK | Piece::KING);
+    for piece in [white_king_idx, black_king_idx] {
+        let mut bb = board.bitboards[piece];
+
+        while let Some(sq) = pop_lsb(&mut bb) {
+            hash ^= zob[piece][sq];
+        }
+    }
+
+    hash
+}
+
 fn compute_hash(board: &Board) -> u64 {
     let mut hash = 0;
 
@@ -256,6 +274,7 @@ pub struct Board {
     major_hash: u64,
     non_pawn_hash: u64,
     material_hash: u64,
+    king_hash: u64,
     halfmove_clock: usize,
 
     mg_score: i32,
@@ -282,6 +301,7 @@ impl Board {
             major_hash: 0,
             non_pawn_hash: 0,
             material_hash: 0,
+            king_hash: 0,
             halfmove_clock: 0,
             mg_score: 0,
             eg_score: 0,
@@ -318,6 +338,7 @@ impl Board {
         board.major_hash = compute_major_hash(&board);
         board.non_pawn_hash = compute_non_pawn_hash(&board);
         board.material_hash = compute_material_hash(&board);
+        board.king_hash = compute_king_hash(&board);
         board.build_mailbox();
         board.build_occupancy();
         board.init_pesto_score();
@@ -407,6 +428,7 @@ impl Board {
         board.major_hash = compute_major_hash(&board);
         board.non_pawn_hash = compute_non_pawn_hash(&board);
         board.material_hash = compute_material_hash(&board);
+        board.king_hash = compute_king_hash(&board);
         board.init_pesto_score();
 
         board
@@ -449,6 +471,7 @@ impl Board {
             self.major_hash,
             self.non_pawn_hash,
             self.material_hash,
+            self.king_hash,
             self.hash,
         );
 
@@ -466,6 +489,8 @@ impl Board {
         {
             self.major_hash ^= zob[piece_idx][from];
             self.non_pawn_hash ^= zob[piece_idx][from];
+        } else if Piece::get_type(cur_piece) == Piece::KING {
+            self.king_hash ^= zob[piece_idx][from];
         }
 
         if let Some(ep_sq) = self.en_passant {
@@ -553,6 +578,8 @@ impl Board {
             {
                 self.major_hash ^= zob[piece_idx][to];
                 self.non_pawn_hash ^= zob[piece_idx][to];
+            } else if Piece::get_type(cur_piece) == Piece::KING {
+                self.king_hash ^= zob[piece_idx][to];
             }
         }
 
@@ -632,6 +659,11 @@ impl Board {
             compute_material_hash(self),
             "Material hash mismatch"
         );
+        debug_assert_eq!(
+            self.king_hash,
+            compute_king_hash(self),
+            "King hash mismatch"
+        );
 
         undo
     }
@@ -705,6 +737,7 @@ impl Board {
         self.major_hash = undo.prev_major_hash;
         self.non_pawn_hash = undo.prev_non_pawn_hash;
         self.material_hash = undo.prev_material_hash;
+        self.king_hash = undo.prev_king_hash;
 
         self.side_to_move = self.side_to_move.opponent();
     }
@@ -1226,6 +1259,11 @@ impl Board {
     #[inline(always)]
     pub fn get_material_hash(&self) -> u64 {
         self.material_hash
+    }
+
+    #[inline(always)]
+    pub fn get_king_hash(&self) -> u64 {
+        self.king_hash
     }
 
     #[inline(always)]

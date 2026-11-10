@@ -305,6 +305,7 @@ pub struct Undo {
     pub prev_major_hash: u64,
     pub prev_non_pawn_hash: u64,
     pub prev_material_hash: u64,
+    pub prev_king_hash: u64,
     pub prev_hash: u64,
 }
 
@@ -319,6 +320,7 @@ impl Undo {
         major_hash: u64,
         non_pawn_hash: u64,
         material_hash: u64,
+        king_hash: u64,
         prev_hash: u64,
     ) -> Self {
         Self {
@@ -331,6 +333,7 @@ impl Undo {
             prev_major_hash: major_hash,
             prev_non_pawn_hash: non_pawn_hash,
             prev_material_hash: material_hash,
+            prev_king_hash: king_hash,
             prev_hash,
         }
     }

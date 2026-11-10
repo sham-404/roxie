@@ -716,6 +716,7 @@ impl Engine {
         let major_hash = self.board.get_major_hash();
         let non_pawn_hash = self.board.get_non_pawn_hash();
         let material_hash = self.board.get_material_hash();
+        let king_hash = self.board.get_king_hash();
         let is_non_pv = alpha + 1 == beta;
         let base_eval = self.evaluate(ply as usize);
 
@@ -728,6 +729,7 @@ impl Engine {
                 major_hash,
                 non_pawn_hash,
                 material_hash,
+                king_hash,
             );
 
             // Prevent correction from accidentally creating a fake mate score
@@ -1325,6 +1327,7 @@ impl Engine {
                     major_hash,
                     non_pawn_hash,
                     material_hash,
+                    king_hash,
                     err,
                     depth as i32,
                 );
@@ -1746,6 +1749,7 @@ impl Engine {
         let major_hash = self.board.get_major_hash();
         let non_pawn_hash = self.board.get_non_pawn_hash();
         let material_hash = self.board.get_material_hash();
+        let king_hash = self.board.get_king_hash();
 
         let base_eval = self.evaluate(ply as usize);
 
@@ -1760,6 +1764,7 @@ impl Engine {
                 major_hash,
                 non_pawn_hash,
                 material_hash,
+                king_hash,
             );
 
             // Prevent correction from accidentally creating a fake mate score

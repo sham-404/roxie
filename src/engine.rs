@@ -9,8 +9,8 @@ use crate::{
     items::{GameHistory, Move, Piece, PieceInfo},
     network::{EvalBuf, HL1, NETWORK},
     params::{
-        CORR_WEIGHT_MAJOR, CORR_WEIGHT_MATERIAL, CORR_WEIGHT_MINOR, CORR_WEIGHT_NON_PAWN,
-        CORR_WEIGHT_PAWN, CORR_WEIGHT_TOTAL,
+        CORR_WEIGHT_KING, CORR_WEIGHT_MAJOR, CORR_WEIGHT_MATERIAL, CORR_WEIGHT_MINOR,
+        CORR_WEIGHT_NON_PAWN, CORR_WEIGHT_PAWN, CORR_WEIGHT_TOTAL,
     },
     search::MAX_HISTORY,
     tt::TranspositionTable,
@@ -415,6 +415,8 @@ pub struct CorrectionHistory {
     non_pawn_table: Box<[[i32; CORR_HIST_SIZE]; 2]>,
     // [stm color][material_key % size]
     material_table: Box<[[i32; CORR_HIST_SIZE]; 2]>,
+    // [stm color][king_key % size]
+    king_table: Box<[[i32; CORR_HIST_SIZE]; 2]>,
 }
 
 impl CorrectionHistory {
@@ -440,6 +442,10 @@ impl CorrectionHistory {
                 .into_boxed_slice()
                 .try_into()
                 .unwrap(),
+            king_table: vec![[0; CORR_HIST_SIZE]; 2]
+                .into_boxed_slice()
+                .try_into()
+                .unwrap(),
         }
     }
 
@@ -459,18 +465,21 @@ impl CorrectionHistory {
         major_key: u64,
         non_pawn_key: u64,
         material_key: u64,
+        king_key: u64,
     ) -> i32 {
         let pawn_idx = (pawn_key as usize) & (CORR_HIST_SIZE - 1);
         let minor_idx = (minor_key as usize) & (CORR_HIST_SIZE - 1);
         let major_idx = (major_key as usize) & (CORR_HIST_SIZE - 1);
         let non_pawn_idx = (non_pawn_key as usize) & (CORR_HIST_SIZE - 1);
         let material_idx = (material_key as usize) & (CORR_HIST_SIZE - 1);
+        let king_idx = (king_key as usize) & (CORR_HIST_SIZE - 1);
 
         let sum = CORR_WEIGHT_PAWN * self.pawn_table[stm][pawn_idx]
             + CORR_WEIGHT_MINOR * self.minor_table[stm][minor_idx]
             + CORR_WEIGHT_MAJOR * self.major_table[stm][major_idx]
             + CORR_WEIGHT_NON_PAWN * self.non_pawn_table[stm][non_pawn_idx]
-            + CORR_WEIGHT_MATERIAL * self.material_table[stm][material_idx];
+            + CORR_WEIGHT_MATERIAL * self.material_table[stm][material_idx]
+            + CORR_WEIGHT_KING * self.king_table[stm][king_idx];
 
         (sum / CORR_WEIGHT_TOTAL) / CORR_SCALE
     }
@@ -483,6 +492,7 @@ impl CorrectionHistory {
         major_key: u64,
         non_pawn_key: u64,
         material_key: u64,
+        king_key: u64,
         err: i32,
         depth: i32,
     ) {
@@ -491,6 +501,7 @@ impl CorrectionHistory {
         let major_idx = (major_key as usize) & (CORR_HIST_SIZE - 1);
         let non_pawn_idx = (non_pawn_key as usize) & (CORR_HIST_SIZE - 1);
         let material_idx = (material_key as usize) & (CORR_HIST_SIZE - 1);
+        let king_idx = (king_key as usize) & (CORR_HIST_SIZE - 1);
 
         // using quadratic formula for weight calculation
         let weight = (depth * depth + 2 * depth + 1).min(128);
@@ -500,6 +511,7 @@ impl CorrectionHistory {
         Self::blend(&mut self.major_table[stm][major_idx], err, weight);
         Self::blend(&mut self.non_pawn_table[stm][non_pawn_idx], err, weight);
         Self::blend(&mut self.material_table[stm][material_idx], err, weight);
+        Self::blend(&mut self.king_table[stm][king_idx], err, weight);
     }
 
     pub fn clear(&mut self) {
@@ -520,6 +532,10 @@ impl CorrectionHistory {
             .try_into()
             .unwrap();
         self.material_table = vec![[0; CORR_HIST_SIZE]; 2]
+            .into_boxed_slice()
+            .try_into()
+            .unwrap();
+        self.king_table = vec![[0; CORR_HIST_SIZE]; 2]
             .into_boxed_slice()
             .try_into()
             .unwrap();
