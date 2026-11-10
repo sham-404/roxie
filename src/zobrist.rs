@@ -29,6 +29,11 @@ pub static ENPASSANT_KEYS: OnceLock<[u64; 8]> = OnceLock::new();
 pub static CASTLING_KEYS: OnceLock<[u64; 16]> = OnceLock::new();
 pub static SIDE_KEY: OnceLock<u64> = OnceLock::new();
 
+// Separate material keys for the material hash calculation
+// used as [piece][count]
+// Indexed by the piece count (0..=64), so any board state is representable.
+pub static MATERIAL_KEYS: OnceLock<[[u64; 65]; NPIECES]> = OnceLock::new();
+
 pub fn init_zobrist() {
     let mut rng = Rng::new(14974698296094900119);
 
@@ -59,4 +64,14 @@ pub fn init_zobrist() {
     });
 
     SIDE_KEY.get_or_init(|| rng.rand64());
+
+    MATERIAL_KEYS.get_or_init(|| {
+        let mut mat = [[0u64; 65]; NPIECES];
+        for p in 0..NPIECES {
+            for cnt in 0..65 {
+                mat[p][cnt] = rng.rand64();
+            }
+        }
+        mat
+    });
 }
