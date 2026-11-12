@@ -48,7 +48,7 @@ else
     BEST_FLAG   := $(FLAG_NATIVE)
 endif
 
-.PHONY: all auto native avx512 avx2 neon generic-x86 generic-arm pgo clean help
+.PHONY: all auto native avx512 avx2 neon generic-x86 generic-arm spsa pgo clean help
 
 all: auto
 
@@ -74,6 +74,9 @@ neon: ## Build explicitly for ARM NEON
 
 generic-arm: ## Build explicitly for generic ARM without NEON
 	RUSTFLAGS="$(FLAG_GENERIC_ARM)" cargo rustc --release --bin $(EXE) -- --emit link=$(EXE)-generic-arm
+
+spsa: ## Build with tunable search parameters exposed as UCI options (SPSA)
+	RUSTFLAGS="$(BEST_FLAG)" cargo rustc --release --features spsa --bin $(EXE) -- --emit link=$(EXE)-spsa
 
 pgo: ## Auto-detect CPU and run a full Profile-Guided Optimization build
 	@echo "Instrumenting for $(BEST_TARGET)..."

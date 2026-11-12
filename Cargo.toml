@@ -6,7 +6,9 @@ edition = "2024"
 [dependencies]
 
 [features]
-embed-nn = []
+# Exposed uci parameters, dynamic parameter updations
+# feature used for spsa tuning.
+spsa = []
 
 [profile.release]
 opt-level = 3

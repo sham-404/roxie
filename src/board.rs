@@ -524,7 +524,8 @@ impl Board {
 
             // Update material hash: captured piece count goes from cnt to cnt - 1
             let cap_cnt = self.bitboards[cap_idx].count_ones() as usize;
-            self.material_hash ^= material_keys[cap_idx][cap_cnt] ^ material_keys[cap_idx][cap_cnt - 1];
+            self.material_hash ^=
+                material_keys[cap_idx][cap_cnt] ^ material_keys[cap_idx][cap_cnt - 1];
 
             self.remove_piece(captured, captured_sq);
         }
@@ -536,7 +537,8 @@ impl Board {
         if flag.is_promo() {
             // Update material hash: pawn count goes from cnt to cnt - 1
             let pawn_cnt = self.bitboards[piece_idx].count_ones() as usize;
-            self.material_hash ^= material_keys[piece_idx][pawn_cnt] ^ material_keys[piece_idx][pawn_cnt - 1];
+            self.material_hash ^=
+                material_keys[piece_idx][pawn_cnt] ^ material_keys[piece_idx][pawn_cnt - 1];
 
             self.remove_piece(cur_piece, to);
             // Note: piece is already XORed out of 'from', so we just XOR the promo piece into 'to'

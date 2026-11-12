@@ -8,10 +8,7 @@ use crate::{
     r#const::{BLACK, MAX_PLY, WHITE},
     items::{GameHistory, Move, Piece, PieceInfo},
     network::{EvalBuf, HL1, NETWORK},
-    params::{
-        CORR_WEIGHT_KING, CORR_WEIGHT_MAJOR, CORR_WEIGHT_MATERIAL, CORR_WEIGHT_MINOR,
-        CORR_WEIGHT_NON_PAWN, CORR_WEIGHT_PAWN, CORR_WEIGHT_TOTAL,
-    },
+    param,
     search::MAX_HISTORY,
     tt::TranspositionTable,
     uci_print,
@@ -474,14 +471,22 @@ impl CorrectionHistory {
         let material_idx = (material_key as usize) & (CORR_HIST_SIZE - 1);
         let king_idx = (king_key as usize) & (CORR_HIST_SIZE - 1);
 
-        let sum = CORR_WEIGHT_PAWN * self.pawn_table[stm][pawn_idx]
-            + CORR_WEIGHT_MINOR * self.minor_table[stm][minor_idx]
-            + CORR_WEIGHT_MAJOR * self.major_table[stm][major_idx]
-            + CORR_WEIGHT_NON_PAWN * self.non_pawn_table[stm][non_pawn_idx]
-            + CORR_WEIGHT_MATERIAL * self.material_table[stm][material_idx]
-            + CORR_WEIGHT_KING * self.king_table[stm][king_idx];
+        let sum = param!(CORR_WEIGHT_PAWN) * self.pawn_table[stm][pawn_idx]
+            + param!(CORR_WEIGHT_MINOR) * self.minor_table[stm][minor_idx]
+            + param!(CORR_WEIGHT_MAJOR) * self.major_table[stm][major_idx]
+            + param!(CORR_WEIGHT_NON_PAWN) * self.non_pawn_table[stm][non_pawn_idx]
+            + param!(CORR_WEIGHT_MATERIAL) * self.material_table[stm][material_idx]
+            + param!(CORR_WEIGHT_KING) * self.king_table[stm][king_idx];
 
-        (sum / CORR_WEIGHT_TOTAL) / CORR_SCALE
+        let total = (param!(CORR_WEIGHT_PAWN)
+            + param!(CORR_WEIGHT_MINOR)
+            + param!(CORR_WEIGHT_MAJOR)
+            + param!(CORR_WEIGHT_NON_PAWN)
+            + param!(CORR_WEIGHT_MATERIAL)
+            + param!(CORR_WEIGHT_KING))
+        .max(1);
+
+        (sum / total) / CORR_SCALE
     }
 
     pub fn update(

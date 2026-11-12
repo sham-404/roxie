@@ -62,6 +62,17 @@ impl UCI {
         uci_print!("option name Clear Hash type button");
         uci_print!("option name Threads type spin default 1 min 1 max 1024");
         uci_print!("option name SyzygyPath type string default <empty>");
+
+        #[cfg(feature = "spsa")]
+        for option in crate::params::spin_options() {
+            uci_print!(
+                "option name {} type spin default {} min {} max {}",
+                option.name(),
+                option.default(),
+                option.min(),
+                option.max()
+            );
+        }
     }
 
     pub fn uci_loop(&mut self) {
@@ -366,7 +377,15 @@ impl UCI {
                 }
             },
 
-            Some(_) => {
+            Some(cmd) => {
+                #[cfg(feature = "spsa")]
+                if self.handle_spsa_option(cmd, commands) {
+                    return;
+                }
+
+                #[cfg(not(feature = "spsa"))]
+                let _ = cmd;
+
                 uci_print!("Invalid option");
             }
 
@@ -374,6 +393,31 @@ impl UCI {
                 uci_print!("No options specified");
             }
         }
+    }
+
+    /// Returns true if there is a valid option name available
+    /// from the vec of SpinOption returned from
+    /// spin_options()
+    #[cfg(feature = "spsa")]
+    fn handle_spsa_option<'a>(&self, name: &str, commands: &mut SplitWhitespace<'a>) -> bool {
+        let Some(option) = crate::params::spin_options()
+            .into_iter()
+            .find(|option| option.name().eq_ignore_ascii_case(name))
+        else {
+            return false;
+        };
+
+        if commands.next() != Some("value") {
+            uci_print!("Incomplete setoption parameters");
+            return true;
+        }
+
+        match commands.next().and_then(|val| val.parse::<i64>().ok()) {
+            Some(value) => option.set(value),
+            None => uci_print!("Invalid option"),
+        }
+
+        true
     }
 
     fn stop_search(&mut self) {

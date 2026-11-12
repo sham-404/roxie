@@ -3,7 +3,7 @@ use crate::{
     engine::{CaptureHistory, Engine},
     evaluation::MG_TABLE,
     items::{Move, MoveFlag, MoveList, Piece, PieceInfo},
-    params::*,
+    param,
 };
 
 pub const QUIET_MV_MARGIN: i32 = 10_000_000;
@@ -283,28 +283,28 @@ impl Engine {
                         score +=
                             self.history
                                 .get(self.board.side_to_move().val(), mv.from(), mv.to())
-                                << HIST_SHIFT;
+                                << param!(HIST_SHIFT);
                         score += (self.continuation_history.get(
                             picker.prev_mv,
                             picker.prev_piece,
                             mv,
                             cur_piece,
                         ) as i32)
-                            << CONT_HIST_SHIFT_1;
+                            << param!(CONT_HIST_SHIFT_1);
                         score += (self.continuation_history_2.get(
                             picker.prev2_mv,
                             picker.prev2_piece,
                             mv,
                             cur_piece,
                         ) as i32)
-                            << CONT_HIST_SHIFT_2;
+                            << param!(CONT_HIST_SHIFT_2);
                         score += (self.continuation_history_4.get(
                             picker.prev4_mv,
                             picker.prev4_piece,
                             mv,
                             cur_piece,
                         ) as i32)
-                            << CONT_HIST_SHIFT_4;
+                            << param!(CONT_HIST_SHIFT_4);
                         picker.moves.score[i] = score;
                     }
 

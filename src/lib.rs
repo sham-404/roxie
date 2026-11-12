@@ -1,3 +1,4 @@
+#![cfg_attr(rust_analyzer, allow(rust_analyzer::inactive_code))]
 pub mod board;
 pub mod r#const;
 pub mod engine;
