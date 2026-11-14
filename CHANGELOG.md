@@ -9,7 +9,11 @@ All notable changes to Roxie are documented in this file.
 ### Added
 - Swapped HalfKP with 8 bucketed piece square based nnue
 - MULTITHREADING is here!!!
+- Syzygy tablebase support is added after countless iterations
 - Used rust's cfg so that the compiler selects the relevent code dynamically compiles based on the cpu architecture
+- 2 ply and 4 ply correction history was added
+- Added non pawn hash, minor hash, major hash king position hash and material hash for correction history
+- Compile time SPSA tunable parameter exposure is made using macros and cfg!
 - Added Razoring
 - Added Dynamic Time Management (DTM)
 - SIMD support for nnue accumulator updation
@@ -20,15 +24,23 @@ All notable changes to Roxie are documented in this file.
 - Reduced RFP margin
 - Reduced DELTA margins and using 1.5 as multiplicative factor instead of 2
 - Uses Incremental pawn hash for correction history, and made few mathematical improvements there
+- Transposition Table entry is prefetched into cache for faster lookups
 - Hashes the en passant square only if it is capturable (improves hash efficiency)
 - Used dedeicated structs for history and other tables
 - Used is_improving flag to dynamically change pruning conditions
 - Improved singular extension
 - Tightened the lmr and nmp margin
+- Moves history stack from board to engine (making board struct to reduce the size drastically for faster recursion in search and perft)
 
 ### Fixed
 - Fixed small issues in correction history
-
+- Fixed accumulator size bug in direct evaluate() function
+- En passant updation logic fixed (happened during development of this version)
+- Halfmove updation bug fixed
+- Fixed Null move's prev move and prev prev move propogation bug
+- Fixed Capture history updation bug
+- Fixed bugs and overflow issues in Continuation History
+- Moved piece calculation bug in pv search is fixed
 ---
 
 ### v0.6.4
