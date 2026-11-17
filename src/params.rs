@@ -384,8 +384,8 @@ define_tunables! {
 
     // Quiescence Search
     Q_EP_GAIN: i16 = 75, 0, 500;
-
     Q_DELTA_MARGIN: i16 = 154, 0, 500;
+
     // Piece Values (SEE)
     SEE_PAWN: i32 = 97, 0, 1000;
     SEE_KNIGHT: i32 = 311, 0, 2000;
@@ -394,16 +394,16 @@ define_tunables! {
     SEE_QUEEN: i32 = 929, 0, 4000;
 
     // History tables
-    HIST_SHIFT: i32 = 2, 0, 8;
-    CONT_HIST_SHIFT_1: i32 = 3, 0, 8;
+    HIST_SHIFT: i32 = 1, 0, 8;
+    CONT_HIST_SHIFT_1: i32 = 4, 0, 8;
     CONT_HIST_SHIFT_2: i32 = 2, 0, 8;
     CONT_HIST_SHIFT_4: i32 = 1, 0, 8;
 
     // Correction history table
-    CORR_WEIGHT_PAWN: i32 = 1, 0, 32;
+    CORR_WEIGHT_PAWN: i32 = 0, 0, 32;
     CORR_WEIGHT_MINOR: i32 = 1, 0, 32;
     CORR_WEIGHT_MAJOR: i32 = 1, 0, 32;
-    CORR_WEIGHT_NON_PAWN: i32 = 1, 0, 32;
-    CORR_WEIGHT_MATERIAL: i32 = 1, 0, 32;
-    CORR_WEIGHT_KING: i32 = 1, 0, 32;
+    CORR_WEIGHT_NON_PAWN: i32 = 0, 0, 32;
+    CORR_WEIGHT_MATERIAL: i32 = 2, 0, 32;
+    CORR_WEIGHT_KING: i32 = 4, 0, 32;
 }
