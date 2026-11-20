@@ -301,109 +301,109 @@ macro_rules! define_tunables {
 
 define_tunables! {
     // Aspiration Windows
-    ASP_DELTA_0: i32 = 37, 1, 200;
-    ASP_DELTA_1: i32 = 12, 1, 200;
-    ASP_DELTA_2: i32 = 30, 1, 200;
-    ASP_DELTA_3: i32 = 45, 1, 200;
-    ASP_MIN_DEPTH: u16 = 1, 0, 12;
-    ASP_FACTOR_PCT: f32 = 1.97, 1.0, 4.0;
+    ASP_DELTA_0: i32 = 39, 1, 200;
+    ASP_DELTA_1: i32 = 14, 1, 200;
+    ASP_DELTA_2: i32 = 31, 1, 200;
+    ASP_DELTA_3: i32 = 50, 1, 200;
+    ASP_MIN_DEPTH: u16 = 2, 0, 12;
+    ASP_FACTOR_PCT: f32 = 1.94, 1.0, 4.0;
 
     // Internal Iterative Deepening
     IID_MIN_DEPTH: u16 = 7, 1, 20;
     IID_REDUCTION: u16 = 3, 0, 10;
 
     // Reverse Futility Pruning (RFP)
-    RFP_DEPTH_IMP: u16 = 2, 1, 10;
+    RFP_DEPTH_IMP: u16 = 3, 1, 10;
     RFP_DEPTH_NON: u16 = 2, 1, 10;
-    RFP_MARGIN_BASE: i16 = 30, 0, 300;
-    RFP_MARGIN_IMP: i16 = 0, -100, 100;
+    RFP_MARGIN_BASE: i16 = 19, 0, 300;
+    RFP_MARGIN_IMP: i16 = 3, -100, 100;
 
     // Razoring
     RAZOR_MAX_DEPTH: u16 = 1, 0, 10;
-    RAZOR_MARGIN_BASE: i16 = 279, 0, 1000;
-    RAZOR_MARGIN_PER_DEPTH: i16 = 78, 0, 500;
+    RAZOR_MARGIN_BASE: i16 = 283, 0, 1000;
+    RAZOR_MARGIN_PER_DEPTH: i16 = 77, 0, 500;
 
     // Null Move Pruning (NMP)
-    NMP_MIN_DEPTH_IMP: u16 = 1, 0, 10;
-    NMP_MIN_DEPTH_NON: u16 = 2, 0, 10;
-    NMP_REDUCE_BASE: u16 = 5, 0, 15;
-    NMP_REDUCE_DIV: u16 = 5, 1, 20;
-    NMP_NON_IMP_BONUS: u16 = 0, 0, 10;
-    NMP_ENDGAME_LIMIT: i32 = 7, 0, 24;
+    NMP_MIN_DEPTH_IMP: u16 = 2, 0, 10;
+    NMP_MIN_DEPTH_NON: u16 = 3, 0, 10;
+    NMP_REDUCE_BASE: u16 = 6, 0, 15;
+    NMP_REDUCE_DIV: u16 = 4, 1, 20;
+    NMP_NON_IMP_BONUS: u16 = 1, 0, 10;
+    NMP_ENDGAME_LIMIT: i32 = 6, 0, 24;
 
     // ProbCut
-    PC_MIN_DEPTH: u16 = 4, 1, 15;
-    PC_MARGIN: i32 = 7, 0, 500;
+    PC_MIN_DEPTH: u16 = 5, 1, 15;
+    PC_MARGIN: i32 = 5, 0, 500;
     PC_SPLIT_DEPTH: u16 = 9, 1, 30;
     PC_REDUCE_SMALL: u16 = 3, 0, 10;
     PC_REDUCE_LARGE: u16 = 3, 0, 10;
 
     // Singular Extensions
     SING_MIN_DEPTH: u16 = 11, 1, 30;
-    SING_TT_MARGIN: u16 = 3, 0, 10;
+    SING_TT_MARGIN: u16 = 2, 0, 10;
     SING_MARGIN_PER_DEPTH: i16 = 2, 0, 20;
     SING_DEPTH_DIV: u16 = 2, 1, 10;
-    SING_DOUBLE_MARGIN: i16 = 32, 0, 200;
-    SING_EXT_1: i32 = 0, 0, 10;
+    SING_DOUBLE_MARGIN: i16 = 35, 0, 200;
+    SING_EXT_1: i32 = 1, 0, 10;
     SING_EXT_2: i32 = 1, 0, 10;
 
     // Late Move Pruning (LMP)
-    LMP_BASE: usize = 6, 0, 100;
-    LMP_QUAD_FACTOR: usize = 4, 0, 50;
-    LMP_NON_IMP_DIV: usize = 3, 1, 20;
-    LMP_MAX_DEPTH: u16 = 7, 1, 30;
+    LMP_BASE: usize = 4, 0, 100;
+    LMP_QUAD_FACTOR: usize = 3, 0, 50;
+    LMP_NON_IMP_DIV: usize = 2, 1, 20;
+    LMP_MAX_DEPTH: u16 = 8, 1, 30;
 
     // SEE Pruning
-    SEE_PRUNE_MAX_DEPTH_IMP: u16 = 2, 0, 10;
+    SEE_PRUNE_MAX_DEPTH_IMP: u16 = 1, 0, 10;
     SEE_PRUNE_MAX_DEPTH_NON: u16 = 3, 0, 10;
-    SEE_MARGIN_BASE: i32 = 87, 0, 1000;
-    SEE_MARGIN_IMP: i32 = 14, 0, 500;
+    SEE_MARGIN_BASE: i32 = 81, 0, 1000;
+    SEE_MARGIN_IMP: i32 = 16, 0, 500;
 
     // Futility Pruning
-    FUT_MAX_DEPTH_IMP: u16 = 4, 0, 20;
-    FUT_MAX_DEPTH_NON: u16 = 7, 0, 20;
-    FUT_MARGIN_BASE: i16 = 73, 0, 500;
-    FUT_MARGIN_IMP: i16 = 1, 0, 200;
+    FUT_MAX_DEPTH_IMP: u16 = 5, 0, 20;
+    FUT_MAX_DEPTH_NON: u16 = 8, 0, 20;
+    FUT_MARGIN_BASE: i16 = 69, 0, 500;
+    FUT_MARGIN_IMP: i16 = 2, 0, 200;
 
     // Late Move Reductions (LMR)
-    LMR_BASE_PCT: f64 = 1.33, 0.1, 5.0;
-    LMR_DIV_PCT: f64 = 2.47, 0.1, 10.0;
+    LMR_BASE_PCT: f64 = 1.29, 0.1, 5.0;
+    LMR_DIV_PCT: f64 = 2.45, 0.1, 10.0;
     LMR_MIN_DEPTH_IMP: u16 = 2, 0, 10;
     LMR_MIN_DEPTH_NON: u16 = 2, 0, 10;
     LMR_MIN_QUIET: usize = 1, 0, 20;
-    LMR_HIST_FACTOR: i32 = 8192, 1, 32768;
-    LMR_HIST_CLAMP: i32 = 5, 0, 20;
+    LMR_HIST_FACTOR: i32 = 8238, 1, 32768;
+    LMR_HIST_CLAMP: i32 = 6, 0, 20;
     LMR_CONT_HIST_SHIFT: i32 = 2, 0, 8;
     LMR_NON_IMP_BONUS: i32 = 0, 0, 20;
     LMR_COUNTER_KILLER_BONUS: i32 = 4, 0, 20;
 
     // History and Extensions
-    CHECK_EXT_MAX: u8 = 1, 0, 4;
-    HIST_BONUS_QUAD_FACTOR: i32 = 2, 0, 20;
-    HIST_BONUS_MAX: i32 = 389, 0, 2000;
+    CHECK_EXT_MAX: u8 = 0, 0, 4;
+    HIST_BONUS_QUAD_FACTOR: i32 = 3, 0, 20;
+    HIST_BONUS_MAX: i32 = 400, 0, 2000;
 
     // Quiescence Search
-    Q_EP_GAIN: i16 = 75, 0, 500;
-    Q_DELTA_MARGIN: i16 = 154, 0, 500;
+    Q_EP_GAIN: i16 = 77, 0, 500;
+    Q_DELTA_MARGIN: i16 = 148, 0, 500;
 
     // Piece Values (SEE)
-    SEE_PAWN: i32 = 97, 0, 1000;
-    SEE_KNIGHT: i32 = 311, 0, 2000;
-    SEE_BISHOP: i32 = 323, 0, 2000;
-    SEE_ROOK: i32 = 463, 0, 2000;
-    SEE_QUEEN: i32 = 929, 0, 4000;
+    SEE_PAWN: i32 = 96, 0, 1000;
+    SEE_KNIGHT: i32 = 314, 0, 2000;
+    SEE_BISHOP: i32 = 319, 0, 2000;
+    SEE_ROOK: i32 = 468, 0, 2000;
+    SEE_QUEEN: i32 = 932, 0, 4000;
 
     // History tables
     HIST_SHIFT: i32 = 1, 0, 8;
     CONT_HIST_SHIFT_1: i32 = 4, 0, 8;
     CONT_HIST_SHIFT_2: i32 = 2, 0, 8;
-    CONT_HIST_SHIFT_4: i32 = 1, 0, 8;
+    CONT_HIST_SHIFT_4: i32 = 2, 0, 8;
 
     // Correction history table
-    CORR_WEIGHT_PAWN: i32 = 0, 0, 32;
-    CORR_WEIGHT_MINOR: i32 = 1, 0, 32;
+    CORR_WEIGHT_PAWN: i32 = 2, 0, 32;
+    CORR_WEIGHT_MINOR: i32 = 0, 0, 32;
     CORR_WEIGHT_MAJOR: i32 = 1, 0, 32;
-    CORR_WEIGHT_NON_PAWN: i32 = 0, 0, 32;
+    CORR_WEIGHT_NON_PAWN: i32 = 1, 0, 32;
     CORR_WEIGHT_MATERIAL: i32 = 2, 0, 32;
     CORR_WEIGHT_KING: i32 = 4, 0, 32;
 }
