@@ -23,7 +23,7 @@ use crate::{
 pub const INPUT: usize = 6144;
 pub const HL1: usize = 256;
 pub const HL2: usize = 16;
-pub const HL3: usize = 32;
+pub const HL3: usize = 16;
 pub const OUTPUT: usize = 1;
 pub const MAGIC: &[u8; 8] = b"BLAZE_V#";
 pub const NN_DATA: &[u8] = include_bytes!("blaze.nnue");
