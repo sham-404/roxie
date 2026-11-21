@@ -2082,6 +2082,8 @@ impl Board {
         while let Some(to) = pop_lsb(&mut quiets) {
             moves.push(Move::new(from, to, MoveFlag::QUIET));
         }
+
+        self.gen_castling_moves(moves);
     }
 
     pub fn gen_queen_moves_from_sq(&self, from: usize, moves: &mut MoveList) {
