@@ -2065,198 +2065,6 @@ impl Board {
         move_bits
     }
 
-    pub fn gen_king_moves_from_sq(&self, from: usize, moves: &mut MoveList) {
-        let to_move = &self.side_to_move;
-        let occ = self.occ(to_move);
-        let opp_occ = self.occ(&to_move.opponent());
-
-        let attacks = KING_ATTACKS[from] & !occ;
-
-        let mut captures = attacks & opp_occ;
-        let mut quiets = attacks & !opp_occ;
-
-        while let Some(to) = pop_lsb(&mut captures) {
-            moves.push(Move::new(from, to, MoveFlag::CAPTURE));
-        }
-
-        while let Some(to) = pop_lsb(&mut quiets) {
-            moves.push(Move::new(from, to, MoveFlag::QUIET));
-        }
-
-        self.gen_castling_moves(moves);
-    }
-
-    pub fn gen_queen_moves_from_sq(&self, from: usize, moves: &mut MoveList) {
-        let own_occ = self.occ(&self.side_to_move);
-        let enemy_occ = self.occ(&self.side_to_move.opponent());
-        let all_occ = self.all_occ();
-
-        let attacks =
-            (get_rook_move_bits(from, all_occ) | get_bishop_move_bits(from, all_occ)) & !own_occ;
-
-        let mut captures = attacks & enemy_occ;
-        let mut quiets = attacks & !enemy_occ;
-
-        while let Some(to) = pop_lsb(&mut captures) {
-            moves.push(Move::new(from, to, MoveFlag::CAPTURE));
-        }
-
-        while let Some(to) = pop_lsb(&mut quiets) {
-            moves.push(Move::new(from, to, MoveFlag::QUIET));
-        }
-    }
-
-    pub fn gen_rook_moves_from_sq(&self, from: usize, moves: &mut MoveList) {
-        let own_occ = self.occ(&self.side_to_move);
-        let enemy_occ = self.occ(&self.side_to_move.opponent());
-        let all_occ = self.all_occ();
-
-        let attacks = get_rook_move_bits(from, all_occ) & !own_occ;
-
-        let mut captures = attacks & enemy_occ;
-        let mut quiets = attacks & !enemy_occ;
-
-        while let Some(to) = pop_lsb(&mut captures) {
-            moves.push(Move::new(from, to, MoveFlag::CAPTURE));
-        }
-
-        while let Some(to) = pop_lsb(&mut quiets) {
-            moves.push(Move::new(from, to, MoveFlag::QUIET));
-        }
-    }
-
-    pub fn gen_bishop_moves_from_sq(&self, from: usize, moves: &mut MoveList) {
-        let own_occ = self.occ(&self.side_to_move);
-        let enemy_occ = self.occ(&self.side_to_move.opponent());
-        let all_occ = self.all_occ();
-
-        let attacks = get_bishop_move_bits(from, all_occ) & !own_occ;
-
-        let mut captures = attacks & enemy_occ;
-        let mut quiets = attacks & !enemy_occ;
-
-        while let Some(to) = pop_lsb(&mut captures) {
-            moves.push(Move::new(from, to, MoveFlag::CAPTURE));
-        }
-
-        while let Some(to) = pop_lsb(&mut quiets) {
-            moves.push(Move::new(from, to, MoveFlag::QUIET));
-        }
-    }
-
-    pub fn gen_knight_moves_from_sq(&self, from: usize, moves: &mut MoveList) {
-        let to_move = &self.side_to_move;
-        let occ = self.occ(to_move);
-        let opp_occ = self.occ(&to_move.opponent());
-
-        let attacks = KNIGHT_ATTACKS[from] & !occ;
-
-        let mut captures = attacks & opp_occ;
-        let mut quiets = attacks & !opp_occ;
-
-        while let Some(to) = pop_lsb(&mut captures) {
-            moves.push(Move::new(from, to, MoveFlag::CAPTURE));
-        }
-
-        while let Some(to) = pop_lsb(&mut quiets) {
-            moves.push(Move::new(from, to, MoveFlag::QUIET));
-        }
-    }
-
-    pub fn gen_pawn_moves_from_sq(&self, from: usize, moves: &mut MoveList) {
-        let (start_pos, end_pos, attacks, dir) = match self.side_to_move {
-            Color::White => (RANK2, RANK8, WHITE_PAWN_ATTACKS, 8i8),
-            Color::Black => (RANK7, RANK1, BLACK_PAWN_ATTACKS, -8i8),
-        };
-
-        let pawn_bb = mask(from);
-        let empty = !self.all_occ();
-
-        // forward pawn moves
-        let (mut single, mut double) = match self.side_to_move() {
-            Color::White => {
-                let single = (pawn_bb << 8) & empty;
-                let double = ((pawn_bb & start_pos) << 16) & empty & (empty << 8);
-                (single, double)
-            }
-            Color::Black => {
-                let single = (pawn_bb >> 8) & empty;
-                let double = ((pawn_bb & start_pos) >> 16) & empty & (empty >> 8);
-                (single, double)
-            }
-        };
-
-        // Single push
-        if let Some(to) = pop_lsb(&mut single) {
-            let from = (to as i8 - dir) as usize;
-
-            // Handling Quiet Promotions
-            if mask(to) & end_pos != 0 {
-                let m_queen = Move::new(from, to, MoveFlag::PROMO_QUEEN);
-                let m_knight = Move::new(from, to, MoveFlag::PROMO_KNIGHT);
-                let m_rook = Move::new(from, to, MoveFlag::PROMO_ROOK);
-                let m_bishop = Move::new(from, to, MoveFlag::PROMO_BISHOP);
-
-                moves.push(m_queen);
-                moves.push(m_knight);
-                moves.push(m_rook);
-                moves.push(m_bishop);
-            } else {
-                let mv = Move::new(from, to, MoveFlag::QUIET);
-                moves.push(mv);
-            }
-        }
-
-        // Double push
-        if let Some(to) = pop_lsb(&mut double) {
-            let from = (to as i8 - (2 * dir)) as usize;
-            let mv = Move::new(from, to, MoveFlag::DOUBLE_PUSH);
-            moves.push(mv);
-        }
-
-        // Captures
-        let mut bb = pawn_bb;
-        let enemy = self.occ(&self.side_to_move.opponent());
-
-        if let Some(from) = pop_lsb(&mut bb) {
-            // To include en_passant sq, as there wont be any enemy there
-            let target = match self.en_passant {
-                Some(sq) => enemy | mask(sq as usize),
-                None => enemy,
-            };
-
-            let mut atk = attacks[from] & target;
-
-            while let Some(to) = pop_lsb(&mut atk) {
-                // Handling en_passant
-                if let Some(sq) = self.en_passant
-                    && sq as usize == to
-                {
-                    let mv = Move::new(from, to, MoveFlag::EN_PASSANT);
-                    moves.push(mv);
-                    continue;
-                }
-
-                if mask(to) & end_pos != 0 {
-                    // Handling Capture Promotions
-
-                    let m_q = Move::new(from, to, MoveFlag::PROMO_CAP_QUEEN);
-                    let m_n = Move::new(from, to, MoveFlag::PROMO_CAP_KNIGHT);
-                    let m_r = Move::new(from, to, MoveFlag::PROMO_CAP_ROOK);
-                    let m_b = Move::new(from, to, MoveFlag::PROMO_CAP_BISHOP);
-
-                    moves.push(m_q);
-                    moves.push(m_n);
-                    moves.push(m_r);
-                    moves.push(m_b);
-                } else {
-                    let mv = Move::new(from, to, MoveFlag::CAPTURE);
-                    moves.push(mv);
-                }
-            }
-        }
-    }
-
     fn _gen_attack_map(&self, side_to_map: Color) -> u64 {
         let mut move_bits = 0u64;
         let color = if side_to_map == Color::White {
@@ -2569,7 +2377,7 @@ impl Board {
         moves.len = (last_legal_mv_idx + 1) as usize;
     }
 
-    fn can_castle_kingside(&self, king_pos: usize, color: &Color) -> bool {
+    pub fn can_castle_kingside(&self, king_pos: usize, color: &Color) -> bool {
         let (start_pos, rook) = match color {
             Color::White => (WK_START_POS, Piece::WHITE | Piece::ROOK),
             Color::Black => (BK_START_POS, Piece::BLACK | Piece::ROOK),
@@ -2591,7 +2399,7 @@ impl Board {
             && !self.is_square_atacked(king_pos + 2, color)
     }
 
-    fn can_castle_queenside(&self, king_pos: usize, color: &Color) -> bool {
+    pub fn can_castle_queenside(&self, king_pos: usize, color: &Color) -> bool {
         let (start_pos, rook) = match color {
             Color::White => (WK_START_POS, Piece::WHITE | Piece::ROOK),
             Color::Black => (BK_START_POS, Piece::BLACK | Piece::ROOK),

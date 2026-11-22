@@ -1,8 +1,13 @@
 use crate::{
-    board::Board,
+    board::{Board, mask},
+    r#const::{
+        BLACK_PAWN_ATTACKS, KING_ATTACKS, KNIGHT_ATTACKS, RANK1, RANK2, RANK7, RANK8,
+        WHITE_PAWN_ATTACKS,
+    },
     engine::{CaptureHistory, Engine},
     evaluation::MG_TABLE,
-    items::{Move, MoveFlag, MoveList, Piece, PieceInfo},
+    items::{Color, Move, MoveFlag, MoveList, Piece, PieceInfo},
+    magics::{get_bishop_move_bits, get_rook_move_bits},
     param,
 };
 
@@ -97,8 +102,6 @@ impl Board {
         }
 
         let from = mv.from();
-        // let to = mv.to();
-        // let flag = mv.flag();
 
         // is the piece is present on "from"
         let piece = self.piece_on(from);
@@ -111,21 +114,127 @@ impl Board {
             return false;
         }
 
-        // generating the pseudo legal for the piece type on "from"
-        // and compare it with the move
+        let to_move = self.side_to_move();
+        let own_occ = self.occ(&to_move);
+        let opp_occ = self.occ(&to_move.opponent());
+        let to = mv.to();
+        let to_bb = mask(to);
 
-        let mut moves = MoveList::new();
-        match Piece::get_type(piece) {
-            Piece::PAWN => self.gen_pawn_moves_from_sq(from, &mut moves),
-            Piece::KNIGHT => self.gen_knight_moves_from_sq(from, &mut moves),
-            Piece::BISHOP => self.gen_bishop_moves_from_sq(from, &mut moves),
-            Piece::ROOK => self.gen_rook_moves_from_sq(from, &mut moves),
-            Piece::QUEEN => self.gen_queen_moves_from_sq(from, &mut moves),
-            Piece::KING => self.gen_king_moves_from_sq(from, &mut moves),
-            _ => unreachable!("how did you reach here brotha?"),
+        // is the to square is occupied by our piece?
+        if own_occ & to_bb != 0 {
+            return false;
         }
 
-        moves.as_slice().contains(&mv)
+        // if it is a capture, is the to square is empty? and if
+        // it is not, is the square is occupied by enemy piece
+        let flag = mv.flag();
+        if flag != MoveFlag::EN_PASSANT && flag.is_capture() != ((opp_occ & to_bb) != 0) {
+            return false;
+        }
+
+        // From this part, we assume that the piece is present in 'from' square,
+        // which is our piece to move, and the 'to' square is not occupied by
+        // our piece, also for captures, if it is a capture, then the 'to' square
+        // contains enemy piece
+        //
+        // So we will be proceeding by considering those validations and will not
+        // be verified again in the later part (exept if i am a dumbo and verify it again)
+        match Piece::get_type(piece) {
+            Piece::PAWN => {
+                let (start_rank, promo_rank, attacks, single_push_bb, double_push_bb) =
+                    match to_move {
+                        Color::White => (
+                            RANK2,
+                            RANK8,
+                            WHITE_PAWN_ATTACKS[from],
+                            mask(from) << 8,
+                            mask(from) << 16,
+                        ),
+                        Color::Black => (
+                            RANK7,
+                            RANK1,
+                            BLACK_PAWN_ATTACKS[from],
+                            mask(from) >> 8,
+                            mask(from) >> 16,
+                        ),
+                    };
+
+                let is_promo_rank = (to_bb & promo_rank) != 0;
+
+                if flag == MoveFlag::EN_PASSANT {
+                    return self.get_en_passant() == Some(to as u8) && (attacks & to_bb) != 0;
+                }
+
+                if flag.is_capture() {
+                    return (attacks & to_bb) != 0 && (flag.is_promo() == is_promo_rank);
+                }
+
+                if flag == MoveFlag::DOUBLE_PUSH {
+                    // Must start on start_rank, land 2 squares ahead, and have the middle square empty
+                    return (mask(from) & start_rank) != 0
+                        && to_bb == double_push_bb
+                        && (single_push_bb & self.all_occ()) == 0;
+                }
+
+                // Must be a single push
+                return to_bb == single_push_bb && (flag.is_promo() == is_promo_rank);
+            }
+
+            Piece::KNIGHT => {
+                return flag.is_normal() && (KNIGHT_ATTACKS[from] & to_bb) != 0;
+            }
+
+            Piece::BISHOP => {
+                return flag.is_normal()
+                    && ((get_bishop_move_bits(from, self.all_occ()) & !own_occ) & to_bb) != 0;
+            }
+
+            Piece::ROOK => {
+                return flag.is_normal()
+                    && ((get_rook_move_bits(from, self.all_occ()) & !own_occ) & to_bb) != 0;
+            }
+
+            Piece::QUEEN => {
+                let all_occ = self.all_occ();
+                let queen_move_bits = (get_bishop_move_bits(from, all_occ)
+                    | get_rook_move_bits(from, all_occ))
+                    & !own_occ;
+
+                return flag.is_normal() && (queen_move_bits & to_bb) != 0;
+            }
+
+            Piece::KING => match flag {
+                MoveFlag::KING_CASTLE => {
+                    let has_rights = match to_move {
+                        Color::White => self.get_castling_rights().white_kingside(),
+                        Color::Black => self.get_castling_rights().black_kingside(),
+                    };
+                    return to == from + 2
+                        && has_rights
+                        && self.can_castle_kingside(from, &to_move);
+                }
+                MoveFlag::QUEEN_CASTLE => {
+                    let has_rights = match to_move {
+                        Color::White => self.get_castling_rights().white_queenside(),
+                        Color::Black => self.get_castling_rights().black_queenside(),
+                    };
+                    return to + 2 == from
+                        && has_rights
+                        && self.can_castle_queenside(from, &to_move);
+                }
+                MoveFlag::QUIET | MoveFlag::CAPTURE => {
+                    let to_bb = mask(to);
+                    let attacks = KING_ATTACKS[from] & !self.occ(&to_move);
+                    if (attacks & to_bb) == 0 {
+                        return false;
+                    }
+                    let is_capture = (self.occ(&to_move.opponent()) & to_bb) != 0;
+                    return (flag == MoveFlag::CAPTURE) == is_capture;
+                }
+                _ => return false,
+            },
+            _ => unreachable!("how did you reach here brotha?"),
+        }
     }
 }
 

@@ -202,6 +202,11 @@ impl MoveFlag {
     }
 
     #[inline(always)]
+    pub fn is_normal(self) -> bool {
+        (self.0 & (Self::PROMO_BIT | Self::PIECE_BIT)) == 0
+    }
+
+    #[inline(always)]
     pub fn is_quiet(self) -> bool {
         (self.0 & (Self::CAPTURE_BIT | Self::PROMO_BIT)) == 0
     }
