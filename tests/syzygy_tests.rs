@@ -18,7 +18,7 @@ fn init_engine_tables() {
         init_pesto_table();
         init_magics();
         init_lmr_table();
-        init_nn(true);
+        init_nn();
         init_ray_tables();
         init_tb("tests/syzygy");
     });

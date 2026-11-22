@@ -8,7 +8,7 @@ fn init_all() {
     init_pesto_table();
     init_magics();
     init_lmr_table();
-    init_nn(true);
+    init_nn();
     init_ray_tables();
 }
 

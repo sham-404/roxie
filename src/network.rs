@@ -57,11 +57,7 @@ pub const MIRROR_MASK: [u8; 64] = [
 
 pub static NETWORK: OnceLock<Network> = OnceLock::new();
 
-pub fn init_nn(is_needed: bool) {
-    if !is_needed {
-        return;
-    }
-
+pub fn init_nn() {
     NETWORK.get_or_init(|| {
         let mut reader = Cursor::new(NN_DATA);
         let nn = Network::load(&mut reader);
