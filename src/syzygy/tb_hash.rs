@@ -72,10 +72,4 @@ impl TBHash {
 
         self.table[index].store(packed, Ordering::Relaxed);
     }
-
-    pub fn clear(&self) {
-        for entry in &self.table {
-            entry.store(0, Ordering::Relaxed);
-        }
-    }
 }

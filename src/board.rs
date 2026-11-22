@@ -4,7 +4,6 @@ use crate::r#const::*;
 use crate::evaluation::{EG_TABLE, GAME_PHASE_VAL, MG_TABLE};
 use crate::items::*;
 use crate::magics::{get_bishop_move_bits, get_rook_move_bits};
-use crate::move_pick::QUIET_MV_MARGIN;
 use crate::zobrist::{CASTLING_KEYS, ENPASSANT_KEYS, MATERIAL_KEYS, SIDE_KEY, ZOBRIST_TABLE};
 
 const PIECE_VALS: [i32; 6] = [100, 320, 330, 500, 900, 0];
@@ -813,19 +812,6 @@ impl Board {
         )
     }
 
-    #[inline(always)]
-    pub fn in_check_after_moving(&self) -> bool {
-        let color = match self.side_to_move {
-            Color::White => Piece::BLACK,
-            Color::Black => Piece::WHITE,
-        };
-
-        self.is_square_atacked(
-            pop_lsb(&mut self.bb(color | Piece::KING)).unwrap(),
-            &self.side_to_move.opponent(),
-        )
-    }
-
     pub fn gives_check(&mut self, mv: Move) -> bool {
         debug_assert!(self.occupancy[BOTH] & (1u64 << mv.from()) != 0);
 
@@ -1266,11 +1252,6 @@ impl Board {
     #[inline(always)]
     pub fn get_king_hash(&self) -> u64 {
         self.king_hash
-    }
-
-    #[inline(always)]
-    pub fn is_endgame(&self) -> bool {
-        self.game_phase.min(24) < 9
     }
 
     #[inline(always)]
@@ -2049,6 +2030,7 @@ impl Board {
         }
     }
 
+    #[allow(dead_code)]
     pub fn gen_pawn_attack_map(&self, side_to_check: Color) -> u64 {
         let mut move_bits = 0u64;
         let (pawn, attacks) = match side_to_check {
@@ -2421,79 +2403,6 @@ impl Board {
             && !self.is_square_atacked(king_pos - 2, color)
     }
 
-    pub fn score_move(&self, mv: Move) -> i32 {
-        // ORDERING BASE SCORES USED
-        // TT move            : 1_000_000_000 (handled on ordering)
-        // capture promotions : 80_000_000
-        // winning captures   : 70_000_000
-        // promotions         : 60_000_000
-        // equal captures     : 50_000_000
-        // killer 1           : 40_000_000
-        // killer 2           : 39_000_000
-        // counter_move       : 38_000_000
-        // quiets and castles : 10_000_000
-        // bad captures       : 1_000_000
-
-        let flag = mv.flag();
-        let from = mv.from();
-        let to = mv.to();
-
-        // Captures
-        if flag.is_capture() {
-            let attacker = self.piece_on(from);
-            let victim = self.piece_on(to);
-
-            // En passant
-            if victim == Piece::NONE {
-                debug_assert!(flag == MoveFlag::EN_PASSANT);
-                return 50_000_000;
-            }
-
-            // Capture promotions updation
-            if flag.is_promo() {
-                return 80_000_000 + flag.get_promo_value() as i32;
-            }
-
-            let v_val = self.get_value(victim);
-            let a_val = self.get_value(attacker);
-
-            // MVV-LVA
-            let mvv_lva = (v_val * 10) - a_val;
-
-            let see_score = self.see(&mv);
-
-            // Winning capture
-            if see_score > 0 {
-                return 70_000_000 + mvv_lva + see_score;
-            }
-
-            // Equal capture
-            if see_score == 0 {
-                return 50_000_000 + mvv_lva + see_score;
-            }
-
-            // Losing capture
-            return 1_000_000 + mvv_lva + see_score;
-        }
-
-        // Promotions
-        if flag.is_promo() {
-            return 60_000_000 + flag.get_promo_value() as i32;
-        }
-
-        // Quiets and castles
-        let attacker = self.piece_on(from);
-        let p_idx = Piece::to_idx(attacker);
-
-        if let Some(mg_table) = MG_TABLE.get() {
-            let pst_delta = mg_table[p_idx][to] - mg_table[p_idx][from];
-
-            return QUIET_MV_MARGIN + pst_delta;
-        }
-
-        0
-    }
-
     #[inline(always)]
     pub fn get_value(&self, piece: PieceInfo) -> i32 {
         let idx = Piece::to_idx(piece) % 6;
@@ -2525,13 +2434,6 @@ impl Board {
         self.mg_score = mg[WHITE] - mg[BLACK];
         self.eg_score = eg[WHITE] - eg[BLACK];
         self.game_phase = game_phase.min(24); // Max as 24 is made coz of early promotions
-    }
-
-    pub fn get_pesto_score(&self) -> i32 {
-        let mg_phase = self.game_phase.min(24);
-        let eg_phase = 24 - mg_phase;
-
-        (self.mg_score * mg_phase + self.eg_score * eg_phase) / 24
     }
 }
 

@@ -1,4 +1,4 @@
-use roxie::{
+use crate::{
     board::{Board, compute_king_hash, init_ray_tables},
     engine::CorrectionHistory,
     evaluation::init_pesto_table,
@@ -215,6 +215,6 @@ fn king_hash_correction_history() {
     // the other stm dimension is untouched
     assert_eq!(corr.get(1, 0, 0, 0, 0, 0, king_a), 0);
 
-    corr.clear();
+    corr = CorrectionHistory::new();
     assert_eq!(corr.get(0, 0, 0, 0, 0, 0, king_a), 0);
 }

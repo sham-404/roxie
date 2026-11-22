@@ -1,0 +1,203 @@
+mod corr_hash_test;
+mod syzygy_tests;
+
+use crate::{
+    board::Board, engine::Engine, items::Move, network::NETWORK, perft::perft, search::SearchLimits,
+};
+use std::time::Instant;
+
+use std::{
+    fs::File,
+    io::{BufRead, BufReader},
+};
+
+use crate::init_all;
+
+#[test]
+fn move_gen() {
+    init_all();
+
+    let mut engine: Engine = Engine::new();
+    engine.board =
+        Board::load_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ");
+
+    let start = Instant::now();
+    let nodes = perft(&mut engine.board, 5);
+    let duration = start.elapsed();
+
+    let secs = duration.as_secs_f64();
+    let nps = (nodes as f64 / secs) as u64;
+
+    println!(
+        "perft depth 5 (kiwipete): nodes={} time={:.5}s nps={}",
+        nodes, secs, nps
+    );
+    assert_eq!(nodes, 193_690_690);
+}
+
+#[test]
+fn search() {
+    init_all();
+    let mut engine = Engine::new();
+    engine.board =
+        Board::load_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - ");
+
+    let depth = 15;
+    let start = Instant::now();
+    let data = engine.search_ids(&SearchLimits::with_depth(depth), |_| {});
+    let duration = start.elapsed();
+
+    let secs = duration.as_secs_f64();
+    let nps = (data.nodes as f64 / secs) as u64;
+
+    println!(
+        "search depth {} (kiwipete): nodes searched={} time={:.5}s nps={}",
+        depth, data.nodes, secs, nps
+    );
+}
+
+#[test]
+fn split_mv_gen() {
+    init_all();
+
+    let file = File::open("src/tests/sample_positions.csv").unwrap();
+    let reader = BufReader::new(file);
+
+    for (idx, line) in reader.lines().enumerate() {
+        let line = line.unwrap();
+
+        if idx == 0 {
+            continue;
+        }
+
+        let (fen, _) = line.rsplit_once(',').unwrap();
+        let mut board = Board::load_fen(fen);
+
+        let mut total_moves = board.gen_moves();
+        let mut quiet_moves = board.gen_quiet_moves();
+        let mut tactic_moves = board.gen_tactical_moves();
+
+        board.filter_illegal(&mut total_moves);
+        board.filter_illegal(&mut quiet_moves);
+        board.filter_illegal(&mut tactic_moves);
+
+        assert_eq!(total_moves.len(), quiet_moves.len() + tactic_moves.len());
+    }
+}
+
+#[test]
+fn nn_eval() {
+    init_all();
+
+    let fens = [
+        "6k1/pp6/3p4/2p1p3/2P1P1q1/1P1P2pP/P5P1/5K2 w - - 0 31",
+        "6k1/pp6/3p4/2p1p3/2P1P1bq/1P1P2pP/P3Q1P1/5K2 w - - 0 30",
+        "6k1/pp6/3p4/2p1p3/2P1P1Qq/1P1P2pP/P5P1/5K2 b - - 0 30",
+        "2k4r/pp3pp1/3N1p2/2pP1P1p/b3r1P1/P1P4P/2P5/R1R3K1 b - - 0 22",
+        "6k1/pp6/3p4/2p1p3/2P1P1P1/1P1P2p1/P5P1/5K2 b - - 0 31",
+    ];
+    let nn = NETWORK.get().unwrap();
+
+    let mut time = 0;
+    for fen in fens {
+        let board = Board::load_fen(fen);
+        let start = Instant::now();
+        let eval = nn.evaluate(&board);
+        let duration = start.elapsed();
+        let elapsed = duration.as_nanos();
+
+        time += elapsed;
+
+        println!("fen: {}", fen);
+        println!("roxie's nn eval: {}", eval);
+        println!("eval duration: {}ns", elapsed);
+        println!();
+    }
+
+    println!("Time taken: {}ns", time);
+}
+
+#[test]
+fn repetition_draw() {
+    init_all();
+    let mut engine = Engine::new();
+
+    // 1.Nf3 Nf6 2.Ng1 Ng8 -> back to the start position (2-fold)
+    for mv_str in ["g1f3", "g8f6", "f3g1", "f6g8"] {
+        let mv = Move::from_uci(mv_str, &mut engine.board).unwrap();
+        engine.board.make_move(&mv);
+        engine.game_history.push(engine.board.get_hash());
+    }
+
+    assert!(engine.board.is_repetition(engine.game_history.as_slice()));
+    assert!(engine.board.is_draw(engine.game_history.as_slice()));
+}
+
+#[test]
+fn no_repetition_without_history() {
+    init_all();
+
+    // A board with no recorded history can never be a repetition,
+    // even if it is the start position.
+    let empty: &[u64] = &[];
+    let board = Board::start_pos();
+    assert!(!board.is_repetition(empty));
+    assert!(!board.is_draw(empty));
+}
+
+#[test]
+fn pawn_move_resets_halfmove_clock() {
+    init_all();
+    let mut engine = Engine::new();
+
+    // 4 quiet moves -> halfmove_clock = 4
+    for mv_str in ["g1f3", "g8f6", "f3g1", "f6g8"] {
+        let mv = Move::from_uci(mv_str, &mut engine.board).unwrap();
+        engine.board.make_move(&mv);
+        engine.game_history.push(engine.board.get_hash());
+    }
+    assert_eq!(engine.board.halfmove_clock(), 4);
+
+    // captures must reset repetition count
+    let mv = Move::from_uci("e2e4", &mut engine.board).unwrap();
+    engine.board.make_move(&mv);
+    assert_eq!(engine.board.halfmove_clock(), 0);
+
+    // so must a capture too
+    let mv = Move::from_uci("e7e5", &mut engine.board).unwrap();
+    engine.board.make_move(&mv);
+    assert_eq!(engine.board.halfmove_clock(), 0);
+
+    let mv = Move::from_uci("d2d4", &mut engine.board).unwrap();
+    engine.board.make_move(&mv);
+    assert_eq!(engine.board.halfmove_clock(), 0);
+
+    let mv = Move::from_uci("e5d4", &mut engine.board).unwrap();
+    engine.board.make_move(&mv);
+    assert_eq!(engine.board.halfmove_clock(), 0);
+}
+
+#[test]
+fn make_unmake_restores_state_and_stack() {
+    init_all();
+    let mut engine = Engine::new();
+    let start_hash = engine.board.get_hash();
+    let start_len = engine.game_history.len();
+
+    let mut undos = Vec::new();
+    for mv_str in ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"] {
+        let mv = Move::from_uci(mv_str, &mut engine.board).unwrap();
+        let undo = engine.board.make_move(&mv);
+        engine.game_history.push(engine.board.get_hash());
+        undos.push((mv, undo));
+    }
+    assert_eq!(engine.game_history.len(), start_len + 5);
+
+    while let Some((mv, undo)) = undos.pop() {
+        engine.board.unmake_move(&mv, &undo);
+        engine.game_history.pop();
+    }
+
+    assert_eq!(engine.board.get_hash(), start_hash);
+    assert_eq!(engine.game_history.len(), start_len);
+}

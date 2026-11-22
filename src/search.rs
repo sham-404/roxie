@@ -1977,68 +1977,6 @@ impl Engine {
         self.board.unmake_move(mv, undo);
     }
 
-    #[inline(always)]
-    pub fn with_ordering(
-        &mut self,
-        tt_move: Move,
-        prev_move: Move,
-        prev_piece: PieceInfo,
-        prev2_move: Move,
-        prev2_piece: PieceInfo,
-        prev4_move: Move,
-        prev4_piece: PieceInfo,
-        ply: usize,
-        movelist: &mut MoveList,
-    ) {
-        let counter_mv = self.counter_moves.get(prev_move);
-        let killers = self.killers.get(ply as i32);
-        let killer_1 = killers[0];
-        let killer_2 = killers[1];
-
-        for i in 0..movelist.len() {
-            let mv = movelist.moves[i];
-
-            if mv == tt_move {
-                // Give it a score higher than any possible capture/promotion
-                movelist.score[i] = 1_000_000_000;
-            } else if mv.flag().is_quiet() {
-                if mv == killer_1 {
-                    movelist.score[i] = 40_000_000;
-                    continue;
-                } else if mv == killer_2 {
-                    movelist.score[i] = 39_000_000;
-                    continue;
-                } else if mv == counter_mv {
-                    movelist.score[i] = 38_000_000;
-                    continue;
-                }
-
-                let mut score = self.board.score_move(mv);
-                score += self
-                    .history
-                    .get(self.board.side_to_move().val(), mv.from(), mv.to())
-                    << param!(HIST_SHIFT);
-                let cur_piece = self.board.piece_on(mv.from());
-                score += (self
-                    .continuation_history
-                    .get(prev_move, prev_piece, mv, cur_piece) as i32)
-                    << param!(CONT_HIST_SHIFT_1);
-                score += (self
-                    .continuation_history_2
-                    .get(prev2_move, prev2_piece, mv, cur_piece) as i32)
-                    << param!(CONT_HIST_SHIFT_2);
-                score += (self
-                    .continuation_history_4
-                    .get(prev4_move, prev4_piece, mv, cur_piece) as i32)
-                    << param!(CONT_HIST_SHIFT_4);
-
-                movelist.score[i] = score;
-            } else {
-                movelist.score[i] = self.board.score_move(mv);
-            }
-        }
-    }
-
     fn q_tt_store(&mut self, flag: TTFlag, score: i16, mv: Move, ply: i32) {
         // Adjusting for mate score
         let mut score_to_store = score;
@@ -2141,8 +2079,8 @@ pub struct SearchStats {
     pub see_prune_attempts: usize,
     pub see_prunes_happened: usize,
 
-    pub history_prune_attempts: usize,
-    pub history_pruned: usize,
+    pub _history_prune_attempts: usize,
+    pub _history_pruned: usize,
 
     pub rfp_attempts: usize,
     pub rfp_cutoffs: usize,
@@ -2186,8 +2124,8 @@ impl SearchStats {
             lmp_prunes: 0,
             see_prune_attempts: 0,
             see_prunes_happened: 0,
-            history_prune_attempts: 0,
-            history_pruned: 0,
+            _history_prune_attempts: 0,
+            _history_pruned: 0,
             rfp_attempts: 0,
             rfp_cutoffs: 0,
             razoring_attempts: 0,
@@ -2822,7 +2760,6 @@ pub struct SearchLimits {
     pub hard_time: Option<Duration>,
     pub soft_time: Option<Duration>,
     pub infinite: bool,
-    pub start_time: Instant,
 }
 
 impl Default for SearchLimits {
@@ -2834,7 +2771,6 @@ impl Default for SearchLimits {
             nodes: None,
             mate: None,
             infinite: false,
-            start_time: Instant::now(),
         }
     }
 }
@@ -2921,16 +2857,10 @@ impl SearchLimits {
         limits
     }
 
+    #[cfg(test)]
     pub fn with_depth(depth: u16) -> Self {
         let mut limits = Self::default();
         limits.depth = Some(depth);
-        limits
-    }
-
-    pub fn with_movetime(movetime: u64) -> Self {
-        let mut limits = Self::default();
-        limits.soft_time = Some(Duration::from_millis(movetime));
-        limits.hard_time = Some(Duration::from_millis(movetime));
         limits
     }
 }

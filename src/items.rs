@@ -73,17 +73,6 @@ impl Piece {
         type_idx + color_idx
     }
 
-    /// This maps:
-    /// White (P, N, B, R, Q, K) -> 0, 1, 2, 3, 4, _
-    /// Black (P, N, B, R, Q, K) -> 5, 6, 7, 8, 9, _
-    #[inline(always)]
-    pub const fn to_hkp_idx(p: PieceInfo) -> usize {
-        debug_assert!((p & 0b111) != 0);
-        let type_idx = (p & 0b111) as usize - 1;
-        let color_idx = if (p & 16) != 0 { 5 } else { 0 };
-        type_idx + color_idx
-    }
-
     #[inline(always)]
     pub fn enemy(color: PieceInfo) -> PieceInfo {
         debug_assert!(
@@ -93,6 +82,7 @@ impl Piece {
         color ^ 0b11000
     }
 
+    #[allow(dead_code)]
     pub fn to_char(p: PieceInfo) -> char {
         let t = Self::get_type(p);
         let mut c = match t {
@@ -450,14 +440,9 @@ impl GameHistory {
         &self.stack[..self.len]
     }
 
-    #[inline(always)]
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.len
-    }
-
-    #[inline(always)]
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
     }
 
     pub fn clear(&mut self) {
@@ -492,14 +477,6 @@ impl Color {
         match self {
             Color::White => WHITE,
             Color::Black => BLACK,
-        }
-    }
-
-    #[inline(always)]
-    pub fn fac(&self) -> i32 {
-        match self {
-            Color::White => 1,
-            Color::Black => -1,
         }
     }
 }
@@ -553,12 +530,6 @@ impl CastlingRights {
     #[inline(always)]
     pub fn has_rights(self) -> bool {
         self.0 != 0
-    }
-
-    // remove rights
-    #[inline(always)]
-    pub fn remove(&mut self, mask: u8) {
-        self.0 &= !mask;
     }
 
     // add rights

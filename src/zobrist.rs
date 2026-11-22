@@ -14,10 +14,6 @@ impl Rng {
         self.s ^= self.s >> 27;
         self.s.wrapping_mul(0x2545F4914F6CDD1)
     }
-
-    pub fn sparse_rand64(&mut self) -> u64 {
-        self.rand64() & self.rand64() & self.rand64()
-    }
 }
 
 use std::sync::OnceLock;

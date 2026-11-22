@@ -343,12 +343,6 @@ impl EvalHistory {
 
         true // true for first 2 plies btw
     }
-
-    #[inline(always)]
-    pub fn clear(&mut self) {
-        self.evals = [0; MAX_PLY];
-        self.checks = [false; MAX_PLY];
-    }
 }
 
 impl Default for EvalHistory {
@@ -517,33 +511,6 @@ impl CorrectionHistory {
         Self::blend(&mut self.non_pawn_table[stm][non_pawn_idx], err, weight);
         Self::blend(&mut self.material_table[stm][material_idx], err, weight);
         Self::blend(&mut self.king_table[stm][king_idx], err, weight);
-    }
-
-    pub fn clear(&mut self) {
-        self.pawn_table = vec![[0; CORR_HIST_SIZE]; 2]
-            .into_boxed_slice()
-            .try_into()
-            .unwrap();
-        self.minor_table = vec![[0; CORR_HIST_SIZE]; 2]
-            .into_boxed_slice()
-            .try_into()
-            .unwrap();
-        self.major_table = vec![[0; CORR_HIST_SIZE]; 2]
-            .into_boxed_slice()
-            .try_into()
-            .unwrap();
-        self.non_pawn_table = vec![[0; CORR_HIST_SIZE]; 2]
-            .into_boxed_slice()
-            .try_into()
-            .unwrap();
-        self.material_table = vec![[0; CORR_HIST_SIZE]; 2]
-            .into_boxed_slice()
-            .try_into()
-            .unwrap();
-        self.king_table = vec![[0; CORR_HIST_SIZE]; 2]
-            .into_boxed_slice()
-            .try_into()
-            .unwrap();
     }
 }
 

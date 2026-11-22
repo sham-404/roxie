@@ -1,4 +1,4 @@
-use roxie::{
+use crate::{
     board::{Board, init_ray_tables},
     evaluation::init_pesto_table,
     magics::init_magics,
@@ -28,7 +28,7 @@ fn init_engine_tables() {
 fn verify_syzygy_wdl_dtz_from_csv() {
     init_engine_tables();
 
-    let csv_path = "tests/3-4-5_tb_positions.csv";
+    let csv_path = "src/tests/3-4-5_tb_positions.csv";
     let csv_data = fs::read_to_string(csv_path)
         .unwrap_or_else(|_| panic!("Failed to read benchmark CSV at {}", csv_path));
 
@@ -96,7 +96,7 @@ fn verify_syzygy_wdl_dtz_from_csv() {
 fn verify_syzygy_root_dtz_best_move() {
     init_engine_tables();
 
-    let csv_path = "tests/3-4-5_tb_positions.csv";
+    let csv_path = "src/tests/3-4-5_tb_positions.csv";
     let csv_data = fs::read_to_string(csv_path)
         .unwrap_or_else(|_| panic!("Failed to read benchmark CSV at {}", csv_path));
 

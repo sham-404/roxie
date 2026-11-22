@@ -1,6 +1,5 @@
 use std::{
-    fs::{File, metadata},
-    io::{Cursor, Read, Seek},
+    io::{Cursor, Read},
     sync::OnceLock,
 };
 
@@ -110,78 +109,6 @@ impl Network {
             w4: read_i16(HL3 * OUTPUT),
             b4: read_i16(OUTPUT),
         }
-    }
-
-    fn read_f32(reader: &mut impl Read, size: usize) -> Vec<f32> {
-        let mut bytes = vec![0u8; size * 4];
-        reader.read_exact(&mut bytes).unwrap();
-        let mut out = Vec::with_capacity(size);
-        for chunk in bytes.as_chunks::<4>().0 {
-            out.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
-        }
-        out
-    }
-
-    pub fn load_unquantized(path: &str) -> Network {
-        let mut file = File::open(path).unwrap();
-        let file_size = metadata(path).unwrap().len();
-
-        let mut magic = [0u8; MAGIC.len()];
-        file.read_exact(&mut magic).unwrap();
-        assert_eq!(
-            &magic, MAGIC,
-            "Magic header mismatch! Ensure this is the f32 export."
-        );
-
-        let w1 = Network::quantize_to_i16(&Network::read_f32(&mut file, INPUT * HL1));
-        let b1 = Network::quantize_to_i16(&Network::read_f32(&mut file, HL1));
-
-        let w2_raw = Network::quantize_to_i16(&Network::read_f32(&mut file, HL1 * 2 * HL2));
-        let w2 = Network::transpose_weights(&w2_raw, HL1 * 2, HL2);
-        let b2 = Network::quantize_to_i16(&Network::read_f32(&mut file, HL2));
-
-        let w3_raw = Network::quantize_to_i16(&Network::read_f32(&mut file, HL2 * HL3));
-        let w3 = Network::transpose_weights(&w3_raw, HL2, HL3);
-        let b3 = Network::quantize_to_i16(&Network::read_f32(&mut file, HL3));
-
-        let w4_raw = Network::quantize_to_i16(&Network::read_f32(&mut file, HL3 * OUTPUT));
-        let w4 = Network::transpose_weights(&w4_raw, HL3, OUTPUT);
-        let b4 = Network::quantize_to_i16(&Network::read_f32(&mut file, OUTPUT));
-
-        let pos = file.stream_position().unwrap();
-        assert_eq!(
-            file_size, pos,
-            "Did not reach end of file! File size mismatch."
-        );
-
-        Network {
-            w1,
-            b1,
-            w2,
-            b2,
-            w3,
-            b3,
-            w4,
-            b4,
-        }
-    }
-
-    fn transpose_weights(weights: &[i16], input_len: usize, output_len: usize) -> Vec<i16> {
-        let mut transposed = vec![0; input_len * output_len];
-        for out_idx in 0..output_len {
-            for in_idx in 0..input_len {
-                transposed[out_idx * input_len + in_idx] = weights[in_idx * output_len + out_idx];
-            }
-        }
-        transposed
-    }
-
-    fn quantize_to_i16(layer: &[f32]) -> Vec<i16> {
-        let mut quantized: Vec<i16> = Vec::with_capacity(layer.len());
-        for &val in layer {
-            quantized.push((val * Q).round() as i16);
-        }
-        quantized
     }
 
     #[inline(always)]

@@ -8,7 +8,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, RwLock};
 
 pub const WDL: usize = 0;
-pub const DTM: usize = 1;
 pub const DTZ: usize = 2;
 
 pub const PIECE_ENC: usize = 0;
@@ -16,7 +15,6 @@ pub const FILE_ENC: usize = 1;
 pub const RANK_ENC: usize = 2;
 
 pub const TB_PIECES: usize = 7;
-pub const TB_HASHBITS: usize = 12;
 pub static PROBE_MAX_PIECES: AtomicUsize = AtomicUsize::new(0);
 
 #[rustfmt::skip]
@@ -493,11 +491,9 @@ pub struct BaseEntry {
     pub num: u8,
     pub symmetric: bool,
     pub has_pawns: bool,
-    pub has_dtm: bool,
     pub has_dtz: bool,
     pub kk_enc: bool,
     pub pawns: [u8; 2],
-    pub dtm_loss_only: bool,
     pub ei: Vec<EncInfo>,
     pub ei_dtz: Vec<EncInfo>,
     pub ready: bool,
@@ -513,7 +509,6 @@ pub struct BaseEntry {
 #[derive(Clone, Default)]
 pub struct TbRootMove {
     pub mv: Move,
-    pub pv: Vec<Move>,
     pub tb_rank: i32,
     pub tb_score: i32,
 }
@@ -1811,56 +1806,6 @@ fn is_mate(board: &mut Board) -> bool {
     moves.len() == 0
 }
 
-pub fn root_probe_wdl(board: &mut Board, use_rule50: bool, rm: &mut TbRootMoves) -> bool {
-    const WDL_TO_RANK: [i32; 5] = [-1000, -899, 0, 899, 1000];
-    let wdl_to_value: [i32; 5] = [
-        -MATE as i32 + MAX_PLY as i32 + 1,
-        -2,
-        0,
-        2,
-        MATE as i32 - MAX_PLY as i32 - 1,
-    ];
-
-    let mut moves = board.gen_moves();
-    board.filter_illegal(&mut moves);
-    rm.moves.clear();
-
-    if moves.len() == 0 {
-        return false;
-    }
-
-    for i in 0..moves.len() {
-        let mv = moves.moves[i];
-        let undo = board.make_move(&mv);
-
-        let mut success = 1;
-        let mut v = -probe_wdl(board, &mut success);
-        board.unmake_move(&mv, &undo);
-
-        if success == 0 {
-            return false;
-        }
-
-        if !use_rule50 {
-            v = if v > 0 {
-                2
-            } else if v < 0 {
-                -2
-            } else {
-                0
-            };
-        }
-
-        rm.moves.push(TbRootMove {
-            mv,
-            pv: vec![mv],
-            tb_rank: WDL_TO_RANK[(v + 2) as usize],
-            tb_score: wdl_to_value[(v + 2) as usize],
-        });
-    }
-    true
-}
-
 pub fn root_probe_dtz(
     board: &mut Board,
     has_repeated: bool,
@@ -1962,7 +1907,6 @@ pub fn root_probe_dtz(
 
         rm.moves.push(TbRootMove {
             mv,
-            pv: vec![mv],
             tb_rank: r,
             tb_score: score,
         });
