@@ -191,6 +191,11 @@ impl UCI {
             // root engine, handles time and actual search (idx = 0)
             let mut base_engine = thread_engine.lock().unwrap();
 
+            // Helpers are spawned before thread 0 enters search_ids(), which is
+            // the only place that normally clears the abort flag. Clear it here
+            // so helpers cannot observe a stale `true` from the previous search.
+            base_engine.shared.abort.store(false, Ordering::Relaxed);
+
             let data = thread::scope(|s| {
                 // worker threads (idx = 1..num_threads)
                 for id in 1..num_threads {

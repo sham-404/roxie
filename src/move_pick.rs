@@ -287,6 +287,7 @@ impl MovePicker {
 
     pub fn skip_quiets(&mut self) {
         if self.phase == Phase::Quiets {
+            self.mv_idx = 0;
             self.phase = Phase::BadCaptures;
         }
     }

@@ -280,11 +280,15 @@ impl Move {
     }
 
     pub fn from_uci(mv_str: &str, board: &mut Board) -> Option<Move> {
-        let move_list = board.gen_moves();
+        // gen_moves() only produces pseudo-legal moves, so filter first.
+        // Otherwise an illegal GUI move would be accepted and corrupt the board.
+        let mut move_list = board.gen_moves();
+        board.filter_illegal(&mut move_list);
 
         move_list
-            .moves
-            .into_iter()
+            .as_slice()
+            .iter()
+            .copied()
             .find(|&mv| mv.to_coord() == mv_str)
     }
 }
