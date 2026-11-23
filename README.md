@@ -26,13 +26,13 @@ Version **0.6.4** reached **2896 Elo on the CCRL rating list**, reflecting a maj
 * 🔍 Modern alpha-beta search with ProbCut, singular extensions, and history-based move ordering
 * 📈 Continuously tuned through thousands of self-play and engine matches
 * 💻 Optimized builds for Native, AVX2 and AVX-512 processors
-* ⚙️ SIMD acceleration for faster evaluation and search
+* ⚙️ SIMD acceleration for faster evaluation
 
 ---
 
 ## Performance
 
-Roxie is tested through engine matches and self-play. Version **0.6.4** combines faster SIMD evaluation and move generation with search additions such as ProbCut, singular extensions, and Late Move Pruning.
+Roxie is tested through engine matches and self-play. Version **0.6.4** combines SIMD-accelerated NNUE inference with magic-bitboard move generation and search additions such as ProbCut, singular extensions, and Late Move Pruning.
 
 ---
 
@@ -54,7 +54,6 @@ Roxie uses a modern alpha-beta search framework designed to search deeper while 
 
 * Quantized **Bucketed NNUE** evaluation
 * Efficient neural inference for positional evaluation
-* Classical evaluation terms blended with neural evaluation
 
 ### ⚡ Move Generation
 
@@ -66,7 +65,6 @@ Roxie uses a modern alpha-beta search framework designed to search deeper while 
 
 * Native CPU optimizations
 * AVX2 and AVX-512 optimized builds
-* Profile Guided Optimization (PGO) support
 
 ---
 
@@ -96,9 +94,6 @@ make avx2
 
 # Optimized for AVX-512 capable processors
 make avx512
-
-# Build using Profile-Guided Optimization
-make pgo-avx512
 ```
 
 To remove build artifacts:
@@ -167,8 +162,7 @@ Special thanks to:
 
 * **[Sebastian Lague](https://www.youtube.com/@SebastianLague)** for the *Coding Adventure: Chess* series, which inspired me to begin writing my own chess engine.
 * The **[Chess Programming Wiki](https://www.chessprogramming.org/)** for providing an excellent introduction to many chess programming concepts and serving as a handy reference during development.
-* **[Lambergar](https://github.com/jabolcni/Lambergar)**, whose impressive playing strength and steady progress motivated me to keep pu
-shing Roxie further whenever I felt like stopping.
+* **[Lambergar](https://github.com/jabolcni/Lambergar)**, whose impressive playing strength and steady progress motivated me to keep pushing Roxie further whenever I felt like stopping.
 * The many authors of open-source chess engines whose work and discussions continue to advance the chess programming community.
 
 ---

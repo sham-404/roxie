@@ -10,12 +10,12 @@ The network weights and biases are quantized into integers for rapid inference a
 
 Roxie utilizes a **Bucketed 768** architecture. The perspective of the board is split between the White and Black kings, processing features relative to their positions. To optimize learning and capacity, king placements are divided into 8 distinct buckets (`KING_BUCKETS`) with horizontal board mirroring (`MIRROR_MASK`) applied.
 
-The layer structure is `6144 -> 256*2 -> 16 -> 32 -> 1`.
+The layer structure is `6144 -> 256*2 -> 16 -> 16 -> 1`.
 
 * **Input Layer (6144):** 8 king buckets * 12 piece types * 64 piece squares.
 * **Hidden Layer 1 (HL1):** 256 neurons per color (512 total). This layer is incrementally updated using an accumulator.
 * **Hidden Layer 2 (HL2):** 16 neurons.
-* **Hidden Layer 3 (HL3):** 32 neurons.
+* **Hidden Layer 3 (HL3):** 16 neurons.
 * **Output Layer:** 1 neuron representing the final evaluation.
 
 ---
@@ -59,7 +59,7 @@ The pre-trained network is packed into a raw binary file for instant loading on 
 1.  **Magic Header:** 8 bytes `BLAZE_V#` to validate the file format.
 2.  **HL1:** Weights (`6144 * 256` of `i16`) followed by Biases (`256` of `i16`).
 3.  **HL2:** Weights (`512 * 16` of `i16`) followed by Biases (`16` of `i16`).
-4.  **HL3:** Weights (`16 * 32` of `i16`) followed by Biases (`32` of `i16`).
-5.  **Output:** Weights (`32 * 1` of `i16`) followed by Biases (`1` of `i16`).
+4.  **HL3:** Weights (`16 * 16` of `i16`) followed by Biases (`16` of `i16`).
+5.  **Output:** Weights (`16 * 1` of `i16`) followed by Biases (`1` of `i16`).
 
 ---
