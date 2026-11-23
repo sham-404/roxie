@@ -1,7 +1,7 @@
 use std::sync::OnceLock;
 
 use crate::r#const::*;
-use crate::evaluation::{EG_TABLE, GAME_PHASE_VAL, MG_TABLE};
+use crate::evaluation::GAME_PHASE_VAL;
 use crate::items::*;
 use crate::magics::{get_bishop_move_bits, get_rook_move_bits};
 use crate::zobrist::{CASTLING_KEYS, ENPASSANT_KEYS, MATERIAL_KEYS, SIDE_KEY, ZOBRIST_TABLE};
@@ -276,8 +276,6 @@ pub struct Board {
     king_hash: u64,
     halfmove_clock: usize,
 
-    mg_score: i32,
-    eg_score: i32,
     game_phase: i32,
 }
 
@@ -302,8 +300,6 @@ impl Board {
             material_hash: 0,
             king_hash: 0,
             halfmove_clock: 0,
-            mg_score: 0,
-            eg_score: 0,
             game_phase: 0,
         }
     }
@@ -340,7 +336,7 @@ impl Board {
         board.king_hash = compute_king_hash(&board);
         board.build_mailbox();
         board.build_occupancy();
-        board.init_pesto_score();
+        board.init_game_phase();
 
         board
     }
@@ -428,7 +424,7 @@ impl Board {
         board.non_pawn_hash = compute_non_pawn_hash(&board);
         board.material_hash = compute_material_hash(&board);
         board.king_hash = compute_king_hash(&board);
-        board.init_pesto_score();
+        board.init_game_phase();
 
         board
     }
@@ -1089,19 +1085,7 @@ impl Board {
         let (from_mask, to_mask) = (mask(from), mask(to));
         let piece = self.piece_on(from);
 
-        let mg = MG_TABLE.get().unwrap();
-        let eg = EG_TABLE.get().unwrap();
-
         debug_assert!(piece != Piece::NONE, "There ain't no piece in from");
-
-        let sign = Piece::get_color_fac(piece);
-        let p_idx = Piece::to_idx(piece);
-
-        self.mg_score -= sign * mg[p_idx][from];
-        self.eg_score -= sign * eg[p_idx][from];
-
-        self.mg_score += sign * mg[p_idx][to];
-        self.eg_score += sign * eg[p_idx][to];
 
         let piece_bb = self.mut_bb(piece);
         *piece_bb &= !from_mask;
@@ -1119,11 +1103,7 @@ impl Board {
     fn remove_piece(&mut self, piece: PieceInfo, pos: usize) {
         let pos_mask = mask(pos);
 
-        let sign = Piece::get_color_fac(piece);
         let p_idx = Piece::to_idx(piece);
-
-        self.mg_score -= sign * MG_TABLE.get().unwrap()[p_idx][pos];
-        self.eg_score -= sign * EG_TABLE.get().unwrap()[p_idx][pos];
         self.game_phase -= GAME_PHASE_VAL[p_idx];
 
         *self.mut_bb(piece) &= !pos_mask;
@@ -1138,11 +1118,7 @@ impl Board {
     fn add_piece(&mut self, piece: PieceInfo, pos: usize) {
         let pos_mask = mask(pos);
 
-        let sign = Piece::get_color_fac(piece);
         let p_idx = Piece::to_idx(piece);
-
-        self.mg_score += sign * MG_TABLE.get().unwrap()[p_idx][pos];
-        self.eg_score += sign * EG_TABLE.get().unwrap()[p_idx][pos];
         self.game_phase += GAME_PHASE_VAL[p_idx];
 
         *self.mut_bb(piece) |= pos_mask;
@@ -2410,29 +2386,16 @@ impl Board {
         PIECE_VALS[idx]
     }
 
-    fn init_pesto_score(&mut self) {
-        let mut mg = [0i32; 2];
-        let mut eg = [0i32; 2];
-
+    fn init_game_phase(&mut self) {
         let mut game_phase = 0;
-        let mg_table = MG_TABLE.get().unwrap();
-        let eg_table = EG_TABLE.get().unwrap();
-
         let mut all_occ = self.all_occ();
 
         while let Some(sq) = pop_lsb(&mut all_occ) {
             let piece = self.piece_on(sq);
-
             let p_idx = Piece::to_idx(piece);
-            let col_idx = Piece::get_color_idx(piece);
-
-            mg[col_idx] += mg_table[p_idx][sq];
-            eg[col_idx] += eg_table[p_idx][sq];
             game_phase += GAME_PHASE_VAL[p_idx];
         }
 
-        self.mg_score = mg[WHITE] - mg[BLACK];
-        self.eg_score = eg[WHITE] - eg[BLACK];
         self.game_phase = game_phase.min(24); // Max as 24 is made coz of early promotions
     }
 }
