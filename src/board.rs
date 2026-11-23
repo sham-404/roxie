@@ -471,20 +471,21 @@ impl Board {
         );
 
         // Update zobrist: remove piece from 'from' and remove old EP
+        let piece_type = Piece::get_type(cur_piece);
         self.hash ^= zob[piece_idx][from];
-        if Piece::get_type(cur_piece) == Piece::PAWN {
+        if piece_type == Piece::PAWN {
             self.pawn_hash ^= zob[piece_idx][from];
-        } else if Piece::get_type(cur_piece) == Piece::KNIGHT
-            || Piece::get_type(cur_piece) == Piece::BISHOP
+        } else if piece_type == Piece::KNIGHT
+            || piece_type == Piece::BISHOP
         {
             self.minor_hash ^= zob[piece_idx][from];
             self.non_pawn_hash ^= zob[piece_idx][from];
-        } else if Piece::get_type(cur_piece) == Piece::ROOK
-            || Piece::get_type(cur_piece) == Piece::QUEEN
+        } else if piece_type == Piece::ROOK
+            || piece_type == Piece::QUEEN
         {
             self.major_hash ^= zob[piece_idx][from];
             self.non_pawn_hash ^= zob[piece_idx][from];
-        } else if Piece::get_type(cur_piece) == Piece::KING {
+        } else if piece_type == Piece::KING {
             self.king_hash ^= zob[piece_idx][from];
         }
 
@@ -493,7 +494,7 @@ impl Board {
         }
 
         // update halfmove_clock
-        if captured != Piece::NONE || Piece::get_type(cur_piece) == Piece::PAWN {
+        if captured != Piece::NONE || piece_type == Piece::PAWN {
             self.halfmove_clock = 0;
         } else {
             self.halfmove_clock += 1;
@@ -563,19 +564,19 @@ impl Board {
             self.add_piece(promo_piece, to);
         } else {
             self.hash ^= zob[piece_idx][to]; // Update zobrist for normal move
-            if Piece::get_type(cur_piece) == Piece::PAWN {
+            if piece_type == Piece::PAWN {
                 self.pawn_hash ^= zob[piece_idx][to];
-            } else if Piece::get_type(cur_piece) == Piece::KNIGHT
-                || Piece::get_type(cur_piece) == Piece::BISHOP
+            } else if piece_type == Piece::KNIGHT
+                || piece_type == Piece::BISHOP
             {
                 self.minor_hash ^= zob[piece_idx][to];
                 self.non_pawn_hash ^= zob[piece_idx][to];
-            } else if Piece::get_type(cur_piece) == Piece::ROOK
-                || Piece::get_type(cur_piece) == Piece::QUEEN
+            } else if piece_type == Piece::ROOK
+                || piece_type == Piece::QUEEN
             {
                 self.major_hash ^= zob[piece_idx][to];
                 self.non_pawn_hash ^= zob[piece_idx][to];
-            } else if Piece::get_type(cur_piece) == Piece::KING {
+            } else if piece_type == Piece::KING {
                 self.king_hash ^= zob[piece_idx][to];
             }
         }
@@ -592,14 +593,16 @@ impl Board {
             let r_idx = Piece::to_idx(r_pce);
 
             if flag == MoveFlag::KING_CASTLE {
-                self.hash ^= zob[r_idx][king_pos + 3] ^ zob[r_idx][king_pos + 1];
-                self.major_hash ^= zob[r_idx][king_pos + 3] ^ zob[r_idx][king_pos + 1];
-                self.non_pawn_hash ^= zob[r_idx][king_pos + 3] ^ zob[r_idx][king_pos + 1];
+                let zob_val =zob[r_idx][king_pos + 3] ^ zob[r_idx][king_pos + 1]; 
+                self.hash ^= zob_val;
+                self.major_hash ^= zob_val;
+                self.non_pawn_hash ^= zob_val;
                 self.move_piece_quiet(king_pos + 3, king_pos + 1);
             } else {
-                self.hash ^= zob[r_idx][king_pos - 4] ^ zob[r_idx][king_pos - 1];
-                self.major_hash ^= zob[r_idx][king_pos - 4] ^ zob[r_idx][king_pos - 1];
-                self.non_pawn_hash ^= zob[r_idx][king_pos - 4] ^ zob[r_idx][king_pos - 1];
+                let zob_val = zob[r_idx][king_pos - 4] ^ zob[r_idx][king_pos - 1];
+                self.hash ^= zob_val;
+                self.major_hash ^= zob_val;
+                self.non_pawn_hash ^= zob_val;
                 self.move_piece_quiet(king_pos - 4, king_pos - 1);
             }
         }
@@ -1474,13 +1477,13 @@ impl Board {
         };
         let mut pawn_bb = self.bb(pawn);
 
+        let target = match self.en_passant {
+            Some(sq) => opp_occ | mask(sq as usize),
+            None => opp_occ,
+        };
+
         while let Some(from) = pop_lsb(&mut pawn_bb) {
             // To include en_passant sq, as there wont be any enemy there
-            let target = match self.en_passant {
-                Some(sq) => opp_occ | mask(sq as usize),
-                None => opp_occ,
-            };
-
             let mut atk = attacks[from] & target;
 
             while let Some(to) = pop_lsb(&mut atk) {
@@ -1633,13 +1636,12 @@ impl Board {
         // Captures
         let mut bb = pawn_bb;
 
+        let target = match self.en_passant {
+            Some(sq) => opp_occ | mask(sq as usize),
+            None => opp_occ,
+        };
         while let Some(from) = pop_lsb(&mut bb) {
             // To include en_passant sq, as there wont be any enemy there
-            let target = match self.en_passant {
-                Some(sq) => opp_occ | mask(sq as usize),
-                None => opp_occ,
-            };
-
             let mut atk = attacks[from] & target;
 
             while let Some(to) = pop_lsb(&mut atk) {
@@ -1846,13 +1848,12 @@ impl Board {
         let mut bb = pawn_bb;
         let enemy = self.occ(&self.side_to_move.opponent());
 
+        let target = match self.en_passant {
+            Some(sq) => enemy | mask(sq as usize),
+            None => enemy,
+        };
         while let Some(from) = pop_lsb(&mut bb) {
             // To include en_passant sq, as there wont be any enemy there
-            let target = match self.en_passant {
-                Some(sq) => enemy | mask(sq as usize),
-                None => enemy,
-            };
-
             let mut atk = attacks[from] & target;
 
             while let Some(to) = pop_lsb(&mut atk) {

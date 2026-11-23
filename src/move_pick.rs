@@ -384,6 +384,7 @@ impl Engine {
                 Phase::GenerateQuiets => {
                     picker.mv_idx = 0;
                     picker.moves = self.board.gen_quiet_moves();
+                    let stm = self.board.side_to_move().val();
 
                     for i in 0..picker.moves.len() {
                         let mv = picker.moves.get(i);
@@ -392,7 +393,7 @@ impl Engine {
 
                         score +=
                             self.history
-                                .get(self.board.side_to_move().val(), mv.from(), mv.to())
+                                .get(stm, mv.from(), mv.to())
                                 << param!(HIST_SHIFT);
                         score += (self.continuation_history.get(
                             picker.prev_mv,
@@ -422,9 +423,9 @@ impl Engine {
                 }
 
                 Phase::Quiets => {
+                    let counter_mv = self.counter_moves.get(picker.prev_mv);
                     while picker.mv_idx < picker.moves.len() {
                         let mv = picker.moves.pick_move(picker.mv_idx);
-                        let counter_mv = self.counter_moves.get(picker.prev_mv);
                         picker.mv_idx += 1;
 
                         if [

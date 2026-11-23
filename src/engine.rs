@@ -241,24 +241,6 @@ impl ContinuationHistory {
     }
 
     #[inline(always)]
-    pub fn get_after_mv(
-        &self,
-        prev_mv: Move,
-        prev_piece: PieceInfo,
-        cur_mv: Move,
-        cur_piece: PieceInfo,
-    ) -> i16 {
-        if prev_mv == Move::NULL || prev_piece == Piece::NONE || cur_piece == Piece::NONE {
-            return 0;
-        }
-
-        let prev_idx = Piece::to_idx(prev_piece) * 64 + prev_mv.to();
-        let cur_idx = Piece::to_idx(cur_piece) * 64 + cur_mv.to();
-
-        self.table[prev_idx][cur_idx]
-    }
-
-    #[inline(always)]
     pub fn get(
         &self,
         prev_mv: Move,
@@ -541,8 +523,8 @@ impl Accumulators {
     }
 
     #[inline(always)]
-    pub fn get(&self, ply: usize) -> [[i16; HL1]; 2] {
-        self.table[ply]
+    pub fn get(&self, ply: usize) -> &[[i16; HL1]; 2] {
+        &self.table[ply]
     }
 
     pub fn setup(&mut self, board: &Board) {

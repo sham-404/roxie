@@ -724,7 +724,8 @@ impl Engine {
             );
         }
 
-        let in_check = self.board.in_check();
+        let (checkers, pinned) = self.board.checkers_and_pinned();
+        let in_check = checkers != 0;
         let stm_val = self.board.side_to_move().val();
         let pawn_hash = self.board.get_pawn_hash();
         let minor_hash = self.board.get_minor_hash();
@@ -852,14 +853,13 @@ impl Engine {
             limits,
             info,
             static_eval,
+            in_check,
             is_improving,
             is_non_pv,
         ) {
             return cutoff_score;
         }
         //// NULL move pruning
-
-        let (checkers, pinned) = self.board.checkers_and_pinned();
 
         //// ProbCut (Probablistic Cut)
         if depth >= param!(PC_MIN_DEPTH)
@@ -942,7 +942,7 @@ impl Engine {
                     };
 
                     self.shared.tt.store(TTEntry {
-                        key: self.board.get_hash(),
+                        key,
                         depth: pc_depth + 1, // Safe depth assumption
                         score: safe_score as i32,
                         flag: TTFlag::LowerBound,
@@ -1214,12 +1214,10 @@ impl Engine {
 
                 fail_high = true;
 
+                let bonus = ((depth as i32 * depth as i32) * param!(HIST_BONUS_QUAD_FACTOR))
+                    .min(param!(HIST_BONUS_MAX));
                 if is_quiet {
                     self.killers.update(mv, ply);
-
-                    let stm = self.board.side_to_move().val();
-                    let bonus = ((depth as i32 * depth as i32) * param!(HIST_BONUS_QUAD_FACTOR))
-                        .min(param!(HIST_BONUS_MAX));
 
                     // history maluses
                     for q_mv in quiet_list.as_slice() {
@@ -1228,64 +1226,43 @@ impl Engine {
                         }
 
                         // for history
-                        self.history.update(stm, q_mv.from(), q_mv.to(), -bonus);
+                        self.history.update(stm_val, q_mv.from(), q_mv.to(), -bonus);
 
                         // for continuation history
-                        self.continuation_history.update(
-                            prev_move,
-                            prev_piece,
-                            *q_mv,
-                            self.board.piece_on(q_mv.from()),
-                            -bonus,
-                        );
+                        let piece = self.board.piece_on(q_mv.from());
+                        self.continuation_history
+                            .update(prev_move, prev_piece, *q_mv, piece, -bonus);
                         self.continuation_history_2.update(
                             prev2_move,
                             prev2_piece,
                             *q_mv,
-                            self.board.piece_on(q_mv.from()),
+                            piece,
                             -bonus,
                         );
                         self.continuation_history_4.update(
                             prev4_move,
                             prev4_piece,
                             *q_mv,
-                            self.board.piece_on(q_mv.from()),
+                            piece,
                             -bonus,
                         );
                     }
 
                     // history bonus scoring
-                    self.history.update(stm, mv.from(), mv.to(), bonus);
+                    self.history.update(stm_val, mv.from(), mv.to(), bonus);
 
                     // continuation history scoring
-                    self.continuation_history.update(
-                        prev_move,
-                        prev_piece,
-                        mv,
-                        self.board.piece_on(mv.from()),
-                        bonus,
-                    );
-                    self.continuation_history_2.update(
-                        prev2_move,
-                        prev2_piece,
-                        mv,
-                        self.board.piece_on(mv.from()),
-                        bonus,
-                    );
-                    self.continuation_history_4.update(
-                        prev4_move,
-                        prev4_piece,
-                        mv,
-                        self.board.piece_on(mv.from()),
-                        bonus,
-                    );
+                    let piece = self.board.piece_on(mv.from());
+                    self.continuation_history
+                        .update(prev_move, prev_piece, mv, piece, bonus);
+                    self.continuation_history_2
+                        .update(prev2_move, prev2_piece, mv, piece, bonus);
+                    self.continuation_history_4
+                        .update(prev4_move, prev4_piece, mv, piece, bonus);
 
                     // counter moves storing
                     self.counter_moves.update(prev_move, mv);
                 } else if is_capture {
-                    let bonus = ((depth as i32 * depth as i32) * param!(HIST_BONUS_QUAD_FACTOR))
-                        .min(param!(HIST_BONUS_MAX));
-
                     // capture maluses
                     for &cap_mv in cap_list.as_slice() {
                         if cap_mv == mv {
@@ -1352,7 +1329,7 @@ impl Engine {
                 let err = diff.clamp(-128, 128) * CORR_GRAIN as i32;
 
                 self.correction_history.update(
-                    self.board.side_to_move().val(),
+                    stm_val,
                     pawn_hash,
                     minor_hash,
                     major_hash,
@@ -1396,6 +1373,7 @@ impl Engine {
         limits: &SearchLimits,
         info: &mut SearchInfo,
         static_eval: i16,
+        in_check: bool,
         is_improving: bool,
         is_non_pv: bool,
     ) -> Option<i16> {
@@ -1427,7 +1405,7 @@ impl Engine {
             && excluded_move == Move::NULL
             && beta.abs() < MATE - MAX_PLY as i16
             && static_eval >= beta
-            && !self.board.in_check()
+            && !in_check
             && !in_nmp_endgame
         {
             info.stats.nmp_attemps += 1;
@@ -1514,7 +1492,6 @@ impl Engine {
         } = params;
 
         let in_check = self.board.in_check();
-
         let max_check_ext = param!(CHECK_EXT_MAX);
         let (extension, next_extensions) = if in_check && extension < max_check_ext {
             (1, extension + 1)
@@ -1583,13 +1560,13 @@ impl Engine {
             let stm = self.board.side_to_move().opponent().val();
             let cont_hist =
                 self.continuation_history
-                    .get_after_mv(prev_move, prev_piece, mv, moved_piece) as i32;
+                    .get(prev_move, prev_piece, mv, moved_piece) as i32;
             let cont_hist_2 =
                 self.continuation_history_2
-                    .get_after_mv(prev2_move, prev2_piece, mv, moved_piece) as i32;
+                    .get(prev2_move, prev2_piece, mv, moved_piece) as i32;
             let cont_hist_4 =
                 self.continuation_history_4
-                    .get_after_mv(prev4_move, prev4_piece, mv, moved_piece) as i32;
+                    .get(prev4_move, prev4_piece, mv, moved_piece) as i32;
             let hist_score = self.history.get(stm, mv.from(), mv.to())
                 + ((cont_hist + cont_hist_2 + cont_hist_4) >> param!(LMR_CONT_HIST_SHIFT));
 
@@ -1785,7 +1762,8 @@ impl Engine {
 
         let mut best_score = -INF;
 
-        let in_check = self.board.in_check();
+        let (checkers, pinned) = self.board.checkers_and_pinned();
+        let in_check = checkers != 0;
         let stm_val = self.board.side_to_move().val();
         let pawn_hash = self.board.get_pawn_hash();
         let minor_hash = self.board.get_minor_hash();
@@ -1842,8 +1820,6 @@ impl Engine {
                 alpha = stand_pat;
             }
         }
-
-        let (checkers, pinned) = self.board.checkers_and_pinned();
 
         let qsearch_picker = !in_check;
         let orig_alpha = alpha;

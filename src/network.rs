@@ -665,7 +665,7 @@ impl Engine {
             return;
         };
 
-        *self.accumulators.get_mut(ply + 1) = self.accumulators.get(ply);
+        *self.accumulators.get_mut(ply + 1) = *self.accumulators.get(ply);
         let acc = self.accumulators.get_mut(ply + 1);
 
         let (from, to, flag) = (mv.from(), mv.to(), mv.flag());
@@ -771,7 +771,7 @@ impl Engine {
     }
 
     pub fn update_nnue_null_move(&mut self, ply: usize) {
-        *self.accumulators.get_mut(ply + 1) = self.accumulators.get(ply)
+        *self.accumulators.get_mut(ply + 1) = *self.accumulators.get(ply);
     }
 }
 
